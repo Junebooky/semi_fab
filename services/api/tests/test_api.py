@@ -515,10 +515,18 @@ class TestEtchDemoAPI(unittest.TestCase):
         self.assertEqual(w15["timeline"][4]["event_type"], "HOLD")
         self.assertEqual(w15["timeline"][4]["status"], "PENDING")
 
-        # 4. Non-existent wafer
+        # 4. Non-existent / malformed wafers return 404
         res_invalid = self.client.get("/api/v1/demo/wafers/W-99/trace")
         self.assertEqual(res_invalid.status_code, 404)
         self.assertIn("not found", res_invalid.json()["detail"].lower())
+
+        res_w00 = self.client.get("/api/v1/demo/wafers/W-00/trace")
+        self.assertEqual(res_w00.status_code, 404)
+        self.assertIn("not found", res_w00.json()["detail"].lower())
+
+        res_malformed = self.client.get("/api/v1/demo/wafers/WAFER-XYZ/trace")
+        self.assertEqual(res_malformed.status_code, 404)
+        self.assertIn("not found", res_malformed.json()["detail"].lower())
 
         # 5. Non-existent run
         res_invalid_run = self.client.get("/api/v1/demo/wafers/W-01/trace?run_id=RUN-NONEXISTENT")

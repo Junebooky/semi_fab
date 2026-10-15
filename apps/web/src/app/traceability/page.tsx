@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 
@@ -45,6 +45,18 @@ interface WaferTraceDetail {
   timeline: WaferTimelineEvent[];
 }
 
+interface NotFoundError {
+  waferId: string;
+  status: number;
+  message: string;
+}
+
+const VALID_WAFER_PATTERN = /^W-(0[1-9]|1[0-9]|2[0-5])$/;
+
+function isValidWaferId(waferId: string): boolean {
+  return VALID_WAFER_PATTERN.test(waferId);
+}
+
 // Built-in Mode A Synthetic Trace Fixture Generator
 function generateModeAWafers(seed: number): WaferItem[] {
   const lotNum = 800 + (seed % 50);
@@ -67,6 +79,10 @@ function generateModeAWafers(seed: number): WaferItem[] {
 }
 
 function generateModeAWaferTrace(waferId: string, seed: number): WaferTraceDetail {
+  if (!isValidWaferId(waferId)) {
+    throw new Error(`Cannot generate synthetic trace for invalid wafer ID '${waferId}'`);
+  }
+
   const lotNum = 800 + (seed % 50);
   const lotId = `LOT-DEMO-${lotNum}`;
   const runId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
@@ -246,73 +262,168 @@ function TraceabilityContent() {
   const [selectedWaferId, setSelectedWaferId] = useState<string>(queryWafer);
   const [filter, setFilter] = useState<'ALL' | 'CONFIRMED' | 'CANDIDATE' | 'UNEXPOSED'>('ALL');
   const [wafers, setWafers] = useState<WaferItem[]>(() => generateModeAWafers(20261015));
-  const [trace, setTrace] = useState<WaferTraceDetail>(() => generateModeAWaferTrace('W-08', 20261015));
+  const [trace, setTrace] = useState<WaferTraceDetail | null>(() => {
+    return isValidWaferId(queryWafer) ? generateModeAWaferTrace(queryWafer, 20261015) : null;
+  });
+  const [notFoundError, setNotFoundError] = useState<NotFoundError | null>(() => {
+    return !isValidWaferId(queryWafer)
+      ? {
+          waferId: queryWafer,
+          status: 404,
+          message: `카세트 규격에 존재하지 않는 웨이퍼 ID ('${queryWafer}')입니다. (유효 범위: W-01 ~ W-25)`,
+        }
+      : null;
+  });
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [notice, setNotice] = useState<string>("웨이퍼 추적 시스템 준비 완료");
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
-  // Sync state if query param changes
-  useEffect(() => {
-    if (queryWafer && queryWafer !== selectedWaferId) {
-      setSelectedWaferId(queryWafer);
-    }
-  }, [queryWafer]);
+  // Guards for race conditions (P1-A)
+  const activeTraceReqIdRef = useRef<number>(0);
+  const targetWaferIdRef = useRef<string>(queryWafer);
 
-  // Load wafer trace data
-  const loadTrace = useCallback(async (waferId: string) => {
-    setIsLoading(true);
-    try {
-      const res = await fetch(`http://localhost:8000/api/v1/demo/wafers/${waferId}/trace`, { cache: "no-store" });
-      if (res.ok) {
-        const data: WaferTraceDetail = await res.json();
-        setTrace(data);
-        setMode('B');
-        setNotice(`Mode B (API): 웨이퍼 ${waferId} 공정 이력 및 타임라인 동기화 완료.`);
-      } else {
-        // Fallback to Mode A
-        const synTrace = generateModeAWaferTrace(waferId, seed);
-        setTrace(synTrace);
-        setMode('A');
-        setNotice(`Mode A: 로컬 합성 픽스처 웨이퍼 ${waferId} 이력 표시 중.`);
-      }
-    } catch {
-      const synTrace = generateModeAWaferTrace(waferId, seed);
-      setTrace(synTrace);
-      setMode('A');
-      setNotice(`Mode A: 백엔드 미실행에 따른 로컬 합성 픽스처 웨이퍼 ${waferId} 이력 표시.`);
-    } finally {
+  // Unified data loader keeping data origin consistent (Mode A vs Mode B) and preventing race conditions
+  const loadData = useCallback(async (targetWafer: string) => {
+    const reqId = ++activeTraceReqIdRef.current;
+    targetWaferIdRef.current = targetWafer;
+
+    // 1. Validate Wafer ID first (P1-B fail-closed guard)
+    if (!isValidWaferId(targetWafer)) {
+      if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
+      setTrace(null);
+      setNotFoundError({
+        waferId: targetWafer,
+        status: 404,
+        message: `카세트 규격에 존재하지 않는 웨이퍼 ID ('${targetWafer}')입니다. (25매 카세트 유효 범위: W-01 ~ W-25)`
+      });
       setIsLoading(false);
+      setNotice(`오류 (404 Not Found): 카세트에 존재하지 않는 웨이퍼 ID '${targetWafer}' 입니다.`);
+      return;
     }
-  }, [seed]);
 
-  // Load wafer list
-  const loadWaferList = useCallback(async () => {
+    setIsLoading(true);
+    setNotFoundError(null);
+
+    // 2. Fetch from Live API (Mode B)
     try {
-      const res = await fetch("http://localhost:8000/api/v1/demo/wafers", { cache: "no-store" });
-      if (res.ok) {
-        const data: WaferItem[] = await res.json();
-        setWafers(data);
+      const [traceRes, wafersRes, summaryRes] = await Promise.all([
+        fetch(`http://localhost:8000/api/v1/demo/wafers/${targetWafer}/trace`, { cache: 'no-store' }),
+        fetch('http://localhost:8000/api/v1/demo/wafers', { cache: 'no-store' }),
+        fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' }).catch(() => null)
+      ]);
+
+      // Discard stale response if newer request has been triggered
+      if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) {
+        return;
+      }
+
+      // Handle HTTP 404 from server (P1-B: Server responded 404, NOT server offline!)
+      if (traceRes.status === 404) {
+        let errorDetail = `서버 공정 DB에서 웨이퍼 '${targetWafer}'를 찾을 수 없습니다 (404 Not Found).`;
+        try {
+          const errJson = await traceRes.json();
+          if (errJson.detail) errorDetail = errJson.detail;
+        } catch {
+          // ignore json parse error
+        }
+        setTrace(null);
+        setNotFoundError({
+          waferId: targetWafer,
+          status: 404,
+          message: errorDetail
+        });
         setMode('B');
+        setNotice(`HTTP 404 Not Found: 서버 공정 DB에 웨이퍼 '${targetWafer}' 이력이 등록되어 있지 않습니다.`);
+        if (wafersRes.ok) {
+          const wData: WaferItem[] = await wafersRes.json();
+          setWafers(wData);
+        }
+        if (summaryRes && summaryRes.ok) {
+          const sData = await summaryRes.json();
+          setActiveRunId(sData.active_run_id);
+        }
+        return;
+      }
+
+      if (traceRes.ok) {
+        const traceData: WaferTraceDetail = await traceRes.json();
+        // Check again after json parsing
+        if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
+
+        setTrace(traceData);
+        setNotFoundError(null);
+        setMode('B');
+        setNotice(`Mode B (Live API): 웨이퍼 ${targetWafer} 공정 이력 및 타임라인 동기화 완료.`);
+
+        if (wafersRes.ok) {
+          const wData: WaferItem[] = await wafersRes.json();
+          setWafers(wData);
+        }
+        if (summaryRes && summaryRes.ok) {
+          const sData = await summaryRes.json();
+          setActiveRunId(sData.active_run_id);
+        }
       } else {
-        setWafers(generateModeAWafers(seed));
-        setMode('A');
+        // Other non-200, non-404 server error (e.g. 500)
+        setTrace(null);
+        setNotFoundError({
+          waferId: targetWafer,
+          status: traceRes.status,
+          message: `서버 통신 오류 (HTTP ${traceRes.status}): 웨이퍼 공정 이력을 조회할 수 없습니다.`
+        });
+        setMode('B');
+        setNotice(`서버 응답 오류 (HTTP ${traceRes.status}): 웨이퍼 조회가 실패했습니다.`);
       }
     } catch {
-      setWafers(generateModeAWafers(seed));
+      // Backend is truly offline/unreachable -> Fallback to Mode A
+      if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
+
+      // Mode A synthetic data generation (Only valid wafers generate synthetic data!)
       setMode('A');
+      setWafers(generateModeAWafers(seed));
+      setActiveRunId(`RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`);
+
+      if (isValidWaferId(targetWafer)) {
+        const synTrace = generateModeAWaferTrace(targetWafer, seed);
+        setTrace(synTrace);
+        setNotFoundError(null);
+        setNotice(`Mode A: 백엔드 미실행에 따른 로컬 합성 픽스처 웨이퍼 ${targetWafer} 이력 표시.`);
+      } else {
+        setTrace(null);
+        setNotFoundError({
+          waferId: targetWafer,
+          status: 404,
+          message: `카세트 규격에 존재하지 않는 웨이퍼 ID ('${targetWafer}')입니다.`
+        });
+        setNotice(`오류 (404 Not Found): 카세트에 존재하지 않는 웨이퍼 ID '${targetWafer}' 입니다.`);
+      }
+    } finally {
+      if (reqId === activeTraceReqIdRef.current && targetWaferIdRef.current === targetWafer) {
+        setIsLoading(false);
+      }
     }
   }, [seed]);
 
+  // Sync if URL search param changes
   useEffect(() => {
-    loadWaferList();
-  }, [loadWaferList]);
+    if (queryWafer && queryWafer !== targetWaferIdRef.current) {
+      targetWaferIdRef.current = queryWafer;
+      setSelectedWaferId(queryWafer);
+      loadData(queryWafer);
+    }
+  }, [queryWafer, loadData]);
 
+  // Initial load
   useEffect(() => {
-    loadTrace(selectedWaferId);
-  }, [selectedWaferId, loadTrace]);
+    loadData(selectedWaferId);
+  }, []);
 
   const handleSelectWafer = (wId: string) => {
+    targetWaferIdRef.current = wId;
+    activeTraceReqIdRef.current++;
     setSelectedWaferId(wId);
     router.replace(`/traceability?wafer=${wId}`, { scroll: false });
+    loadData(wId);
   };
 
   const filteredWafers = useMemo(() => {
@@ -327,6 +438,8 @@ function TraceabilityContent() {
   const confirmedCount = wafers.filter(w => w.exposure_status === 'CONFIRMED_EXPOSED').length;
   const candidateCount = wafers.filter(w => w.exposure_status === 'CANDIDATE_EXPOSED').length;
   const unexposedCount = wafers.filter(w => w.exposure_status === 'NOT_EXPOSED').length;
+
+  const currentLotId = trace?.lot_id || (wafers.length > 0 ? wafers[0].lot_id : 'LOT-DEMO-815');
 
   return (
     <div className="app-container">
@@ -397,7 +510,7 @@ function TraceabilityContent() {
                   FOUP 카세트 슬롯 (25매)
                 </h2>
                 <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                  Lot: <strong>{trace.lot_id}</strong>
+                  Lot: <strong>{currentLotId}</strong>
                 </div>
               </div>
               <span className="pill" style={{ fontSize: '10px', padding: '2px 8px' }}>
@@ -523,147 +636,187 @@ function TraceabilityContent() {
           </aside>
 
           {/* Right Column: Trace Detail & Chronological Timeline */}
-          <section className="trace-detail-card" aria-label="웨이퍼 공정 이력 상세">
-            {/* Header Banner */}
-            <div className="trace-header-banner">
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h1 style={{ fontSize: '20px', fontWeight: 850, margin: 0, color: '#17263B' }}>
-                    웨이퍼 {trace.wafer_id} 이력 추적
-                  </h1>
-                  <span
-                    className="pill"
-                    style={{
-                      padding: '3px 10px',
-                      fontSize: '11px',
-                      fontWeight: 800,
-                      color: trace.exposure_status === 'CANDIDATE_EXPOSED' ? '#B91C1C' : (trace.exposure_status === 'CONFIRMED_EXPOSED' ? '#047857' : '#64748B'),
-                      background: trace.exposure_status === 'CANDIDATE_EXPOSED' ? '#FEE2E2' : (trace.exposure_status === 'CONFIRMED_EXPOSED' ? '#ECFDF5' : '#F1F5F9'),
-                      borderColor: trace.exposure_status === 'CANDIDATE_EXPOSED' ? '#FECACA' : (trace.exposure_status === 'CONFIRMED_EXPOSED' ? '#A7F3D0' : '#CBD5E1'),
-                    }}
-                  >
-                    {trace.exposure_status === 'CONFIRMED_EXPOSED' && '노출 확정 (CONFIRMED_EXPOSED)'}
-                    {trace.exposure_status === 'CANDIDATE_EXPOSED' && '잠재 영향군 (CANDIDATE_EXPOSED)'}
-                    {trace.exposure_status === 'NOT_EXPOSED' && '미노출 (NOT_EXPOSED)'}
-                  </span>
-                </div>
-                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
-                  FOUP 카세트 슬롯 #{trace.slot_number} · 투입 시퀀스 #{trace.sequence}
-                </div>
+          {isLoading ? (
+            <div className="trace-loading-card" role="status">
+              <div className="pulse-dot" style={{ width: '12px', height: '12px', background: '#0B9F78' }}></div>
+              <div style={{ fontWeight: 800, fontSize: '16px', color: '#17263B', marginTop: '16px' }}>
+                웨이퍼 {selectedWaferId} 공정 이력 조회 중...
               </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <Link
-                  href={`/?wafer=${trace.wafer_id}`}
-                  className="btn-secondary"
-                  style={{ textDecoration: 'none', padding: '6px 12px', fontSize: '11px' }}
+              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px' }}>
+                이전 웨이퍼 데이터의 잔여 표시를 방지하고 최신 타임라인을 안전하게 동기화합니다.
+              </div>
+            </div>
+          ) : notFoundError ? (
+            <div className="trace-not-found-card" role="alert">
+              <div className="not-found-icon" aria-hidden="true">⚠️</div>
+              <h2 className="not-found-title">존재하지 않는 웨이퍼 (404 Not Found)</h2>
+              <div className="not-found-badge">요청 ID: {notFoundError.waferId}</div>
+              <p className="not-found-desc">{notFoundError.message}</p>
+              <div className="not-found-disclaimer">
+                <strong>※ FAB ONE 도메인 무결성 규약:</strong><br />
+                서버에서 HTTP 404로 응답되었거나 25매 카세트 규격(W-01 ~ W-25)에 존재하지 않는 웨이퍼에 대해서는 임의의 가상 공정 이력(Synthetic Process Timeline)을 생성하지 않고 조회를 즉시 차단(Fail-Closed)합니다.
+              </div>
+              <div className="not-found-actions">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => handleSelectWafer('W-08')}
                 >
-                  챔버 대시보드 보기 ↗
+                  기본 웨이퍼(W-08)로 이동
+                </button>
+                <Link href="/" className="btn-secondary" style={{ textDecoration: 'none' }}>
+                  챔버 대시보드로 이동 ↗
                 </Link>
               </div>
             </div>
-
-            {/* Metadata Grid */}
-            <div className="trace-meta-grid">
-              <div className="trace-meta-col">
-                <span className="trace-meta-label">소속 Lot ID</span>
-                <span className="trace-meta-value">{trace.lot_id}</span>
-              </div>
-              <div className="trace-meta-col">
-                <span className="trace-meta-label">공정 Run ID</span>
-                <span className="trace-meta-value">{trace.run_id}</span>
-              </div>
-              <div className="trace-meta-col">
-                <span className="trace-meta-label">가공 설비 / 챔버</span>
-                <span className="trace-meta-value">{trace.equipment_id} · {trace.chamber_id}</span>
-              </div>
-              <div className="trace-meta-col">
-                <span className="trace-meta-label">적용 Recipe</span>
-                <span className="trace-meta-value">{trace.recipe_id}</span>
-              </div>
-            </div>
-
-            {/* Related FDC Alert & Investigation Link Card */}
-            {trace.related_alert_id ? (
-              <div className="trace-alert-link-card">
+          ) : trace ? (
+            <section className="trace-detail-card" aria-label="웨이퍼 공정 이력 상세">
+              {/* Header Banner */}
+              <div className="trace-header-banner">
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '16px' }}>⚠️</span>
-                    <strong style={{ fontSize: '13px', color: '#B91C1C' }}>
-                      관련 FDC 이상 알람: [{trace.related_alert_severity}] {trace.related_alert_id} ({trace.related_alert_rule})
-                    </strong>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h1 style={{ fontSize: '20px', fontWeight: 850, margin: 0, color: '#17263B' }}>
+                      웨이퍼 {trace.wafer_id} 이력 추적
+                    </h1>
+                    <span
+                      className="pill"
+                      style={{
+                        padding: '3px 10px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        color: trace.exposure_status === 'CANDIDATE_EXPOSED' ? '#B91C1C' : (trace.exposure_status === 'CONFIRMED_EXPOSED' ? '#047857' : '#64748B'),
+                        background: trace.exposure_status === 'CANDIDATE_EXPOSED' ? '#FEE2E2' : (trace.exposure_status === 'CONFIRMED_EXPOSED' ? '#ECFDF5' : '#F1F5F9'),
+                        borderColor: trace.exposure_status === 'CANDIDATE_EXPOSED' ? '#FECACA' : (trace.exposure_status === 'CONFIRMED_EXPOSED' ? '#A7F3D0' : '#CBD5E1'),
+                      }}
+                    >
+                      {trace.exposure_status === 'CONFIRMED_EXPOSED' && '노출 확정 (CONFIRMED_EXPOSED)'}
+                      {trace.exposure_status === 'CANDIDATE_EXPOSED' && '잠재 영향군 (CANDIDATE_EXPOSED)'}
+                      {trace.exposure_status === 'NOT_EXPOSED' && '미노출 (NOT_EXPOSED)'}
+                    </span>
                   </div>
-                  <div style={{ fontSize: '11px', color: '#7F1D1D', marginTop: '4px', lineHeight: '1.5' }}>
-                    식각 공정 스텝 T7 센서(OES Signal, Pressure, RF Power) 급증으로 공정 인터록이 발동되었습니다.<br />
-                    해당 알람의 정밀 센서 계측 근거 및 엔지니어링 조사 패널로 즉시 이동할 수 있습니다.
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                    FOUP 카세트 슬롯 #{trace.slot_number} · 투입 시퀀스 #{trace.sequence}
                   </div>
                 </div>
 
-                <Link
-                  href={`/?alert=${trace.related_alert_id}&investigation=true`}
-                  className="btn-danger-outline"
-                  style={{ textDecoration: 'none', padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
-                >
-                  엔지니어링 조사 상세 보기 →
-                </Link>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <Link
+                    href={`/?wafer=${trace.wafer_id}`}
+                    className="btn-secondary"
+                    style={{ textDecoration: 'none', padding: '6px 12px', fontSize: '11px' }}
+                  >
+                    챔버 대시보드 보기 ↗
+                  </Link>
+                </div>
               </div>
-            ) : (
-              <div style={{ padding: '12px 16px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #EDF1F5', marginTop: '16px', fontSize: '12px', color: '#64748B' }}>
-                ℹ️ 본 웨이퍼는 식각 공정 미착수 상태로 FOUP 카세트 내에 안전하게 보관되어 직결된 FDC 챔버 이상 알람이 없습니다.
+
+              {/* Metadata Grid */}
+              <div className="trace-meta-grid">
+                <div className="trace-meta-col">
+                  <span className="trace-meta-label">소속 Lot ID</span>
+                  <span className="trace-meta-value">{trace.lot_id}</span>
+                </div>
+                <div className="trace-meta-col">
+                  <span className="trace-meta-label">공정 Run ID</span>
+                  <span className="trace-meta-value">{trace.run_id}</span>
+                </div>
+                <div className="trace-meta-col">
+                  <span className="trace-meta-label">가공 설비 / 챔버</span>
+                  <span className="trace-meta-value">{trace.equipment_id} · {trace.chamber_id}</span>
+                </div>
+                <div className="trace-meta-col">
+                  <span className="trace-meta-label">적용 Recipe</span>
+                  <span className="trace-meta-value">{trace.recipe_id}</span>
+                </div>
               </div>
-            )}
 
-            {/* Vertical Chronological Process Timeline */}
-            <div className="timeline-section-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B9F78" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-              공정 이력 시간순 타임라인 (Chronological Process Timeline)
-            </div>
-
-            <div className="timeline-v-container">
-              {trace.timeline.map((event, idx) => {
-                let nodeStatusClass = "completed";
-                if (event.status === 'INTERRUPTED') nodeStatusClass = "interrupted";
-                else if (event.status === 'HELD') nodeStatusClass = "held";
-                else if (event.status === 'SKIPPED' || event.status === 'PENDING') nodeStatusClass = "skipped";
-
-                return (
-                  <div key={idx} className="timeline-v-item">
-                    <div className={`timeline-v-node ${nodeStatusClass}`}>
-                      {event.step_index}
+              {/* Related FDC Alert & Investigation Link Card */}
+              {trace.related_alert_id ? (
+                <div className="trace-alert-link-card">
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '16px' }}>⚠️</span>
+                      <strong style={{ fontSize: '13px', color: '#B91C1C' }}>
+                        관련 FDC 이상 알람: [{trace.related_alert_severity}] {trace.related_alert_id} ({trace.related_alert_rule})
+                      </strong>
                     </div>
-
-                    <div className="timeline-v-card">
-                      <div className="timeline-v-header">
-                        <span className="timeline-v-title">{event.step_name}</span>
-                        <span className="timeline-v-time-badge">{event.time_label}</span>
-                      </div>
-
-                      <div className="timeline-v-sub">
-                        <span>설비/위치: <strong>{event.equipment_id} · {event.chamber_id}</strong></span>
-                        <span>이벤트 유형: <strong>{event.event_type}</strong></span>
-                        <span>진행 상태: <strong style={{ color: event.status === 'INTERRUPTED' ? '#DC2626' : (event.status === 'HELD' ? '#D97706' : '#0B9F78') }}>{event.status}</strong></span>
-                        <span>기록 시각: {event.timestamp_utc}</span>
-                      </div>
-
-                      <div className="timeline-v-desc">
-                        {event.description}
-                      </div>
+                    <div style={{ fontSize: '11px', color: '#7F1D1D', marginTop: '4px', lineHeight: '1.5' }}>
+                      식각 공정 스텝 T7 센서(OES Signal, Pressure, RF Power) 급증으로 공정 인터록이 발동되었습니다.<br />
+                      해당 알람의 정밀 센서 계측 근거 및 엔지니어링 조사 패널로 즉시 이동할 수 있습니다.
                     </div>
+                    {activeRunId && trace.run_id !== activeRunId && (
+                      <div style={{ fontSize: '11px', color: '#B45309', marginTop: '6px', fontWeight: 600 }}>
+                        ※ 과거 Run ({trace.run_id}) 기록입니다. 메인 챔버 대시보드로 이동 시 현재 활성 Run ({activeRunId})의 상태가 표시됩니다.
+                      </div>
+                    )}
                   </div>
-                );
-              })}
-            </div>
 
-            {/* Synthetic Data Disclaimer Footer */}
-            <div style={{ marginTop: '24px', padding: '12px 14px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '11px', color: '#64748B', lineHeight: '1.6' }}>
-              <strong>※ [가상 시나리오 추적성 데이터 안내]</strong><br />
-              본 웨이퍼의 공정 이력과 시계열 타임라인은 시뮬레이션 합성(Synthetic, Seed: {seed}) 계약에 기반하여 생성된 데이터입니다.
-              실제 공정 DB에 존재하지 않는 공정 이력은 사실로 가장하여 생성되지 않으며, 모든 레코드는 <code>data_origin: synthetic</code> 속성을 보존합니다.
-            </div>
-          </section>
+                  <Link
+                    href={`/?alert=${trace.related_alert_id}&investigation=true`}
+                    className="btn-danger-outline"
+                    style={{ textDecoration: 'none', padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                  >
+                    엔지니어링 조사 상세 보기 →
+                  </Link>
+                </div>
+              ) : (
+                <div style={{ padding: '12px 16px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #EDF1F5', marginTop: '16px', fontSize: '12px', color: '#64748B' }}>
+                  ℹ️ 본 웨이퍼는 식각 공정 미착수 상태로 FOUP 카세트 내에 안전하게 보관되어 직결된 FDC 챔버 이상 알람이 없습니다.
+                </div>
+              )}
+
+              {/* Vertical Chronological Process Timeline */}
+              <div className="timeline-section-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B9F78" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                공정 이력 시간순 타임라인 (Chronological Process Timeline)
+              </div>
+
+              <div className="timeline-v-container">
+                {trace.timeline.map((event, idx) => {
+                  let nodeStatusClass = "completed";
+                  if (event.status === 'INTERRUPTED') nodeStatusClass = "interrupted";
+                  else if (event.status === 'HELD') nodeStatusClass = "held";
+                  else if (event.status === 'SKIPPED' || event.status === 'PENDING') nodeStatusClass = "skipped";
+
+                  return (
+                    <div key={idx} className="timeline-v-item">
+                      <div className={`timeline-v-node ${nodeStatusClass}`}>
+                        {event.step_index}
+                      </div>
+
+                      <div className="timeline-v-card">
+                        <div className="timeline-v-header">
+                          <span className="timeline-v-title">{event.step_name}</span>
+                          <span className="timeline-v-time-badge">{event.time_label}</span>
+                        </div>
+
+                        <div className="timeline-v-sub">
+                          <span>설비/위치: <strong>{event.equipment_id} · {event.chamber_id}</strong></span>
+                          <span>이벤트 유형: <strong>{event.event_type}</strong></span>
+                          <span>진행 상태: <strong style={{ color: event.status === 'INTERRUPTED' ? '#DC2626' : (event.status === 'HELD' ? '#D97706' : '#0B9F78') }}>{event.status}</strong></span>
+                          <span>기록 시각: {event.timestamp_utc}</span>
+                        </div>
+
+                        <div className="timeline-v-desc">
+                          {event.description}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Synthetic Data Disclaimer Footer */}
+              <div style={{ marginTop: '24px', padding: '12px 14px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '11px', color: '#64748B', lineHeight: '1.6' }}>
+                <strong>※ [가상 시나리오 추적성 데이터 안내]</strong><br />
+                본 웨이퍼의 공정 이력과 시계열 타임라인은 시뮬레이션 합성(Synthetic, Seed: {seed}) 계약에 기반하여 생성된 데이터입니다.
+                실제 공정 DB에 존재하지 않는 공정 이력은 사실로 가장하여 생성되지 않으며, 모든 레코드는 <code>data_origin: synthetic</code> 속성을 보존합니다.
+              </div>
+            </section>
+          ) : null}
         </div>
       </main>
     </div>

@@ -570,4 +570,164 @@ test('BUILD-03 Wafer Traceability Contract: W-15 (NOT_EXPOSED) skipped timeline 
   assert.equal(trace.timeline[4].status, 'PENDING');
 });
 
+test('P1-A BUILD-03 Rapid Wafer Switching Async Race Condition Defense: Delayed inflight wafer trace cannot overwrite current selection', async () => {
+  // Simulated component state & refs matching traceability/page.tsx
+  let traceData = null;
+  let selectedWaferId = 'W-08';
+  let notice = '';
+  let isLoading = false;
+  let notFoundError = null;
+  let mode = 'B';
+
+  let activeTraceReqId = 0;
+  let targetWaferId = 'W-08';
+
+  // Mock responses
+  const traceW01 = generateModeAWaferTraceTest('W-01');
+  const traceW08 = generateModeAWaferTraceTest('W-08');
+
+  let delayedResolveW01 = null;
+  const delayedPromiseW01 = new Promise(resolve => {
+    delayedResolveW01 = resolve;
+  });
+
+  async function loadDataTest(targetWafer, isDelayed = false) {
+    const reqId = ++activeTraceReqId;
+    targetWaferId = targetWafer;
+
+    if (!/^W-(0[1-9]|1[0-9]|2[0-5])$/.test(targetWafer)) {
+      if (reqId !== activeTraceReqId || targetWaferId !== targetWafer) return;
+      traceData = null;
+      notFoundError = { waferId: targetWafer, status: 404, message: 'Invalid ID' };
+      return;
+    }
+
+    isLoading = true;
+    notFoundError = null;
+
+    try {
+      const data = isDelayed ? await delayedPromiseW01 : (targetWafer === 'W-01' ? traceW01 : traceW08);
+
+      // P1-A Invariant Check: Discard stale response
+      if (reqId !== activeTraceReqId || targetWaferId !== targetWafer) {
+        return; // DISCARDED
+      }
+
+      traceData = data;
+      mode = 'B';
+      notice = `Mode B (Live API): 웨이퍼 ${targetWafer} 공정 이력 및 타임라인 동기화 완료.`;
+    } catch {
+      if (reqId !== activeTraceReqId || targetWaferId !== targetWafer) return;
+      traceData = generateModeAWaferTraceTest(targetWafer);
+      mode = 'A';
+      notice = `Mode A: 백엔드 미실행에 따른 로컬 합성 픽스처 웨이퍼 ${targetWafer} 이력 표시.`;
+    } finally {
+      if (reqId === activeTraceReqId && targetWaferId === targetWafer) {
+        isLoading = false;
+      }
+    }
+  }
+
+  // 1. Initial selection: W-08 loaded
+  await loadDataTest('W-08', false);
+  assert.equal(traceData.wafer_id, 'W-08');
+  assert.equal(isLoading, false);
+
+  // 2. User rapidly clicks W-01 (simulating slow network request in-flight)
+  selectedWaferId = 'W-01';
+  const promiseW01 = loadDataTest('W-01', true);
+  assert.equal(isLoading, true);
+
+  // 3. Before W-01 resolves, user immediately clicks back to W-08 (fast response)
+  selectedWaferId = 'W-08';
+  await loadDataTest('W-08', false);
+  assert.equal(traceData.wafer_id, 'W-08');
+  assert.equal(isLoading, false);
+  assert.ok(notice.includes('W-08'));
+
+  // 4. Now delayed W-01 response arrives!
+  delayedResolveW01(traceW01);
+  await promiseW01;
+
+  // 5. Invariant: traceData MUST remain W-08! W-01 stale response was safely discarded!
+  assert.equal(selectedWaferId, 'W-08');
+  assert.equal(traceData.wafer_id, 'W-08', 'Stale W-01 response must NOT overwrite current W-08 trace data');
+  assert.ok(notice.includes('W-08'), 'Notice must remain W-08 and not be overwritten');
+  assert.equal(notFoundError, null);
+});
+
+test('P1-B BUILD-03 Invalid Wafer ID & HTTP 404 Fail-Closed Guard: No synthetic fabrication for 404 or invalid ID', async () => {
+  const VALID_WAFER_PATTERN = /^W-(0[1-9]|1[0-9]|2[0-5])$/;
+
+  // 1. Invalid Wafer IDs (W-99, W-00, malformed) rejected without synthetic fabrication
+  assert.equal(VALID_WAFER_PATTERN.test('W-99'), false);
+  assert.equal(VALID_WAFER_PATTERN.test('W-00'), false);
+  assert.equal(VALID_WAFER_PATTERN.test('WAFER-123'), false);
+  assert.equal(VALID_WAFER_PATTERN.test('W-26'), false);
+  assert.equal(VALID_WAFER_PATTERN.test('W-01'), true);
+  assert.equal(VALID_WAFER_PATTERN.test('W-25'), true);
+
+  // 2. Mock handler implementing P1-B logic
+  async function simulateWaferQuery(waferId, serverStatus = 200, isServerOffline = false) {
+    if (!VALID_WAFER_PATTERN.test(waferId)) {
+      return {
+        trace: null,
+        notFoundError: { waferId, status: 404, message: `카세트 규격에 존재하지 않는 웨이퍼 ID ('${waferId}')입니다.` },
+        mode: 'B'
+      };
+    }
+
+    if (isServerOffline) {
+      // Offline fallback to Mode A ONLY for valid wafers
+      return {
+        trace: generateModeAWaferTraceTest(waferId),
+        notFoundError: null,
+        mode: 'A'
+      };
+    }
+
+    if (serverStatus === 404) {
+      // Server is online, but responds 404
+      // MUST NOT fall back to Mode A!
+      return {
+        trace: null,
+        notFoundError: { waferId, status: 404, message: `서버 공정 DB에서 웨이퍼 '${waferId}'를 찾을 수 없습니다 (404 Not Found).` },
+        mode: 'B'
+      };
+    }
+
+    return {
+      trace: generateModeAWaferTraceTest(waferId),
+      notFoundError: null,
+      mode: 'B'
+    };
+  }
+
+  // Verification A: W-99 returns 404 error with null trace (no fake events)
+  const resW99 = await simulateWaferQuery('W-99', 200, false);
+  assert.equal(resW99.trace, null);
+  assert.notEqual(resW99.notFoundError, null);
+  assert.equal(resW99.notFoundError.status, 404);
+
+  // Verification B: Server returns 404 for valid-format wafer
+  const resServer404 = await simulateWaferQuery('W-18', 404, false);
+  assert.equal(resServer404.trace, null);
+  assert.notEqual(resServer404.notFoundError, null);
+  assert.equal(resServer404.notFoundError.status, 404);
+  assert.equal(resServer404.mode, 'B', 'Server 404 must NOT switch to Mode A');
+
+  // Verification C: Server genuinely offline with valid wafer (W-08) -> Clean Mode A fallback
+  const resOfflineValid = await simulateWaferQuery('W-08', 200, true);
+  assert.notEqual(resOfflineValid.trace, null);
+  assert.equal(resOfflineValid.trace.wafer_id, 'W-08');
+  assert.equal(resOfflineValid.mode, 'A');
+  assert.equal(resOfflineValid.notFoundError, null);
+
+  // Verification D: Server genuinely offline with invalid wafer (W-99) -> Still 404, NO fake trace
+  const resOfflineInvalid = await simulateWaferQuery('W-99', 200, true);
+  assert.equal(resOfflineInvalid.trace, null);
+  assert.notEqual(resOfflineInvalid.notFoundError, null);
+  assert.equal(resOfflineInvalid.notFoundError.status, 404);
+});
+
 

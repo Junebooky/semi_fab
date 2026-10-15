@@ -1,3 +1,4 @@
+import re
 import uuid
 from contextlib import asynccontextmanager
 from typing import List, Optional
@@ -340,6 +341,12 @@ def get_wafer_trace(wafer_id: str, run_id: Optional[str] = Query(default=None)):
     Guarantees strict binding with run, equipment, chamber, recipe, and related FDC excursion alert.
     All data is clearly tagged with data_origin: 'synthetic'.
     """
+    if not re.match(r"^W-(0[1-9]|1[0-9]|2[0-5])$", wafer_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Wafer '{wafer_id}' not found. Valid cassette range is W-01 through W-25."
+        )
+
     with db_session() as conn:
         if run_id:
             run = conn.execute(
