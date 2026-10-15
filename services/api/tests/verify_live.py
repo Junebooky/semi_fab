@@ -37,7 +37,7 @@ def verify():
         print(f"[PASS] Alerts count: {len(alerts)}")
         assert len(alerts) >= 1
         al = alerts[0]
-        assert al['alert_id'] == 'AL-DEMO-001'
+        assert 'AL-DEMO-001' in al['alert_id']
         assert al['candidate_lot'] == 'LOT-DEMO-801'
         assert 'W-08' in al['candidate_wafers']
 
@@ -58,6 +58,20 @@ def verify():
         print(f"[PASS] Seek Anomaly: status={seek['status']}, step={seek['step_index']}, alert={seek['alert_id']}")
         assert seek['status'] == 'anomaly_focused'
         assert seek['step_index'] == 7
+
+    # 6-1. Repeated Start Run with same seed (P0 regression check on live server)
+    payload = json.dumps({"seed": 20261015, "scenario_id": "ETH-SYN-01", "equipment_id": "ETCH-02", "chamber_id": "CH-B"}).encode('utf-8')
+    req_run1 = urllib.request.Request(f"{base_url}/api/v1/demo/runs", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req_run1) as res:
+        r1 = json.loads(res.read().decode())
+        assert res.status == 201
+
+    req_run2 = urllib.request.Request(f"{base_url}/api/v1/demo/runs", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req_run2) as res:
+        r2 = json.loads(res.read().decode())
+        assert res.status == 201
+        assert r1["active_run_id"] != r2["active_run_id"]
+        print(f"[PASS] Repeated start with same seed succeeds: run1={r1['active_run_id']}, run2={r2['active_run_id']}")
 
     # 7. Frontend check
     with urllib.request.urlopen("http://localhost:3000") as res:

@@ -3,11 +3,16 @@ import uuid
 from typing import Dict, Any, List
 from datetime import datetime, timezone, timedelta
 
-def generate_etch_demo_dataset(seed: int = 20261015, scenario_id: str = "ETH-SYN-01") -> Dict[str, Any]:
+def generate_etch_demo_dataset(
+    seed: int = 20261015,
+    scenario_id: str = "ETH-SYN-01",
+    run_suffix: str | None = None
+) -> Dict[str, Any]:
     rng = random.Random(seed)
     
-    session_id = f"SES-{scenario_id}-{seed}"
-    run_id = f"RUN-DEMO-044-{seed % 1000:03d}"
+    suffix_part = f"-{run_suffix}" if run_suffix else ""
+    session_id = f"SES-{scenario_id}-{seed}{suffix_part}"
+    run_id = f"RUN-DEMO-044-{seed % 1000:03d}{suffix_part}"
     lot_id = f"LOT-DEMO-801"
     recipe_id = "RECIPE-OXIDE-ETCH-V4"
     equipment_id = "ETCH-02"
@@ -155,7 +160,7 @@ def generate_etch_demo_dataset(seed: int = 20261015, scenario_id: str = "ETH-SYN
     anomaly_time_iso = (base_time + timedelta(seconds=7 * 15)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     alerts = [
         {
-            "alert_id": "AL-DEMO-001",
+            "alert_id": f"AL-DEMO-001{suffix_part}",
             "session_id": session_id,
             "run_id": run_id,
             "equipment_id": equipment_id,
@@ -169,7 +174,7 @@ def generate_etch_demo_dataset(seed: int = 20261015, scenario_id: str = "ETH-SYN
             "candidate_wafers": ["W-08", "W-09", "W-10", "W-11", "W-12"]
         },
         {
-            "alert_id": "AL-DEMO-002",
+            "alert_id": f"AL-DEMO-002{suffix_part}",
             "session_id": session_id,
             "run_id": None,
             "equipment_id": "ETCH-01",
