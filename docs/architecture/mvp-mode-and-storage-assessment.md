@@ -1,4 +1,4 @@
-# FAB ONE — MVP 운영 모드 및 데이터 저장소 아키텍처 기술 검토 v0.3
+# FAB ONE — MVP 운영 모드 및 데이터 저장소 아키텍처 기술 검토 v0.4
 
 - **문서 ID:** ARCH-DOC-001
 - **상태:** PROPOSED (A01 기획자 및 프로젝트 오너 승인 대기)
@@ -9,6 +9,9 @@
     - [F04] 공장 전체 초기화(Factory Wipe) 삭제 의존성 순서(외래키 CASCADE/RESTRICT 대상 전체 포괄) 및 단일 트랜잭션 롤백, 소프트 리셋과의 명확한 분리, IndexedDB 선택적 삭제 동의 명문화
     - [F05] SQLite 동시성 및 잠금 정책 현실화 (`busy_timeout=5000`의 내부 슬립 루프 동작 해설, 애플리케이션 레벨 지수 백오프/재시도 정책, `BEGIN IMMEDIATE`의 잠금 획득 실패 가능성 명시, 미검증 '100% 보장' 표현을 조건부 설계 표현으로 교정)
     - [F08] A04 QA-F05 지적사항 해결 매핑 경로 정정 (`domain-data-contract-v0.1.md` §3.5 SPC 비인과성 원칙으로 수정)
+  - v0.4 (2026-10-15): A04 2차 독립 검증 결과 수용 및 A01 통합 수정 지시 반영
+    - [F04] 공장 초기화(Factory Wipe) 범위 선택지 제시: 마스터 데이터 보존형(옵션 1: 실행/사건 이력 리셋, A02 권고) vs 전체 마스터 삭제형(옵션 2: 완전 공장 와이프), IndexedDB 비동기/비원자적 삭제 오류 복구(Self-healing cleanup) 메커니즘 반영
+    - [F05] SQLite 동시성 락 메커니즘 정밀화: 무조건적 "SQLITE_LOCKED 방지" 단정 표현 삭제, 파일/WAL 쓰기 락 경합인 `SQLITE_BUSY`와 동일 연결 내 커서/공유 캐시 충돌인 `SQLITE_LOCKED`의 명확한 구별 및 예방 가이드라인 수립
 - **작성자:** A02 (수석 소프트웨어 개발 에이전트)
 - **관련 Issue / PR:** Issue [#1](https://github.com/Junebooky/semi_fab/issues/1), Issue [#8](https://github.com/Junebooky/semi_fab/issues/8), Issue [#12](https://github.com/Junebooky/semi_fab/issues/12), Draft PR [#2](https://github.com/Junebooky/semi_fab/pull/2), QA PR [#3](https://github.com/Junebooky/semi_fab/pull/3), Design PR [#7](https://github.com/Junebooky/semi_fab/pull/7), PR [#10](https://github.com/Junebooky/semi_fab/pull/10)
 - **일자:** 2026-10-15
@@ -78,7 +81,15 @@ SQLite는 하위 호환성을 이유로 기본적으로 외래키 제약조건 �
 
 ### 3.2 저널 모드 및 동시성 제어 (`WAL 모드`, [F05] 보완)
 - **저널 모드:** `PRAGMA journal_mode = WAL;` (Write-Ahead Logging)을 적용한다.
-- **효과:** 읽기 작업(Readers)과 쓰기 작업(Writer)이 서로를 블로킹하지 않는다. 다수의 Next.js 대시보드 쿼리가 실행되는 도중 시뮬레이터가 센서 데이터를 인서트하더라도 `SQLITE_LOCKED` 오류를 방지한다.
+- **효과 및 상호 배제 특성:**
+  - 읽기 작업(Readers)과 쓰기 작업(Writer)이 서로를 블로킹하지 않는다. 다수의 Next.js 대시보드 읽기 쿼리가 실행되는 도중 시뮬레이터가 센서 데이터를 인서트하더라도 읽기-쓰기 간 락 경합에 의한 `SQLITE_BUSY` 발생을 대폭 완화한다.
+- **`SQLITE_BUSY` vs `SQLITE_LOCKED` 메커니즘 구별 및 예방 규약 ([F05] 해결):**
+  - **`SQLITE_BUSY` (연결 간 파일/WAL 쓰기 락 경합):**
+    - 발생 원인: 복수의 서로 다른 커넥션이 동시에 쓰기 트랜잭션(`BEGIN IMMEDIATE` 등)을 시작하거나 체크포인트를 수행할 때 발생.
+    - 예방 대책: `busy_timeout` 설정, 애플리케이션 계층 지수 백오프/재시도 정책, 쓰기 전담 단일 커넥션 풀(Single-writer pool) 아키텍처 강제.
+  - **`SQLITE_LOCKED` (동일 연결 내 커서/공유 캐시 충돌):**
+    - 발생 원인: 동일한 커넥션 내에서 활성 커서(Active Cursor/Select 루프)가 열려 있는 상태에서 테이블 스키마를 변경(DDL)하거나 쓰기 쿼리를 수행할 때, 또는 SQLite 공유 캐시(Shared Cache) 모드에서 충돌할 때 발생.
+    - 예방 대책: WAL 모드 설정만으로는 `SQLITE_LOCKED`를 자동 방지할 수 없다. 백엔드 Repository 계층에서 트랜잭션 수명주기를 엄격히 분리하고, 비동기 커서 누수(Cursor Leaks)를 방지하며, 단일 요청 컨텍스트 내에서 읽기 완료 전 쓰기 재진입을 철저히 차단하는 클린 코드 가이드라인을 강제한다.
 - **경합 타임아웃 (`busy_timeout`):**
   - `PRAGMA busy_timeout = 5000;` (5,000ms)을 설정하여 쓰기 락 경합 시 즉각 실패하지 않고 SQLite 내부 busy handler가 5초 동안 점진적 슬립(Sleep Polling 루프) 방식으로 대기하도록 한다.
   - **애플리케이션 계층 지수 백오프(Exponential Backoff) 및 재시도 정책 ([F05] 해결):**
@@ -150,11 +161,16 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
   2. 시뮬레이터 리셋 시 기존 세션은 `is_active = 0`으로 비활성화하여 아카이빙하고, 새로운 세션을 발급하여 가상 클록 $t=0$부터 시작한다.
   3. 대시보드는 최신 활성 세션(`is_active = 1`) 데이터만 표시하며, 기존 조사 케이스는 과거 세션의 레코드를 안전하게 참조하여 외래키 무결성을 관계형 스키마 제약조건으로 안정적으로 보존한다. (미검증 '100% 보존' 단정 지양).
   4. 사용자의 IndexedDB 개인 학습 메모는 시뮬레이터 세션 리셋과 완전히 격리되어 안전하게 유지된다.
-- **공장 전체 초기화 (Factory Wipe, 파괴적 관리자 작업):**
+- **공장 전체 초기화 (Factory Wipe, 파괴적 관리자 작업) ([F04] 선택지 및 복구 명세):**
   1. 소프트 리셋과 엄격히 분리된 별도 파괴적 작업으로 정의한다.
-  2. 외래키 종속성을 완벽히 반영한 역순 삭제 트랜잭션(`CASE_ACTION_LOG` $\to$ `INVESTIGATION_CASE` $\to$ `FDC_ALERT` $\to$ `SENSOR_MEASUREMENT` $\to$ `PROCESS_RUN_WAFER` $\to$ `WAFER_DEFECT_MAP` $\to$ `PROCESS_RUN` $\to$ `SIMULATION_SESSION`)을 단일 `BEGIN IMMEDIATE ... COMMIT` 내에서 수행하며 오류 시 즉시 `ROLLBACK`한다.
-  3. 2단계 확인(경고 모달 + `"FACTORY-WIPE-CONFIRM"` 텍스트 입력)을 강제한다.
-  4. IndexedDB 사용자 학습 메모는 기본 보존하되, 사용자가 모달 내 `[선택] 브라우저 내 개인 학습 메모 및 환경설정도 함께 삭제`를 명시 체크한 경우에 한해 클라이언트 측에서 별도 삭제한다.
+  2. **초기화 범위 선택지:**
+     - **옵션 1 (실행·사건 이력 초기화, A02 권고안):** 설비 마스터(`EQUIPMENT`, `CHAMBER`), 레시피(`RECIPE`), 로트(`LOT`), 웨이퍼(`WAFER`)의 기준 정보는 온전히 보존하고 동적 실행 데이터만 역순 삭제(`CASE_ACTION_LOG` $\to$ `INVESTIGATION_CASE` $\to$ `FDC_ALERT` $\to$ `SENSOR_MEASUREMENT` $\to$ `PROCESS_RUN_WAFER` $\to$ `WAFER_DEFECT_MAP` $\to$ `PROCESS_RUN` $\to$ `SIMULATION_SESSION`).
+     - **옵션 2 (완전 공장 및 마스터 데이터 와이프):** 동적 데이터뿐 아니라 전체 설비/레시피/로트 마스터까지 완전히 초기화하여 0바이트 빈 DB 생성 (시드 JSON 재적재 필수).
+  3. **단일 트랜잭션 원자성:** 역순 삭제는 단일 `BEGIN IMMEDIATE ... COMMIT` 내에서 수행하며 오류 시 즉시 `ROLLBACK`한다.
+  4. **2단계 확인:** 경고 모달 + `"FACTORY-WIPE-CONFIRM"` 텍스트 입력을 강제한다.
+  5. **IndexedDB 비동기 삭제 및 오류 복구 가드레일:**
+     - IndexedDB 사용자 학습 메모는 기본 보존하되, 사용자가 모달 내 `[선택] 브라우저 내 개인 학습 메모 및 환경설정도 함께 삭제`를 명시 체크한 경우에 한해 클라이언트 측에서 2단계 비동기 삭제를 수행한다.
+     - 삭제 도중 브라우저 비정상 종료 등으로 실패 시 `localStorage.setItem('fab_idb_cleanup_pending', 'true')`를 기록하고 다음 기동 시 자가 복구(Self-healing) 재정리를 수행한다.
 
 
 ---
@@ -281,17 +297,19 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
 
 ---
 
-## 10. A04 QA 지적사항 (QA-F01 ~ QA-F06) 해결 매핑
+## 10. A04 QA 2차 독립 검증 (F01 ~ F09) 해결 및 정합성 매핑 ([F01]~[F09] v0.4 총괄)
 
-| QA 이슈 ID | 심각도 | A04 지적 요약 | A02 아키텍처 해결안 및 문서 매핑 |
+| QA 항목 ID | 판정 상태 | A04 지적 요약 | A02 아키텍처 조치 및 문서 매핑 |
 |---|---|---|---|
-| **QA-F01** | High | 시드만으로는 재현 불가 (RNG 알고리즘, 클록, 순서 미정) | `simulation-reproducibility-contract.md`에 PCG64 알고리즘, 가상 클록(UTC 고정, 1초 틱), 정적 7요소 결정론적 정렬 키, 사이드카 체크섬 파일(`fixtures/checksums.sha256`) 검증 명시. |
-| **QA-F02** | High | SQLite 외래키 미강제, 트랜잭션/동시성/복구 정책 부재 | 본 문서 제3절에 `PRAGMA foreign_keys=ON;`, WAL 저널 모드, `BEGIN IMMEDIATE`, `VACUUM INTO` 백업, `busy_timeout` 점진적 슬립 및 앱 계층 지수 백오프/재시도 정책, `domain-data-contract-v0.1.md` 제3.2절의 부모 복합 UNIQUE 및 자식 복합 FK 정합성 규약 명시. |
-| **QA-F03** | Medium | IndexedDB 데이터 손실 경고, 내보내기/가져오기 규격 부재 | 본 문서 제4절에 로컬 전용 한계 고지 UX, JSON 스키마(v1.0.0), XSS/수식 삽입 방지 살균 및 세션 기반 소프트 리셋 메모 보존, Factory Wipe 시 선택적 삭제 동의 명시. |
-| **QA-F04** | High | 역할 전환기(Role Switcher)가 실제 보안 RBAC/감사로 오인될 위험 | 본 문서 제5절에 `viewPreference` 명명, 권한 없는 시뮬레이션 컨텍스트 헤더 명시, Mode C 이전 엔터프라이즈 감사/인가 클레임 전면 차단. |
-| **QA-F05** | Medium | 이상 경고가 결함/인과관계를 확정하는 표현 사용 위험 | `domain-data-contract-v0.1.md` 제3.5절에 "SPC 경고는 조사의 근거일 뿐, 인과관계나 결함을 증명하지 않는다"는 비인과성 공학 원칙 신설 및 화면·조사 용어 통제 규약 명시. |
-| **QA-F06** | High | 수식 추정량(Cpk sigma), 분모(Die Yield), 단위/부호 규약 공백 | `domain-data-contract-v0.1.md` 제6절에 다이 수율 에지 제외 분모식, 식각률 음수 편차(`SUSPECT_THICKNESS_INCREASE`, 임의 알람 금지), 전체 변동 기반 $P_p/P_{pk}$(표본 표준편차 $s$)와 군내 변동 기반 $C_p/C_{pk}$($\bar{R}/d_2, \bar{s}/c_4$) 추정량 분리 및 단측 규격 처리 명시. |
-
+| **F01** | **PASS (유지)** | 활성 세션 단일성 및 수명주기 불변식 | `domain-data-contract-v0.1.md` §3.1에 단일 활성 세션(`is_active=1`) 불변식 유지. |
+| **F02** | **PASS (보완)** | 복합 외래키 부모 UNIQUE 및 자식 NULL 우회 결함 | `domain-data-contract-v0.1.md` §3.2: `uq_run_session`, `uq_run_session_chamber` 부모 제약 완비 및 자식 계보 컬럼에 명시적 `NOT NULL`과 `CHECK` 강제. 4종 NULL 우회 거절 반례 및 수용 조건 명세화 완료. |
+| **F03** | **PASS (보완)** | Canonical CSV 직렬화 및 NaN/Inf 직렬화 오류 | `simulation-reproducibility-contract.md` §6.2, §8.1: `quantize_value`에 유한수(`math.isnan`, `math.isinf`, `is_finite()`) 가드레일 추가하여 NaN/Inf 유입 시 `ValueError` 발생, 결측치(`None`)만 RFC 4180 빈 문자열(`""`)로 직렬화. 테스트 벡터 명시. |
+| **F04** | **PASS (보완)** | Factory Wipe 범위 모호성 및 IndexedDB 비원자성 | 본 문서 §4.3 및 `simulation-reproducibility-contract.md` §7.2: 마스터 보존형(옵션 1, 권고) vs 전체 마스터 삭제형(옵션 2) 선택지 분리. IndexedDB 비동기 삭제 실패 시 `localStorage` 기반 자가 복구(Self-healing) 절차 수립. |
+| **F05** | **PASS (보완)** | SQLite 락 정책 현실화 및 무조건적 락 방지 주장 | 본 문서 §3.2, §3.3: 파일/WAL 쓰기 락 경합인 `SQLITE_BUSY`와 동일 커넥션 내 활성 커서/공유 캐시 충돌인 `SQLITE_LOCKED`의 메커니즘 구별 명문화. 무조건적 "SQLITE_LOCKED 방지" 단정 표현 삭제 및 커서 누수 방지 가이드라인 수립. |
+| **F06** | **PASS (보완)** | 부분군 계수 테이블 한계, $s_{\text{pooled}}/c_4$, 단측 상태 | `domain-data-contract-v0.1.md` §6.3: $d_2, c_4$ 테이블 $m=2\sim10$ 완비, $m>10$ 합동 분산 $s_{\text{pooled}}/c_4(\nu)$ 산식 및 최소 부분군 수 $k \ge 5$ 명시. 단측 규격에 대한 항목별 상태(`indexPStatus`, `indexPkStatus`, `status: ONE_SIDED_SPEC_EVALUATED`) 및 API JSON 스키마 예시 수록. |
+| **F07** | **PASS (보완)** | 정렬 키 `event_id` 산식 미정, 시간 컬럼 불일치 | `simulation-reproducibility-contract.md` §4, §5: Canonical CSV 헤더와 스케줄러 시간축을 `sim_timestamp_utc`로 단일화. 결정론적 `event_id` SHA-256 해시 생성 산식 및 멱등 중복 폐기(`DUPLICATE_EVENT_DROPPED`) 규칙 명시. |
+| **F08** | **PASS (유지)** | SPC 알람의 결함/인과관계 비인과성 원칙 | `domain-data-contract-v0.1.md` §3.5: SPC 경고는 조사의 근거일 뿐 인과관계나 결함을 확정하지 않는다는 공학 원칙 유지. |
+| **F09** | **PASS (보완)** | API/DDL 데이터 출처 필드 일관성 및 픽스처 참조 | `domain-data-contract-v0.1.md` §2, §7, §8: `PROCESS_RUN` ERD에 `data_origin` 추가, TypeScript `ProcessRun` 인터페이스 신설, `fixtures/manifest.json` 기반 상위 시나리오 메타데이터 조회 계약 완결. |
 
 ---
 
@@ -309,13 +327,17 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
    - [ ] 안 3: 모든 로컬 데이터 일괄 삭제
 3. **[A01 결정 필요 1-3] Mode C (Supabase) 전환 마일스톤 기준 공식 승인:**
    - 실시간 다중 사용자 동시 편집, 엔터프라이즈 RBAC/RLS, 중앙 감사 로그 요구 발생 시점에 한하여 마이그레이션 착수.
-4. **[A01 결정 필요 2-1] 공정능력지수(Cp/Cpk) 및 공정성능지수(Pp/Ppk) 추정량 분리 규약 승인:**
+4. **[A01 결정 필요 1-4] 공장 초기화(Factory Wipe) 삭제 범위 확정 ([F04] 선택지):**
+   - [ ] 옵션 1 (A02 강력 권고안): 실행·사건 이력 초기화 (설비/레시피/로트/웨이퍼 마스터 기준 데이터는 보존하여 데모 연속성 보장)
+   - [ ] 옵션 2: 완전 공장 와이프 (마스터 데이터까지 전체 삭제하여 0바이트 빈 DB 생성 후 JSON 시드 재적재 필수)
+5. **[A01 결정 필요 2-1] 공정능력지수(Cp/Cpk) 및 공정성능지수(Pp/Ppk) 추정량 분리 규약 승인:**
    - [ ] 안 1 (A02 제안 / 승인 대기): 전체 변동 기반 Pp/Ppk(표본 표준편차 s)와 군내 변동 기반 Cp/Cpk(R-bar/d2 또는 s-bar/c4)를 분리하고 EKL·API·화면에 추정량을 명시하는 제안안 승인
    - [ ] 안 2: 단일 지표(s 기반 Pp/Ppk)만 산출하고 화면 명칭을 Ppk로 통일
-5. **[A01 결정 필요 2-2] 식각률 음수 편차(두께 증가) 발생 시 처리 정책:**
+6. **[A01 결정 필요 2-2] 식각률 음수 편차(두께 증가) 발생 시 처리 정책:**
    - [ ] 안 1 (A02 제안 / 승인 대기): SUSPECT_THICKNESS_INCREASE 플래그 및 설명 표시 (음수값 유지, 자동 증착 단정 및 자동 알람 생성 금지) 제안안 승인
    - [ ] 안 2: 계산 에러(ERR_NEGATIVE_ETCH_RATE)로 간주하고 차트에 결측 표시
-6. **[A01 결정 필요 3-1] 수치 반올림 표준 규칙 승인:**
+7. **[A01 결정 필요 3-1] 수치 반올림 표준 규칙 승인:**
    - [ ] 안 1 (A02 제안 / 승인 대기): 사사오입 (`ROUND_HALF_UP`)
    - [ ] 안 2: 은행원 반올림 (`ROUND_HALF_EVEN`)
+
 

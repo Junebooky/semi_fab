@@ -1,16 +1,20 @@
-# FAB ONE — 반도체 도메인 데이터 계약 및 공학 계산 명세서 v0.3
+# FAB ONE — 반도체 도메인 데이터 계약 및 공학 계산 명세서 v0.4
 
 - **문서 ID:** ARCH-DOC-002
 - **상태:** PROPOSED (A01 기획자 및 프로젝트 오너 승인 대기)
 - **개정 이력:**
   - v0.1 (2026-10-15): 초안 작성
   - v0.2 (2026-10-15): A01 검토의견 반영 (Cpk/Ppk 분리, Wafer-Run 계보)
-  - v0.3 (2026-10-15): A04 독립 검증 결과 수용 및 A01 수정 지시 반영
-    - [F01] 활성 세션 수명주기 불변식(초기 0개 허용, 서비스 가동 중 정확히 1개, 원자적 인계) 명문화
-    - [F02] 복합 외래키(Composite FK) SQLite 무결성 보완: 부모 PROCESS_RUN에 UNIQUE(run_id, session_id) 추가하여 foreign key mismatch 해결, PROCESS_RUN_WAFER 세션 일치 FK 강제, 정상/잘못된 세션/교차 Lot 삽입 수용 조건 명시
-    - [F06] 단측 규격(One-Sided Spec) 처리, 부분군 계수($d_2, c_4$) 참조표, Die Yield 분모 0 시 반환 타입 고정, 수치 벤치마크 수록
-    - [F08] SPC 이상 경고의 비인과성 공학 원칙 독립 섹션(§3.5) 신설 및 인용 경로 확정
-    - [F09] API/TypeScript 계약 필드명 통일(`capabilityType`, `sigmaEstimator`), Freshness 최초/역전 경계 정의, 전 엔티티 `dataOrigin` 명시
+  - v0.3 (2026-10-15): A04 1차 독립 검증 결과 수용 및 A01 수정 지시 반영
+    - [F01] 활성 세션 수명주기 불변식 명문화
+    - [F02] 복합 외래키 부모 UNIQUE(run_id, session_id) 추가
+    - [F06] 단측 규격 처리, 부분군 계수($d_2, c_4$) 참조표, Die Yield 분모 0 시 반환 타입 고정
+    - [F08] SPC 이상 경고의 비인과성 공학 원칙 독립 섹션(§3.5) 신설
+    - [F09] API/TypeScript 계약 필드명 통일(`capabilityType`, `sigmaEstimator`)
+  - v0.4 (2026-10-15): A04 2차 독립 검증 결과 수용 및 A01 통합 수정 지시 반영
+    - [F02] SQLite 복합 FK NULL 면제 우회 차단: 계보 자식 컬럼에 명시적 `NOT NULL` 및 `CHECK` 제약조건 강제, 4종 NULL 우회 거절 반례 및 수용 조건 명세화
+    - [F06] 부분군 계수($d_2, c_4$) $m=2\sim10$ 전체 수록, $m \ge 10$ 합동 분산($s_{\text{pooled}}/c_4$) 및 최소 부분군 수($k \ge 5$) 명시, 단측 규격 결과의 항목별 상태(`indexPStatus`, `indexPkStatus`) 분리 및 API 응답 JSON 예시 제공
+    - [F09] `PROCESS_RUN` ERD에 `data_origin` 컬럼 추가, TypeScript `ProcessRun` 인터페이스 신설 및 `fixtures/manifest.json` 기반 상위 시나리오 메타데이터 조회 계약 명시
 - **작성자:** A02 (수석 소프트웨어 개발 에이전트)
 - **관련 Issue / PR:** Issue [#1](https://github.com/Junebooky/semi_fab/issues/1), Issue [#8](https://github.com/Junebooky/semi_fab/issues/8), Issue [#12](https://github.com/Junebooky/semi_fab/issues/12), Draft PR [#2](https://github.com/Junebooky/semi_fab/pull/2), QA PR [#3](https://github.com/Junebooky/semi_fab/pull/3), Design PR [#7](https://github.com/Junebooky/semi_fab/pull/7), PR [#10](https://github.com/Junebooky/semi_fab/pull/10)
 
@@ -87,65 +91,66 @@ erDiagram
 
     WAFER {
         string wafer_id PK "예: W-LOT-001-01"
-        string lot_id FK "UNIQUE(wafer_id, lot_id)"
-        int slot_number "1~25"
+        string lot_id FK "NOT NULL, UNIQUE(wafer_id, lot_id)"
+        int slot_number "NOT NULL, 1~25"
         string notch_orientation "BOTTOM | LEFT"
         float diameter_mm "300.0"
     }
 
     PROCESS_RUN {
         string run_id PK "예: RUN-SYN-044"
-        string session_id FK "UNIQUE(run_id, session_id)"
-        string chamber_id FK
-        string recipe_id FK
-        string lot_id FK "UNIQUE(run_id, lot_id)"
-        string start_time_utc
+        string session_id FK "NOT NULL, UNIQUE(run_id, session_id)"
+        string chamber_id FK "NOT NULL"
+        string recipe_id FK "NOT NULL"
+        string lot_id FK "NOT NULL, UNIQUE(run_id, lot_id)"
+        string data_origin "NOT NULL, synthetic | public_research | live"
+        string start_time_utc "NOT NULL"
         string end_time_utc
-        string run_status "COMPLETED | ABORTED | IN_PROGRESS"
+        string run_status "NOT NULL, COMPLETED | ABORTED | IN_PROGRESS"
     }
 
     PROCESS_RUN_WAFER {
         string run_wafer_id PK "UUID"
-        string session_id FK "Composite FK: (run_id, session_id)"
-        string run_id FK
-        string wafer_id FK "Composite FK: (wafer_id, lot_id)"
-        string lot_id FK "Composite FK: (run_id, lot_id)"
-        int slot_number "1~25"
-        int wafer_sequence_in_run "1~25 (가공 순서)"
+        string session_id FK "NOT NULL, Composite FK: (run_id, session_id)"
+        string run_id FK "NOT NULL"
+        string wafer_id FK "NOT NULL, Composite FK: (wafer_id, lot_id)"
+        string lot_id FK "NOT NULL, Composite FK: (run_id, lot_id)"
+        int slot_number "NOT NULL, 1~25"
+        int wafer_sequence_in_run "NOT NULL, 1~25 (가공 순서)"
         string exposure_start_time_utc
         string exposure_end_time_utc
-        string exposure_status "CONFIRMED_EXPOSED | CANDIDATE_EXPOSED | NOT_EXPOSED | BYPASSED | UNKNOWN"
+        string exposure_status "NOT NULL, CONFIRMED_EXPOSED | CANDIDATE_EXPOSED | NOT_EXPOSED | BYPASSED | UNKNOWN"
     }
 
     SENSOR_MEASUREMENT {
         string measurement_id PK "UUID"
-        string session_id FK
-        string run_id FK
-        string sensor_id "CHAMBER_PRESSURE"
-        float measured_value "NULL 허용 (MISSING)"
-        string unit "mTorr"
-        string quality_flag "GOOD | SUSPECT | BAD | MISSING"
-        string data_origin "synthetic | public_research | live"
-        string event_time_utc "물리 계측 시각"
-        string ingest_time_utc "DB 영속화 시각"
-        string sim_time_utc "시뮬레이션 클록 시각"
+        string session_id FK "NOT NULL, Composite FK: (run_id, session_id)"
+        string run_id FK "NOT NULL"
+        string sensor_id "NOT NULL, CHAMBER_PRESSURE"
+        float measured_value "NULL 허용 (실제 센서 MISSING 결측치)"
+        string unit "NOT NULL, mTorr"
+        string quality_flag "NOT NULL, GOOD | SUSPECT | BAD | MISSING"
+        string data_origin "NOT NULL, synthetic | public_research | live"
+        string event_time_utc "NOT NULL, 물리 계측 시각"
+        string ingest_time_utc "NOT NULL, DB 영속화 시각"
+        string sim_time_utc "NOT NULL, 시뮬레이션 클록 시각"
     }
 
     FDC_ALERT {
         string alert_id PK "예: AL-SYN-001"
-        string session_id FK
-        string run_id FK
-        string chamber_id FK
-        string rule_id "SPC-WECO-RULE-1"
-        string rule_version "1.0"
-        string severity "normal | warning | critical | unknown"
-        float observed_value
-        float threshold_value
-        string freshness "available | delayed | stale | paused | failed | loading"
-        string data_origin "synthetic | public_research | live"
-        string event_time_utc "룰 위반 발생 시각"
-        string ingest_time_utc "알람 영속화 시각"
-        string sim_time_utc "시뮬레이션 클록 시각"
+        string session_id FK "NOT NULL"
+        string run_id FK "NOT NULL"
+        string chamber_id FK "NOT NULL, Composite FK: (run_id, session_id, chamber_id)"
+        string rule_id "NOT NULL, SPC-WECO-RULE-1"
+        string rule_version "NOT NULL, 1.0"
+        string severity "NOT NULL, normal | warning | critical | unknown"
+        float observed_value "NOT NULL"
+        float threshold_value "NOT NULL"
+        string freshness "NOT NULL, available | delayed | stale | paused | failed | loading"
+        string data_origin "NOT NULL, synthetic | public_research | live"
+        string event_time_utc "NOT NULL, 룰 위반 발생 시각"
+        string ingest_time_utc "NOT NULL, 알람 영속화 시각"
+        string sim_time_utc "NOT NULL, 시뮬레이션 클록 시각"
     }
 
     INVESTIGATION_CASE {
@@ -168,43 +173,97 @@ erDiagram
 - 모든 기본 키(PK)는 고유하며 시스템 전역에서 유일하다.
 - 합성 데이터 식별자는 실제 FAB과의 혼동을 방지하기 위해 접두사 또는 접미사에 `SYN`을 포함할 수 있다. (예: `RUN-SYN-044`, `AL-SYN-001`)
 
-### 3.2 복합 외래키(Composite FK)를 통한 계보 정합성 및 교차 데이터 삽입 차단 ([F02] 보완)
-단순 단일 컬럼 외래키만으로는 (1) `LOT-A`에 속한 웨이퍼를 `LOT-B`가 할당된 공정 실행(`PROCESS_RUN`)에 매핑하거나, (2) `SESSION-1`에서 실행된 `PROCESS_RUN`에 속한 웨이퍼나 계측치에 `SESSION-2`의 세션 ID를 잘못 부여하는 논리적 모순을 차단할 수 없다. 또한 SQLite는 자식 복합 외래키가 참조하는 부모 컬럼에 정확히 일치하는 `UNIQUE` 제약조건(또는 PK)이 없으면 `OperationalError: foreign key mismatch`를 발생시킨다.
+### 3.2 복합 외래키(Composite FK) 및 NOT NULL 제약을 통한 계보 무결성 ([F02] 보완)
 
-이를 DB 스키마 레벨에서 원천 방지하고 정합성을 강제하기 위해 다음 **복합 유니크 제약조건 및 복합 외래키**를 강제한다:
+#### 1) SQLite 복합 외래키의 NULL 면제(NULL Exemption) 취약점과 해결 원칙
+SQLite 공식 규약([SQLite Foreign Key Support](https://www.sqlite.org/foreignkeys.html))에 따르면:
+> "자식 테이블의 복합 외래키(Composite Foreign Key) 구성 컬럼 중 **단 하나라도 `NULL`인 경우, SQLite는 외래키 제약조건 검사를 완전히 건너뛰고(skip) 제약조건이 충족된 것으로 간주**하며, `PRAGMA foreign_key_check` 역시 이를 무결성 위반으로 감지하지 못한다."
 
+이로 인해 DDL에 명시적인 `NOT NULL` 제약조건이 누락되면 다음과 같은 심각한 데이터 계보 우회가 발생한다:
+- `PROCESS_RUN_WAFER`에 `session_id = NULL` 삽입 시 `(run_id, session_id)` FK 검사가 스킵되어 부모 Run과 세션이 불일치하는 유령 레코드 발생.
+- `PROCESS_RUN_WAFER`에 `lot_id = NULL` 삽입 시 `(wafer_id, lot_id)` 및 `(run_id, lot_id)` 검사가 모두 스킵되어 교차 Lot 검증이 무력화됨.
+- `SENSOR_MEASUREMENT`에 `session_id = NULL` 삽입 시 세션 검증 스킵.
+- `FDC_ALERT`에 `chamber_id = NULL` 삽입 시 챔버 계보 검증 스킵.
+
+따라서 단순 복합 외래키 선언에 그치지 않고, 모든 계보 참조 컬럼에 **명시적 `NOT NULL`과 공백 방지 `CHECK` 제약조건**을 스키마 레벨에서 물리적으로 강제한다.
+
+#### 2) 스키마 DDL 레벨의 복합 유니크, 복합 외래키 및 NOT NULL 강제 규약
 1. **부모 테이블(`PROCESS_RUN`, `WAFER`) 복합 제약조건 설정:**
    - `WAFER`: `CONSTRAINT uq_wafer_lot UNIQUE (wafer_id, lot_id)`
    - `PROCESS_RUN`: `CONSTRAINT uq_run_session UNIQUE (run_id, session_id)` *(SENSOR_MEASUREMENT 및 PROCESS_RUN_WAFER의 2열 참조를 위한 필수 유니크 키 — foreign key mismatch 원천 방지)*
    - `PROCESS_RUN`: `CONSTRAINT uq_run_lot UNIQUE (run_id, lot_id)` *(PROCESS_RUN_WAFER의 교차 Lot 차단용)*
    - `PROCESS_RUN`: `CONSTRAINT uq_run_session_chamber UNIQUE (run_id, session_id, chamber_id)` *(FDC_ALERT의 3열 참조용)*
 
-2. **`PROCESS_RUN_WAFER` 복합 외래키 강제 (Lot 일치 및 Session 일치 동시 보장):**
+2. **자식 테이블 복합 외래키 및 NOT NULL / CHECK 제약조건:**
    ```sql
-   FOREIGN KEY (wafer_id, lot_id) REFERENCES wafer(wafer_id, lot_id) ON DELETE RESTRICT,
-   FOREIGN KEY (run_id, lot_id) REFERENCES process_run(run_id, lot_id) ON DELETE RESTRICT,
-   FOREIGN KEY (run_id, session_id) REFERENCES process_run(run_id, session_id) ON DELETE RESTRICT
+   -- PROCESS_RUN_WAFER: 세션, 공정실행, 웨이퍼, 로트 계보의 완전한 NOT NULL 및 복합 FK
+   CREATE TABLE process_run_wafer (
+       run_wafer_id TEXT PRIMARY KEY,
+       session_id TEXT NOT NULL CHECK (length(trim(session_id)) > 0),
+       run_id TEXT NOT NULL CHECK (length(trim(run_id)) > 0),
+       wafer_id TEXT NOT NULL CHECK (length(trim(wafer_id)) > 0),
+       lot_id TEXT NOT NULL CHECK (length(trim(lot_id)) > 0),
+       slot_number INTEGER NOT NULL CHECK (slot_number BETWEEN 1 AND 25),
+       wafer_sequence_in_run INTEGER NOT NULL CHECK (wafer_sequence_in_run BETWEEN 1 AND 25),
+       exposure_start_time_utc TEXT,
+       exposure_end_time_utc TEXT,
+       exposure_status TEXT NOT NULL CHECK (exposure_status IN ('CONFIRMED_EXPOSED', 'CANDIDATE_EXPOSED', 'NOT_EXPOSED', 'BYPASSED', 'UNKNOWN')),
+       FOREIGN KEY (wafer_id, lot_id) REFERENCES wafer(wafer_id, lot_id) ON DELETE RESTRICT,
+       FOREIGN KEY (run_id, lot_id) REFERENCES process_run(run_id, lot_id) ON DELETE RESTRICT,
+       FOREIGN KEY (run_id, session_id) REFERENCES process_run(run_id, session_id) ON DELETE RESTRICT
+   );
+
+   -- SENSOR_MEASUREMENT: 세션-Run 일치 및 계측 결측치(NULL) 허용
+   CREATE TABLE sensor_measurement (
+       measurement_id TEXT PRIMARY KEY,
+       session_id TEXT NOT NULL CHECK (length(trim(session_id)) > 0),
+       run_id TEXT NOT NULL CHECK (length(trim(run_id)) > 0),
+       sensor_id TEXT NOT NULL CHECK (length(trim(sensor_id)) > 0),
+       measured_value REAL, -- 실제 물리 센서 결측치(quality_flag='MISSING')인 경우에 한하여 NULL 허용
+       unit TEXT NOT NULL CHECK (length(trim(unit)) > 0),
+       quality_flag TEXT NOT NULL CHECK (quality_flag IN ('GOOD', 'SUSPECT', 'BAD', 'MISSING')),
+       data_origin TEXT NOT NULL CHECK (data_origin IN ('synthetic', 'public_research', 'live')),
+       event_time_utc TEXT NOT NULL,
+       ingest_time_utc TEXT NOT NULL,
+       sim_time_utc TEXT NOT NULL,
+       FOREIGN KEY (run_id, session_id) REFERENCES process_run(run_id, session_id) ON DELETE RESTRICT
+   );
+
+   -- FDC_ALERT: 세션-Run-챔버 일치
+   CREATE TABLE fdc_alert (
+       alert_id TEXT PRIMARY KEY,
+       session_id TEXT NOT NULL CHECK (length(trim(session_id)) > 0),
+       run_id TEXT NOT NULL CHECK (length(trim(run_id)) > 0),
+       chamber_id TEXT NOT NULL CHECK (length(trim(chamber_id)) > 0),
+       rule_id TEXT NOT NULL,
+       rule_version TEXT NOT NULL,
+       severity TEXT NOT NULL CHECK (severity IN ('normal', 'warning', 'critical', 'unknown')),
+       observed_value REAL NOT NULL,
+       threshold_value REAL NOT NULL,
+       freshness TEXT NOT NULL CHECK (freshness IN ('available', 'delayed', 'stale', 'paused', 'failed', 'loading')),
+       data_origin TEXT NOT NULL CHECK (data_origin IN ('synthetic', 'public_research', 'live')),
+       event_time_utc TEXT NOT NULL,
+       ingest_time_utc TEXT NOT NULL,
+       sim_time_utc TEXT NOT NULL,
+       FOREIGN KEY (run_id, session_id, chamber_id) REFERENCES process_run(run_id, session_id, chamber_id) ON DELETE RESTRICT
+   );
    ```
-   - **Lot 일치 보장:** `wafer_id`의 `lot_id`와 `run_id`의 `lot_id`가 불일치하는 교차 삽입 시도 시, SQLite 엔진은 `FOREIGN KEY constraint failed` 에러를 발생시키며 즉시 차단한다.
-   - **Session 일치 보장:** `run_id`의 `session_id`와 `PROCESS_RUN_WAFER`의 `session_id`가 상이한 세션 불일치 삽입 시도 시, SQLite 엔진은 `FOREIGN KEY constraint failed` 에러를 발생시키며 즉시 차단한다.
 
-3. **`SENSOR_MEASUREMENT` 및 `FDC_ALERT` 세션·챔버 정합성 강제:**
-   - `SENSOR_MEASUREMENT`:
-     ```sql
-     FOREIGN KEY (run_id, session_id) REFERENCES process_run(run_id, session_id) ON DELETE RESTRICT
-     ```
-     - 부모 `process_run(run_id, session_id)`에 `CONSTRAINT uq_run_session UNIQUE`가 물리적으로 존재하므로 `foreign key mismatch` 없이 정상 INSERT가 통과하며, 잘못된 `session_id`가 입력되면 `FOREIGN KEY constraint failed`로 안전하게 거절된다.
-   - `FDC_ALERT`:
-     ```sql
-     FOREIGN KEY (run_id, session_id, chamber_id) REFERENCES process_run(run_id, session_id, chamber_id) ON DELETE RESTRICT
-     ```
-
-4. **독립 최소 반례 수용 조건 및 검증 기준 (A01/A04 기계적 수용 조건):**
-   - **전제 조건:** SQLite 연결마다 반드시 `PRAGMA foreign_keys = ON;`을 실행한다.
-   - **수용 조건 1 (정상 계보 INSERT 성공):** 일치하는 `session_id`, `run_id`, `lot_id`, `wafer_id`를 가진 정상 레코드 삽입 시 에러 없이 커밋 성공.
-   - **수용 조건 2 (잘못된 Session INSERT 거절):** `PROCESS_RUN`의 `session_id`와 다른 세션을 지정한 `SENSOR_MEASUREMENT` 또는 `PROCESS_RUN_WAFER` 삽입 시 `sqlite3.IntegrityError: FOREIGN KEY constraint failed` 발생 및 즉시 롤백.
-   - **수용 조건 3 (교차 Lot INSERT 거절):** `PROCESS_RUN`의 `lot_id`와 다른 Lot 소속의 웨이퍼를 `PROCESS_RUN_WAFER`에 매핑 시도 시 `sqlite3.IntegrityError: FOREIGN KEY constraint failed` 발생 및 즉시 롤백.
-   - **수용 조건 4 (무결성 검사):** 정상 데이터 적재 후 `PRAGMA foreign_key_check;` 실행 결과가 0건(빈 리스트 `[]`)을 반환.
+#### 3) 독립 최소 반례 수용 조건 및 검증 기준 (A01/A04 기계적 수용 조건)
+- **전제 조건:** SQLite 연결마다 반드시 `PRAGMA foreign_keys = ON;`을 실행한다.
+- **테스트 매트릭스 및 수용 기대값:**
+  1. **정상 계보 INSERT (PASS):** 일치하는 `session_id`, `run_id`, `lot_id`, `wafer_id`, `chamber_id` 레코드 삽입 시 에러 없이 커밋 성공.
+  2. **교차 Lot INSERT 거절 (REJECT):** `PROCESS_RUN`의 `lot_id`와 다른 Lot 소속의 웨이퍼를 `PROCESS_RUN_WAFER`에 매핑 시도 시 `sqlite3.IntegrityError: FOREIGN KEY constraint failed` 발생 및 롤백.
+  3. **잘못된 Session INSERT 거절 (REJECT):** `PROCESS_RUN`의 `session_id`와 다른 세션을 지정한 `SENSOR_MEASUREMENT` 또는 `PROCESS_RUN_WAFER` 삽입 시 `sqlite3.IntegrityError: FOREIGN KEY constraint failed` 발생 및 롤백.
+  4. **잘못된 Chamber INSERT 거절 (REJECT):** `PROCESS_RUN`의 `chamber_id`와 다른 챔버를 지정한 `FDC_ALERT` 삽입 시 `sqlite3.IntegrityError: FOREIGN KEY constraint failed` 발생 및 롤백.
+  5. **NULL 우회 삽입 거절 (4종 REJECT):**
+     - `PROCESS_RUN_WAFER(session_id = NULL)` $\to$ `sqlite3.IntegrityError: NOT NULL constraint failed: process_run_wafer.session_id`.
+     - `PROCESS_RUN_WAFER(lot_id = NULL)` $\to$ `sqlite3.IntegrityError: NOT NULL constraint failed: process_run_wafer.lot_id`.
+     - `SENSOR_MEASUREMENT(session_id = NULL)` $\to$ `sqlite3.IntegrityError: NOT NULL constraint failed: sensor_measurement.session_id`.
+     - `FDC_ALERT(chamber_id = NULL)` $\to$ `sqlite3.IntegrityError: NOT NULL constraint failed: fdc_alert.chamber_id`.
+  6. **빈 문자열("") 우회 삽입 거절 (REJECT):** `CHECK (length(trim(col)) > 0)`에 의해 `sqlite3.IntegrityError: CHECK constraint failed` 발생 및 롤백.
+  7. **결측치(measured_value = NULL) 허용 (PASS):** `SENSOR_MEASUREMENT`의 `measured_value`가 `NULL`인 실제 센서 결측치 레코드는 정상적으로 삽입 성공.
+  8. **무결성 검사 기대값:** 정상 데이터 적재 후 `PRAGMA foreign_key_check;` 실행 결과가 빈 리스트 `[]` (0건) 반환.
 
 ### 3.3 Wafer $\to$ Run 노출 계보 및 Lot/Wafer 상태 구분
 - **도메인 특성:** 식각 챔버(Etch Chamber)는 단일 웨이퍼 가공(Single-wafer processing) 방식이므로, Lot 단위 할당과 챔버 내 실제 노출은 분리하여 추적한다.
@@ -316,21 +375,52 @@ $$P_p = \frac{\text{USL} - \text{LSL}}{6s}, \quad P_{pu} = \frac{\text{USL} - \b
 
 $$C_p = \frac{\text{USL} - \text{LSL}}{6\hat{\sigma}_{\text{within}}}, \quad C_{pu} = \frac{\text{USL} - \bar{x}}{3\hat{\sigma}_{\text{within}}}, \quad C_{pl} = \frac{\bar{x} - \text{LSL}}{3\hat{\sigma}_{\text{within}}}, \quad C_{pk} = \min(C_{pu}, C_{pl})$$
 
-- **부분군 크기($m$)별 불편화 계수($d_2, c_4$) 표준 테이블 ([F06] 해결):**
+- **부분군 크기($m$)별 불편화 계수($d_2, c_4$) 표준 테이블 ([F06] 보완):**
   - $m=2: d_2 = 1.128, c_4 = 0.7979$
   - $m=3: d_2 = 1.693, c_4 = 0.8862$
   - $m=4: d_2 = 2.059, c_4 = 0.9213$
   - $m=5: d_2 = 2.326, c_4 = 0.9400$
   - $m=6: d_2 = 2.534, c_4 = 0.9515$
-  - $m \ge 10$ 또는 부분군 크기가 불균등한 경우: 합동 표본 분산 기반 $s_{\text{pooled}} / c_4$를 적용한다.
+  - $m=7: d_2 = 2.704, c_4 = 0.9594$
+  - $m=8: d_2 = 2.847, c_4 = 0.9650$
+  - $m=9: d_2 = 2.970, c_4 = 0.9693$
+  - $m=10: d_2 = 3.078, c_4 = 0.9727$
 
-#### 3) 단측 규격(One-Sided Specification) 처리 규약 ([F06] 해결)
+- **$m > 10$ 또는 부분군 크기가 불균등($m_i$)한 경우 ($s_{\text{pooled}}/c_4$ 공식):**
+  - 가중 자유도 기반 합동 표본 분산(Pooled Variance):
+    $$s_{\text{pooled}} = \sqrt{ \frac{\sum_{i=1}^k (m_i - 1) s_i^2}{\sum_{i=1}^k (m_i - 1)} } = \sqrt{ \frac{\sum_{i=1}^k (m_i - 1) s_i^2}{\nu} }, \quad \nu = \sum_{i=1}^k (m_i - 1)$$
+  - 유효 자유도 $\nu$에 대한 불편화 보정:
+    $$\hat{\sigma}_{\text{within}} = \frac{s_{\text{pooled}}}{c_4(\nu + 1)}, \quad c_4(N) \approx \sqrt{\frac{2}{N-1}} \frac{\Gamma(N/2)}{\Gamma((N-1)/2)}$$
+  - **부분군 최소 요구조건 ($k \ge 5$):**
+    군내 변동($C_p, C_{pk}$)의 통계적 신뢰성을 위해 최소 부분군 수 $k \ge 5$ (각 부분군 크기 $m_i \ge 2$, 전체 누적 유효 표본 수 $N = \sum m_i \ge 20$)를 요구한다. $k < 5$인 경우 군내 변동 추정 신뢰도 부족으로 `status: "ASSUMPTION_WARNING"`, `warningMessage: "SUBGROUP_COUNT_BELOW_MINIMUM_5"`를 반환한다.
+
+#### 3) 단측 규격(One-Sided Specification) 처리 규약 및 세부 상태 필드 ([F06] 세분화)
 - **상한 규격(USL)만 있는 경우:**
-  - $C_p = \text{null}$, $P_p = \text{null}$ (양측 폭이 없으므로 계산 불가, 상태: `status = "UNDEFINED_FOR_ONE_SIDED"`).
-  - $C_{pk} = C_{pu}$, $P_{pk} = P_{pu}$로 단측 지표를 최종 값으로 부여한다.
+  - $C_p = \text{null}$, $P_p = \text{null}$ (양측 폭 미정의: `indexPStatus = "UNDEFINED_FOR_ONE_SIDED"`).
+  - $C_{pk} = C_{pu}$, $P_{pk} = P_{pu}$ (단측 지표 정상 계산: `indexPkStatus = "EVALUATED"`).
+  - 상위 상태: `status = "ONE_SIDED_SPEC_EVALUATED"`.
 - **하한 규격(LSL)만 있는 경우:**
-  - $C_p = \text{null}$, $P_p = \text{null}$ (상태: `status = "UNDEFINED_FOR_ONE_SIDED"`).
-  - $C_{pk} = C_{pl}$, $P_{pk} = P_{pl}$로 단측 지표를 최종 값으로 부여한다.
+  - $C_p = \text{null}$, $P_p = \text{null}$ (`indexPStatus = "UNDEFINED_FOR_ONE_SIDED"`).
+  - $C_{pk} = C_{pl}$, $P_{pk} = P_{pl}$ (`indexPkStatus = "EVALUATED"`).
+  - 상위 상태: `status = "ONE_SIDED_SPEC_EVALUATED"`.
+- **단측 규격 API 응답 JSON 표준 계약 예시:**
+  ```json
+  {
+    "capabilityType": "OVERALL_PERFORMANCE",
+    "sigmaEstimator": "SAMPLE_STD_S",
+    "indexP": null,
+    "indexPk": 1.333,
+    "indexPStatus": "UNDEFINED_FOR_ONE_SIDED",
+    "indexPkStatus": "EVALUATED",
+    "sampleMean": 10.5,
+    "sigmaEstimate": 1.125,
+    "sampleCount": 35,
+    "status": "ONE_SIDED_SPEC_EVALUATED",
+    "specType": "UPPER_SPEC_ONLY",
+    "usl": 15.0,
+    "lsl": null
+  }
+  ```
 
 #### 4) 통계 사양 기준 수치 벤치마크 (Specification Fixtures, [F06] 수록)
 다음 수치는 구현 엔진 실행 결과가 아니며, 독립 단위 테스트 및 계약 검증을 위한 **사양 기준 벤치마크(Specification Reference Values)**이다:
@@ -341,16 +431,18 @@ $$C_p = \frac{\text{USL} - \text{LSL}}{6\hat{\sigma}_{\text{within}}}, \quad C_{
 | 식각 속도 (Etch Rate) | $T_{\text{before}}=200\,\text{nm}, T_{\text{after}}=140\,\text{nm}, \Delta t=2\,\text{min}$ | `30.0 nm/min` | $\Delta t \le 0 \to \text{ERROR}$, $T_{\text{before}} < T_{\text{after}} \to \text{음수 유지 + SUSPECT}$ |
 | $P_p / P_{pk}$ (양측) | 샘플 `[9, 10, 11]`, USL=13, LSL=7 ($\bar{x}=10, s=1$) | $P_p = 1.000$, $P_{pk} = 1.000$ | $s=0 \to \text{ERROR}$, $n < 2 \to \text{INVALID}$ |
 | $P_p / P_{pk}$ (규격 이탈) | 샘플 평균 $\bar{x}=15$, $s=1$, USL=13, LSL=7 | $P_p = 1.000$, $P_{pk} \approx -0.667$ | 음수 $P_{pk}$ 정상 산출, 0으로 클램프 금지 |
+| $P_p / P_{pk}$ (단측 상한) | 샘플 평균 $\bar{x}=10$, $s=1$, USL=13, LSL=null | $P_p = \text{null}$, $P_{pk} = 1.000$ | `indexPStatus: UNDEFINED_FOR_ONE_SIDED`, `indexPkStatus: EVALUATED` |
 
 #### 5) 통계적 유효성 및 경계 조건 (Boundary & Exception Conditions, [F06] 보완)
 - **평가 불가 (`status = "EVALUATION_INVALID"`):**
   - $n < 2$: 표본 표준편차 계산 불가 (`errorCode: "INSUFFICIENT_SAMPLE_SIZE"`).
   - 표본 산포 $\hat{\sigma} = 0$: 분모 0으로 인한 계산 불능 (`errorCode: "ZERO_VARIANCE_ERROR"`).
   - USL 및 LSL이 모두 누락된 경우 (`errorCode: "MISSING_SPEC_LIMITS"`).
-- **단측 규격 미정의 (`status = "UNDEFINED_FOR_ONE_SIDED"`):**
-  - 상한(USL) 또는 하한(LSL) 중 한쪽만 정의된 경우, $C_p$ 및 $P_p$는 양측 폭이 없으므로 `null`로 처리하고 상태를 `UNDEFINED_FOR_ONE_SIDED`로 반환.
+- **단측 규격 처리 (`status = "ONE_SIDED_SPEC_EVALUATED"`):**
+  - 상한(USL) 또는 하한(LSL) 중 한쪽만 정의된 경우, $C_p$ 및 $P_p$는 양측 폭이 없으므로 `null` 처리하고 세부 상태를 `indexPStatus: "UNDEFINED_FOR_ONE_SIDED"`로 전달. $C_{pk}$ 및 $P_{pk}$는 단측 규격 공식으로 계산하여 `indexPkStatus: "EVALUATED"`로 반환.
 - **신뢰도 권고 경고 (`status = "ASSUMPTION_WARNING"`):**
   - 표본 크기 $n < 30$: 계산값은 정상 산출하되 `warningMessage = "SAMPLE_SIZE_BELOW_RECOMMENDED_30"`을 함께 전달한다. (단, $n \ge 30$을 절대적 물리 법칙으로 강제하지 않고 표본 신뢰도 참고 경고로만 취급).
+  - 부분군 개수 $k < 5$: 군내 변동 추정 시 `warningMessage = "SUBGROUP_COUNT_BELOW_MINIMUM_5"` 부착.
   - 정규성 가정 미충족(왜도/첨도 과다 또는 정규성 검정 기각) 시 `NON_NORMAL_DISTRIBUTION_WARNING` 경고 부착.
 - **음수 및 극단값 처리:**
   - 공정 평균이 규격 한계를 이탈하여 $C_{pk} < 0, P_{pk} < 0$이 산출될 경우 절댓값 변환이나 0으로의 클램핑 없이 그대로 반환한다.
@@ -362,7 +454,8 @@ $$C_p = \frac{\text{USL} - \text{LSL}}{6\hat{\sigma}_{\text{within}}}, \quad C_{
 
 모든 데이터 엔티티(`SENSOR_MEASUREMENT`, `PROCESS_RUN`, `FDC_ALERT`)는 다음 출처 필드를 의무화한다:
 - `data_origin`: `"synthetic"` | `"public_research"` | `"live"` (현재 MVP는 100% `"synthetic"`).
-- 상위 시나리오 메타데이터 조회 시 `scenario_id` 및 Git 내 버전 관리되는 `fixtures/checksums.sha256` 해시와 대조된다.
+- **상위 픽스처 메타데이터 및 출처 대조 (`fixtures/manifest.json`):**
+  - 상위 시나리오 메타데이터 조회 시 `scenario_id` 및 Git 내 버전 관리되는 `fixtures/manifest.json`과 `fixtures/checksums.sha256` 해시를 통해 시나리오 스키마 버전, 생성 시드, 출처 구분(`sourceOrigin`), SHA-256 페이로드 무결성을 검증한다.
 
 ---
 
@@ -375,8 +468,9 @@ export type SampleQuality = "GOOD" | "SUSPECT" | "BAD" | "MISSING";
 export type DataOrigin = "synthetic" | "public_research" | "live";
 export type ExposureStatus = "CONFIRMED_EXPOSED" | "CANDIDATE_EXPOSED" | "NOT_EXPOSED" | "BYPASSED" | "UNKNOWN";
 export type CapabilityType = "WITHIN_SUBGROUP_CAPABILITY" | "OVERALL_PERFORMANCE";
-export type SigmaEstimator = "SAMPLE_STD_S" | "R_BAR_OVER_D2" | "S_BAR_OVER_C4";
-export type MetricStatus = "OK" | "ASSUMPTION_WARNING" | "EVALUATION_INVALID" | "UNDEFINED_FOR_ONE_SIDED";
+export type SigmaEstimator = "SAMPLE_STD_S" | "R_BAR_OVER_D2" | "S_BAR_OVER_C4" | "S_POOLED_OVER_C4";
+export type MetricStatus = "OK" | "ASSUMPTION_WARNING" | "EVALUATION_INVALID" | "UNDEFINED_FOR_ONE_SIDED" | "ONE_SIDED_SPEC_EVALUATED";
+export type IndexStatus = "EVALUATED" | "UNDEFINED_FOR_ONE_SIDED" | "NOT_CALCULABLE";
 
 export interface SimulationSession {
   sessionId: string;
@@ -385,6 +479,19 @@ export interface SimulationSession {
   isActive: boolean;
   startedAtUtc: string;
   completedAtUtc?: string;
+}
+
+export interface ProcessRun {
+  runId: string;
+  sessionId: string;
+  lotId: string;
+  recipeId: string;
+  chamberId: string;
+  equipmentId: string;
+  runStatus: "READY" | "IN_PROGRESS" | "COMPLETED" | "ABORTED" | "FAILED";
+  dataOrigin: DataOrigin;
+  startTimeUtc?: string;
+  endTimeUtc?: string;
 }
 
 export interface SensorSample {
@@ -417,13 +524,19 @@ export interface ProcessRunWafer {
 export interface CapabilityResult {
   capabilityType: CapabilityType;
   sigmaEstimator: SigmaEstimator;
-  indexP: number | null; // Cp or Pp (null if one-sided)
+  indexP: number | null; // Cp or Pp (null if one-sided or not calculable)
   indexPk: number | null; // Cpk or Ppk
+  indexPStatus: IndexStatus;
+  indexPkStatus: IndexStatus;
   sampleMean: number;
   sigmaEstimate: number;
   sampleCount: number;
   status: MetricStatus;
+  specType?: "BILATERAL" | "UPPER_SPEC_ONLY" | "LOWER_SPEC_ONLY";
+  usl?: number | null;
+  lsl?: number | null;
   warningMessage?: string;
+  errorCode?: string;
 }
 
 export interface FdcAlertItem {
@@ -445,3 +558,4 @@ export interface FdcAlertItem {
   ruleDescription: string;
 }
 ```
+
