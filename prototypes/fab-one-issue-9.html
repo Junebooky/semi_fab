@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>FAB ONE — White & Emerald Prototype · Issue 9</title>
+<style>
+:root {
+  --canvas:#FFFFFF; --card:#FFFFFF; --ink:#17263B; --muted:#48586D;
+  --line:#DCE3ED; --line-soft:#EDF1F5; --subtle:#F7F9FB;
+  --action:#155BC1; --danger:#AD211A; --warning:#8B5400;
+  --normal:#087254; --clay-dark:#076F5B; --clay-deep:#0B9F78;
+  --clay-main:#16B88A; --clay-light:#A4E9C8; --clay-pale:#DDF8EC;
+  --shadow:0 14px 40px rgba(23,38,59,.065);
+  --radius:18px;
+  font-family:system-ui,-apple-system,"Segoe UI","Noto Sans KR",sans-serif;
+  color:var(--ink);background:var(--canvas);
+}
+* {box-sizing:border-box}
+body{margin:0;min-width:320px;background:#FFFFFF;font-size:14px;line-height:1.55}
+button,input{font:inherit}
+button{cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid var(--action);outline-offset:3px}
+button:disabled{cursor:not-allowed}
+[hidden]{display:none!important}
+.skip{position:absolute;z-index:40;left:12px;top:-100px;padding:12px;background:#fff}
+.skip:focus{top:12px}
+.layout{display:grid;grid-template-columns:224px minmax(0,1fr);min-height:100vh}
+.sidebar{background:#fff;border-right:1px solid var(--line-soft);padding:26px 16px;position:sticky;top:0;height:100vh;align-self:start;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 10px 28px;font-weight:800;font-size:19px;letter-spacing:-.7px}
+.logo{background:#17263B;color:#fff;border-radius:13px;width:35px;height:35px;display:grid;place-items:center;flex:none}
+.nav-group-label{font-size:11px;letter-spacing:1.3px;color:#748294;font-weight:800;margin:10px 12px}
+.nav{display:grid;gap:5px}
+.nav button{border:0;background:transparent;color:#526176;border-radius:11px;text-align:left;padding:12px 14px;display:flex;align-items:center;gap:11px;font-weight:650;min-height:44px}
+.nav button:hover{background:#F6F8FB}
+.nav button[aria-pressed=true]{background:#EBF3FF;color:#155BC1}
+.nav svg{width:18px;height:18px}
+.sidebar-foot{margin-top:auto;padding:15px 12px;border-top:1px solid var(--line-soft);font-size:12px;color:var(--muted)}
+.sim-dot{display:inline-block;background:#C66718;border-radius:50%;width:7px;height:7px;margin-right:6px;vertical-align:middle}
+.content{min-width:0}
+.topbar{height:72px;border-bottom:1px solid var(--line-soft);background:#fff;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 clamp(18px,3vw,44px)}
+.breadcrumb{font-size:12px;color:#68768A}
+.breadcrumb strong{color:var(--ink)}
+.topbar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:11px;font-weight:750;white-space:nowrap;background:#fff}
+.pill.sim{color:#96541E;border-color:#F4D9BF;background:#FFF9F2}
+.pill.warn{color:var(--warning);border-color:#EEDABF;background:#FFFBF5}
+.pill.critical{color:var(--danger);border-color:#F0C6C2;background:#FFF9F8}
+.pill.normal{color:var(--normal);border-color:#BEE5D5;background:#F6FCF9}
+.pill.missing{color:#505E71;background:#F7F9FB}
+main{max-width:1500px;padding:34px clamp(18px,3vw,44px) 100px;margin:auto}
+.screen{animation:appear .16s ease both}
+.eyebrow{font-size:11px;font-weight:800;color:#6E7E91;letter-spacing:1.2px;text-transform:uppercase;margin:0 0 6px}
+h1{font-size:clamp(25px,3vw,33px);line-height:1.27;letter-spacing:-1.2px;margin:0;font-weight:780}
+h2{font-size:19px;line-height:1.3;margin:0;font-weight:760;letter-spacing:-.4px}
+h3{margin:0;font-size:15px;font-weight:750}
+p{margin:0}
+.muted{color:var(--muted)}
+.heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:22px}
+.heading p:last-child{margin-top:8px;max-width:700px;color:var(--muted)}
+.primary,.secondary,.quiet{border-radius:11px;min-height:43px;padding:9px 16px;font-weight:740;transition:background .15s ease,transform .15s ease}
+.primary{background:var(--action);border:1px solid var(--action);color:white}
+.primary:hover{background:#114C9F}
+.secondary{background:white;border:1px solid var(--line);color:var(--ink)}
+.secondary:hover{background:#F8FAFC}
+.quiet{background:transparent;border:0;color:var(--action)}
+.btn-row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);min-width:0}
+.hero{border:1px solid var(--line);border-radius:23px;background:#fff;display:grid;grid-template-columns:minmax(0,1fr) 228px;align-items:center;gap:14px;min-height:236px;padding:25px 28px;box-shadow:var(--shadow)}
+.hero h2{font-size:25px;line-height:1.35;letter-spacing:-.8px;margin:8px 0 9px}
+.hero p{max-width:510px;line-height:1.7;margin-bottom:18px}
+.hero .btn-row{gap:8px}
+.clay-wrap{display:grid;justify-items:center;gap:5px;min-width:0}
+.clay-slot{box-sizing:border-box;position:relative;display:grid;place-items:center;flex:none;max-width:100%;padding:12%;overflow:hidden;background:transparent;isolation:isolate}
+.clay-slot[data-asset="illustration.wafer.v1"]{width:196px;aspect-ratio:1/1}
+.clay-slot[data-asset="illustration.etch-chamber.v1"]{width:240px;aspect-ratio:5/4}
+.clay-slot img,.clay-slot svg{width:100%;height:100%;object-fit:contain;object-position:center}
+.clay-slot img{position:absolute;inset:12%;width:76%;height:76%;display:none}
+.clay-slot[data-loaded=true] img{display:block}
+.clay-slot[data-loaded=true] .fallback-art{display:none}
+.wafer-caption{font-size:10px;color:#728092}
+.summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:17px}
+.stat{padding:20px 22px;min-height:130px}
+.stat-head{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:12px;font-weight:680;gap:10px}
+.stat-num{font-size:31px;line-height:1.3;font-weight:790;letter-spacing:-.8px;margin-top:7px}
+.stat-note{font-size:11px;color:#65758A;margin-top:4px}
+.stat .icon-circle{width:30px;height:30px;border-radius:11px;background:#F5F7FA;display:grid;place-items:center;font-size:16px}
+.cols{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(245px,1fr);gap:16px;margin-top:17px}
+.block{padding:23px 24px}
+.block-head{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-bottom:15px}
+.tiny{font-size:11px;color:#66778B}
+.table-scroll{overflow-x:auto;border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:12px;white-space:nowrap}
+th{font-size:11px;font-weight:750;color:#718095;text-align:left;padding:13px 12px;border-bottom:1px solid var(--line-soft);background:#FCFDFE}
+td{padding:14px 12px;border-bottom:1px solid var(--line-soft);color:#33465D}
+tr:last-child td{border-bottom:0}
+.right{text-align:right;font-variant-numeric:tabular-nums}
+.name-cell{font-weight:750;color:var(--ink)}
+table button{background:transparent;border:0;color:var(--action);font-weight:750;padding:8px}
+.side-card{background:#fff;display:flex;flex-direction:column;gap:12px}
+.side-card p{line-height:1.75}
+.rule{border-top:1px solid var(--line-soft);margin:8px 0}
+.note{background:#F7FAFB;border:1px solid #EBF0F3;border-radius:12px;padding:12px 14px;font-size:12px;color:#526278;line-height:1.6}
+.note strong{color:#1C334B}
+.alert-link{color:var(--action);font-weight:760;border:0;background:none;padding:8px 0;text-align:left}
+.info-grid{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(270px,.8fr);gap:16px;margin-top:18px}
+.chart-head{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}
+.chart{margin:10px 0}
+.chart svg{display:block;width:100%;height:auto;min-height:250px}
+.legend{display:flex;gap:15px;flex-wrap:wrap;color:var(--muted);font-size:11px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.line{width:18px;height:0;border-top:2px solid var(--action)}
+.line.dash{border-color:#BF8A47;border-top-style:dashed}
+.line.gap{border-color:#A0AAB7;border-top-style:dotted}
+.insight-stack{display:grid;gap:15px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:12px;border-bottom:1px solid var(--line-soft);padding:11px 0}
+.kv span:first-child{color:var(--muted)}
+.kv b{font-weight:730}
+.chart-footer{font-size:11px;color:var(--muted);padding:13px 0 0}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}
+.tabs span{padding:6px 10px;border-radius:8px;background:#F7F9FB;color:#536278;font-size:11px}
+.trace-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+.trace-summary .card{padding:17px}
+.trace-summary b{display:block;font-size:22px;margin-top:5px}
+.overline{font-size:10px;letter-spacing:1px;color:#778498;text-transform:uppercase;font-weight:740}
+.knowledge-term{border:0;background:transparent;padding:1px 1px 2px;border-bottom:1px dotted var(--action);color:var(--action);font-weight:730;cursor:help}
+.term-wrap{position:relative;display:inline-block}
+.tooltip{display:none;position:absolute;left:0;bottom:calc(100% + 10px);width:278px;max-width:85vw;background:#1C2938;color:#fff;border-radius:10px;box-shadow:0 8px 26px #17263B33;padding:12px 14px;z-index:20;font-size:12px;line-height:1.55;text-align:left}
+.term-wrap:hover .tooltip,.term-wrap:focus-within .tooltip{display:block}
+.knowledge-term:focus-visible{border-radius:2px;outline:2px solid var(--action)}
+.panel-overlay{position:fixed;inset:0;background:rgba(16,29,44,.36);z-index:38}
+.knowledge-popup{position:fixed;right:23px;top:108px;width:min(395px,calc(100vw - 46px));max-height:calc(100vh - 130px);overflow:auto;z-index:41;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 22px 70px rgba(17,37,59,.18);padding:25px}
+.panel{position:fixed;z-index:40;right:0;top:0;width:min(450px,100vw);height:100dvh;overflow:auto;background:#fff;border-left:1px solid var(--line);box-shadow:-15px 0 48px rgba(17,37,59,.08);padding:28px}
+.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.close{border:1px solid var(--line);background:#fff;border-radius:10px;width:38px;height:38px;font-size:20px;color:#384A60}
+.knowledge-popup h2,.panel h2{margin:6px 0 13px}
+.section-head{font-weight:800;font-size:12px;color:#506077;letter-spacing:.3px;margin:19px 0 7px}
+.formula{font-size:15px;color:#0E3854;background:#F6F9FC;border:1px solid #E2E8F0;border-radius:12px;padding:14px;font-weight:720}
+.var-table{width:100%;font-size:12px}
+.var-table th,.var-table td{text-align:left;padding:9px 8px}
+.detail-link{margin-top:16px;width:100%}
+.k-sub{color:#65758A;font-size:12px}
+.page-footer{font-size:11px;color:#64748B;margin-top:25px;line-height:1.75}
+.hr{height:1px;background:var(--line-soft);margin:20px 0}
+.spec-guard{border-left:3px solid #CB974D;padding-left:12px;margin:12px 0;color:#66543B;font-size:12px}
+.readonly-note{width:100%;min-height:75px;border:1px solid var(--line);border-radius:10px;padding:12px;background:#FAFBFD;color:#64748B;resize:none}
+.mobile-label{display:none}
+@keyframes appear{from{opacity:.6;transform:translateY(3px)}to{opacity:1;transform:none}}
+@media(max-width:1180px){
+  .info-grid{grid-template-columns:1fr}
+  .cols{grid-template-columns:1fr}
+  .hero{grid-template-columns:minmax(0,1fr) 190px}
+  .clay-slot[data-asset="illustration.etch-chamber.v1"]{width:210px}
+}
+@media(max-width:800px){
+  .layout{display:block}
+  .sidebar{position:static;width:100%;height:auto;border-right:0;border-bottom:1px solid var(--line-soft);padding:8px 13px;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px}
+  .brand{padding:4px;white-space:nowrap;font-size:15px}
+  .logo{width:30px;height:30px;border-radius:10px}
+  .nav-group-label,.sidebar-foot{display:none}
+  .nav{display:flex;overflow-x:auto;gap:3px}
+  .nav button{font-size:11px;padding:9px 9px;min-height:40px;white-space:nowrap}
+  .nav svg{display:none}
+  .topbar{height:auto;min-height:58px;padding:9px 17px}
+  main{padding:25px 17px 60px}
+  .heading{flex-direction:column}
+  .hero{grid-template-columns:1fr 152px;padding:21px}
+  .hero h2{font-size:22px}
+  .clay-slot[data-asset="illustration.wafer.v1"]{width:145px}
+  .summary{gap:9px}
+  .stat{padding:14px;min-height:112px}
+  .stat-num{font-size:25px}
+  .stat-note{font-size:10px}
+  .trace-summary{gap:9px}
+}
+@media(max-width:620px){
+  .brand span:last-child{display:none}
+  .nav button{padding:8px}
+  .topbar{align-items:flex-start}
+  .breadcrumb{display:none}
+  .topbar-right{justify-content:flex-start}
+  h1{font-size:25px}
+  .hero{grid-template-columns:1fr;gap:3px;padding:19px 20px}
+  .hero h2{font-size:22px}
+  .clay-wrap{justify-self:center}
+  .clay-slot[data-asset="illustration.wafer.v1"]{width:132px}
+  .clay-slot[data-asset="illustration.etch-chamber.v1"]{width:160px}
+  .summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stat:last-child{grid-column:span 2;min-height:auto}
+  .stat-head{font-size:11px}
+  .stat-num{font-size:24px}
+  .block{padding:18px 15px}
+  .chart svg{min-height:180px}
+  .trace-summary{grid-template-columns:1fr}
+  .knowledge-popup{top:auto;bottom:0;left:0;right:0;width:100%;max-height:88dvh;border-radius:24px 24px 0 0;padding:22px 20px 30px}
+  .panel{width:100%;box-shadow:none;padding:22px 19px}
+  .mobile-label{display:inline}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main-content">본문으로 건너뛰기</a>
+<div class="layout">
+  <aside class="sidebar" aria-label="제품 탐색">
+    <div class="brand"><span class="logo" aria-hidden="true">F</span><span>FAB ONE</span></div>
+    <p class="nav-group-label">WORKSPACE</p>
+    <nav class="nav" aria-label="주요 메뉴">
+      <button type="button" data-view="command" aria-pressed="true"><span aria-hidden="true">▦</span> Command Center</button>
+      <button type="button" data-view="evidence" aria-pressed="false"><span aria-hidden="true">◈</span> Equipment</button>
+      <button type="button" data-view="trace" aria-pressed="false"><span aria-hidden="true">◎</span> Lot / Wafer</button>
+    </nav>
+    <div class="sidebar-foot"><span class="sim-dot"></span><b>SIMULATION ONLY</b><p style="margin-top:5px">실제 FAB에 연결되지 않은 디자인 시안</p></div>
+  </aside>
+  <div class="content">
+    <header class="topbar">
+      <div class="breadcrumb"><strong>FAB ONE</strong> / <span id="breadcrumb">Command Center</span></div>
+      <div class="topbar-right">
+        <span class="pill sim">● SYNTHETIC DEMO</span>
+        <span class="pill">Scenario · ETH-DEMO-01</span>
+        <span class="pill">가상 시각 · 10:24 KST</span>
+      </div>
+    </header>
+    <main id="main-content" tabindex="-1">
+      <section id="view-command" class="screen" aria-labelledby="command-title">
+        <div class="heading">
+          <div>
+            <p class="eyebrow">FAB COMMAND CENTER / 시연 화면</p>
+            <h1 id="command-title">복잡한 설비 데이터, 한눈에 이해하기</h1>
+            <p>Etch 이상 징후를 살펴보고 관련 장비와 Lot 이력을 탐색합니다. 모든 값은 <b>설명용 합성 플레이스홀더</b>입니다.</p>
+          </div>
+          <button class="secondary" type="button" data-go="evidence">설비 증거 보기 ↗</button>
+        </div>
+        <div class="hero">
+          <div>
+            <span class="pill warn">! 모의 알림 · 확인 필요</span>
+            <h2>알람보다 중요한 건<br>그 뒤에 있는 근거입니다.</h2>
+            <p class="muted">장비의 변화, 관련 공정 Run, 영향 가능 Lot을 같은 맥락에서 살펴보세요.</p>
+            <div class="btn-row"><button class="primary" type="button" data-go="evidence">Etch 시나리오 조사 →</button><button class="secondary" type="button" data-open-ekl="etch-rate">공학 개념 알아보기</button></div>
+          </div>
+          <div class="clay-wrap">
+            <div class="clay-slot" data-asset="illustration.wafer.v1" role="img" aria-label="웨이퍼와 칩 배열을 단순화한 에메랄드 개념도, 축척 아님">
+              <img alt="웨이퍼와 칩 배열을 단순화한 개념도, 축척 아님" decoding="async">
+              <svg class="fallback-art" viewBox="0 0 160 160" aria-hidden="true">
+                <defs><linearGradient id="waferMaterial" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#A4E9C8"/><stop offset=".55" stop-color="#16B88A"/><stop offset="1" stop-color="#076F5B"/></linearGradient></defs>
+                <ellipse cx="80" cy="136" rx="62" ry="10" fill="#DDF8EC"/>
+                <circle cx="80" cy="79" r="64" fill="#076F5B"/>
+                <circle cx="80" cy="73" r="62" fill="url(#waferMaterial)" stroke="#0B9F78" stroke-width="2"/>
+                <circle cx="80" cy="73" r="50" fill="none" stroke="#DDF8EC" stroke-opacity=".65" stroke-width="1.5"/>
+                <path d="M33 50H127M26 73H134M33 96H127M56 18V128M80 11V135M104 19V127" fill="none" stroke="#DDF8EC" stroke-opacity=".8" stroke-width="1.5"/>
+                <path d="M34 39Q57 15 91 14" fill="none" stroke="#F3FFF9" stroke-width="8" stroke-linecap="round" opacity=".48"/>
+                <path d="M72 13Q80 21 88 13" fill="none" stroke="#076F5B" stroke-width="3"/>
+              </svg>
+            </div><span class="wafer-caption">Wafer placeholder · 개념도 / 축척 아님</span>
+          </div>
+        </div>
+        <div class="summary" aria-label="시연용 요약 지표">
+          <article class="card stat"><div class="stat-head">모의 확인 필요 경고 <span class="icon-circle" aria-hidden="true">!</span></div><div class="stat-num">01 <span style="font-size:13px;color:#748294">건</span></div><div class="stat-note">Synthetic fixture · 실제 이벤트 아님</div></article>
+          <article class="card stat"><div class="stat-head">시연 대상 Chamber <span class="icon-circle" aria-hidden="true">◈</span></div><div class="stat-num">04 <span style="font-size:13px;color:#748294">개</span></div><div class="stat-note">활성 설비 운용 수치가 아님</div></article>
+          <article class="card stat"><div class="stat-head">Lot 연관성 미확인 <span class="icon-circle" aria-hidden="true">?</span></div><div class="stat-num">02 <span style="font-size:13px;color:#748294">건</span></div><div class="stat-note">공정·시간 관계 확인 필요</div></article>
+        </div>
+        <div class="cols">
+          <section class="card block" aria-label="모의 경고 큐">
+            <div class="block-head"><h2>확인할 이벤트</h2><span class="tiny">가상 시간 기준 · 최신순</span></div>
+            <div class="table-scroll" tabindex="0" aria-label="경고 데이터 표, 좁은 화면에서는 좌우로 스크롤">
+              <table><thead><tr><th scope="col">발생 시각</th><th scope="col">설비 / 챔버</th><th scope="col">유형</th><th scope="col">상태</th><th scope="col">분석</th></tr></thead>
+              <tbody><tr><td>10:24:03 KST</td><td class="name-cell">ETCH-02 · CH-B</td><td>합성 센서 추세</td><td><span class="pill warn">! 경고</span></td><td><button type="button" data-go="evidence">상세 보기 →</button></td></tr>
+              <tr><td>10:19:55 KST</td><td class="name-cell">ETCH-01 · CH-A</td><td>수집 지연 예시</td><td><span class="pill missing">◷ 데이터 지연</span></td><td><button type="button" data-go="evidence">맥락 보기 →</button></td></tr></tbody></table>
+            </div>
+          </section>
+          <aside class="card block side-card" aria-label="지식 레이어 소개">
+            <p class="overline">ENGINEERING KNOWLEDGE LAYER</p><h2>개념을 바로 이해하기</h2>
+            <p class="muted">분석 중 모르는 용어가 나와도 화면을 떠나지 않아도 됩니다. <span class="term-wrap"><button class="knowledge-term" type="button" data-open-ekl="etch-rate" aria-label="식각 속도 공학 설명 열기">식각 속도</button><span class="tooltip" role="tooltip">단위 시간 동안 제거된 막 두께를 나타내는 개념입니다. 계산 조건은 공학 검수 전입니다.</span></span>에 대한 예시를 열어보세요.</p>
+            <div class="note"><strong>데이터 해석 원칙</strong><br>이상 징후만으로 원인·불량·폐기를 확정하지 않습니다.</div>
+            <button class="alert-link" type="button" data-open-ekl="etch-rate">계산 예시 및 공학 전제 보기 →</button>
+          </aside>
+        </div>
+      </section>
+
+      <section id="view-evidence" class="screen" hidden aria-labelledby="evidence-title">
+        <div class="heading"><div><p class="eyebrow">EQUIPMENT INTELLIGENCE / SYNTHETIC</p><h1 id="evidence-title">ETCH-02 · Chamber B</h1><p>모의 알람 <b>AL-DEMO-001</b> · 가상 Run <b>RUN-DEMO-044</b> · 경고 시각 10:24:03 KST</p></div><div class="btn-row"><span class="pill warn">! 경고 · 원인 미확정</span><button class="secondary" data-go="command" type="button">← 경고 큐</button></div></div>
+        <div class="info-grid">
+          <section class="card block" aria-label="합성 시계열과 근거">
+            <div class="chart-head"><div><h2>Chamber Sensor Trend</h2><p class="tiny">상대 신호 [a.u.] · 합성 시계열 · 절대 압력값이 아님</p></div><span class="pill missing">규칙 임계값 미승인</span></div>
+            <figure class="chart" aria-label="합성 센서 상대 신호의 시계열. 가운데 일부 데이터 결측. 관리상한/하한은 미승인 시각 자리표시자." style="margin:0">
+              <svg viewBox="0 0 630 280" role="img" aria-labelledby="trendTitle trendDesc">
+                <title id="trendTitle">Etch 합성 센서 상대 신호 추세</title>
+                <desc id="trendDesc">X축 가상 시각, Y축 상대 신호 arbitrary units. T4와 T5에서 데이터가 결측되어 선이 끊깁니다. UCL과 LCL 위치는 시각 자리표시자이며 공학 기준이 아닙니다.</desc>
+                <g stroke="#E9EDF3" stroke-width="1"><path d="M53 36H600M53 91H600M53 145H600M53 200H600M53 243H600"/></g>
+                <g font-size="11" fill="#66778B" font-family="system-ui"><text x="6" y="22">[a.u.]</text><text x="22" y="41">100</text><text x="28" y="96">75</text><text x="28" y="150">50</text><text x="28" y="205">25</text><text x="34" y="246">0</text><text x="53" y="265">T0</text><text x="176" y="265">T2</text><text x="300" y="265">T4</text><text x="425" y="265">T6</text><text x="563" y="265">T8</text></g>
+                <path d="M53 62H600" stroke="#BE8B50" stroke-width="1.8" stroke-dasharray="6 5"/>
+                <path d="M53 213H600" stroke="#A97A46" stroke-width="1.6" stroke-dasharray="3 5"/>
+                <g font-size="10" font-family="system-ui" fill="#8B5400"><text x="465" y="55">UCL · 위치 예시(미검수)</text><text x="460" y="229">LCL · 위치 예시(미검수)</text></g>
+                <path d="M53 150 L114 147 L176 139 L238 143 L285 120" fill="none" stroke="#155BC1" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+                <path d="M414 129 L475 108 L538 80 L595 48" fill="none" stroke="#155BC1" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+                <path d="M304 129H397" stroke="#A0AAB7" stroke-width="2" stroke-dasharray="2 5"/>
+                <g fill="#fff" stroke="#155BC1" stroke-width="3"><circle cx="53" cy="150" r="4"/><circle cx="114" cy="147" r="4"/><circle cx="176" cy="139" r="4"/><circle cx="238" cy="143" r="4"/><circle cx="285" cy="120" r="4"/><circle cx="414" cy="129" r="4"/><circle cx="475" cy="108" r="4"/><circle cx="538" cy="80" r="4"/><circle cx="595" cy="48" r="5"/></g>
+                <rect x="312" y="137" width="85" height="22" rx="6" fill="#F0F3F7"/><text x="326" y="152" fill="#56667A" font-family="system-ui" font-size="10">결측 구간</text>
+              </svg>
+            </figure>
+            <div class="legend"><span><i class="line"></i> 합성 관측</span><span><i class="line dash"></i> 관리한계 자리표시자</span><span><i class="line gap"></i> 데이터 결측</span></div>
+            <p class="chart-footer">가상의 상대 신호 [a.u.]입니다. 표시된 선은 SPC 관리한계로 확정되지 않았으며, 규격한계(USL/LSL)와 혼동하면 안 됩니다. 결측을 0으로 보간하지 않습니다.</p>
+            <div class="hr"></div>
+            <div class="block-head"><h3>관찰값과 품질 상태</h3><span class="tiny">데이터 표 대체 보기</span></div>
+            <div class="table-scroll" tabindex="0" aria-label="관측값 테이블 좌우 스크롤"><table><thead><tr><th>가상 시각</th><th class="right">상대 신호 [a.u.]</th><th>품질</th><th>출처</th></tr></thead><tbody>
+             <tr><td>T3</td><td class="right">50</td><td>수집됨</td><td>합성 데모</td></tr>
+             <tr><td>T4–T5</td><td class="right">—</td><td>데이터 없음</td><td>합성 데모</td></tr>
+             <tr><td>T6</td><td class="right">60</td><td>수집됨</td><td>합성 데모</td></tr>
+             <tr><td>T8</td><td class="right">91</td><td>수집됨 · 모의 이상</td><td>합성 데모</td></tr>
+             </tbody></table></div>
+          </section>
+          <div class="insight-stack">
+            <aside class="card block side-card"><p class="overline">CONTEXT · ILLUSTRATIVE</p><h2>챔버 개념도</h2>
+              <div class="clay-wrap">
+                <div class="clay-slot" data-asset="illustration.etch-chamber.v1" role="img" aria-label="식각 챔버를 단순화한 에메랄드 개념도, 축척 아님">
+                  <img alt="식각 챔버를 단순화한 개념도, 축척 아님" decoding="async">
+                  <svg class="fallback-art" viewBox="0 0 200 160" aria-hidden="true">
+                    <defs><linearGradient id="chamberMaterial" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#DDF8EC"/><stop offset=".55" stop-color="#16B88A"/><stop offset="1" stop-color="#076F5B"/></linearGradient></defs>
+                    <ellipse cx="100" cy="147" rx="83" ry="9" fill="#DDF8EC"/>
+                    <rect x="53" y="17" width="95" height="23" rx="10" fill="#076F5B"/>
+                    <path d="M34 53 Q36 31 65 33 H137 Q164 31 166 53 L173 117 Q176 136 153 137 H47 Q24 137 27 117Z" fill="url(#chamberMaterial)" stroke="#076F5B" stroke-width="3"/>
+                    <path d="M46 70 Q97 94 153 70" stroke="#DDF8EC" fill="none" stroke-width="4" opacity=".7"/>
+                    <rect x="55" y="86" width="90" height="29" rx="14" fill="#0B9F78" stroke="#DDF8EC" stroke-width="3"/>
+                    <ellipse cx="99" cy="100" rx="37" ry="8" fill="#A4E9C8"/>
+                    <path d="M83 14 V4 H117 V14M39 62 H12 V82 H27M166 62 H187 V82 H172" fill="none" stroke="#076F5B" stroke-width="8" stroke-linecap="round"/>
+                    <path d="M57 46H145" stroke="#EFFFF5" stroke-width="5" opacity=".65"/>
+                  </svg>
+                </div><span class="wafer-caption">Chamber placeholder · 개념도 / 축척 아님</span>
+              </div>
+              <div class="kv"><span>Run ID</span><b>RUN-DEMO-044</b></div>
+              <div class="kv"><span>데이터 상태</span><b>부분 결측</b></div>
+              <div class="kv"><span>알람 규칙</span><b>계약 검토 중</b></div>
+              <button class="primary" type="button" data-go="trace">연관 Lot 후보 확인 →</button>
+            </aside>
+            <aside class="note"><strong>공학 용어 도우미</strong><br><span class="term-wrap"><button class="knowledge-term" type="button" data-open-ekl="control-limit">UCL / LCL이란?</button><span class="tooltip" role="tooltip">SPC 관리한계는 공정 변동 신호 확인용 기준이며 제품 규격한계와 다릅니다. 실제 관리한계 계산 방식은 검수 전입니다.</span></span><br>모의 알람은 실제 불량이나 인과관계의 증거가 아닙니다.</aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-trace" class="screen" hidden aria-labelledby="trace-title">
+        <div class="heading"><div><p class="eyebrow">LOT / WAFER TRACEABILITY · SYNTHETIC</p><h1 id="trace-title">영향 가능 Lot 조사</h1><p>ETCH-02 / CH-B / RUN-DEMO-044 · 승인된 연관성 판정 규칙은 아직 없습니다.</p></div><button class="secondary" type="button" data-go="evidence">← 센서 근거로</button></div>
+        <div class="note"><strong>필수 해석:</strong> 알람이 같은 시간에 발생했다는 사실만으로 Lot을 '노출 확정' 또는 '불량 확정'으로 표시하지 않습니다. 아래 각 행은 가상 상태 표현 예시이며, 실제 데이터/룰 검증 결과가 아닙니다.</div>
+        <div class="trace-summary">
+          <div class="card"><span class="overline">연결된 이력</span><b>01 <small style="font-size:12px">예시</small></b><span class="tiny">공정 Run 관계 설명용</span></div>
+          <div class="card"><span class="overline">노출 가능성</span><b>01 <small style="font-size:12px">예시</small></b><span class="tiny">승인된 룰 적용 전</span></div>
+          <div class="card"><span class="overline">판정 불가</span><b>01 <small style="font-size:12px">예시</small></b><span class="tiny">연관 근거 부족</span></div>
+        </div>
+        <section class="card block" aria-labelledby="lot-candidates"><div class="block-head"><h2 id="lot-candidates">Lot 검토 테이블</h2><span class="tiny">시연용 가상 식별자 · 3개 행</span></div>
+          <div class="table-scroll" tabindex="0" aria-label="Lot 후보 표, 좌우로 스크롤"><table><thead><tr><th scope="col">Lot ID</th><th scope="col">공정 Run 관계</th><th scope="col">해석 상태</th><th scope="col">미확정 사항</th></tr></thead><tbody>
+            <tr><td class="name-cell">LOT-DEMO-042</td><td>Run 기록 연결 (가상)</td><td><span class="pill">↔ 연결된 이력</span></td><td>노출 / 품질 판정 별도</td></tr>
+            <tr><td class="name-cell">LOT-DEMO-043</td><td>Step·시간 후보 (가상)</td><td><span class="pill warn">? 노출 가능성 예시</span></td><td>판정 룰 미승인</td></tr>
+            <tr><td class="name-cell">LOT-DEMO-044</td><td>관계 데이터 없음</td><td><span class="pill missing">? 판정 불가</span></td><td>관계 데이터 확인 필요</td></tr>
+           </tbody></table></div>
+          <p class="chart-footer">Wafer Map은 계측 좌표·범례·방향 규칙이 확정될 때 별도 2D 패널로 구현합니다. 현재 하이파이 화면에 실제 Wafer Map 데이터가 있다고 주장하지 않습니다.</p>
+        </section>
+      </section>
+      <footer class="page-footer">FAB ONE · DESIGN PROTOTYPE · Issue #9 · White / Emerald v0.1 · 모든 설비/수율/시간/연관성 정보는 가상 예시이며 실제 FAB에 연결되지 않습니다. A01/A04 검수 및 A02 구현 전입니다.</footer>
+    </main>
+  </div>
+</div>
+
+<div id="modal-overlay" class="panel-overlay" hidden></div>
+<div id="ekl-insight" class="knowledge-popup" role="dialog" aria-modal="false" aria-labelledby="insight-title" hidden>
+  <div class="panel-head"><span class="overline">EKL · LEVEL 2 / ENGINEERING INSIGHT</span><button class="close" type="button" id="close-insight" aria-label="계산 설명 닫기">×</button></div>
+  <h2 id="insight-title" tabindex="-1">식각 속도 · 계산 원리</h2>
+  <p class="k-sub">공학적 공식/가정 검수 전 · 정적 산술 예시</p>
+  <p class="section-head">정적 설명 예시</p>
+  <p id="insight-description">식각 속도는 막 두께 변화량을 시간으로 나누는 식으로 표현할 수 있습니다. 이 설명은 현재 시나리오 장비 측정값이 아닙니다.</p>
+  <p class="section-head">예시 수식</p><div class="formula" id="insight-formula">Etch rate = (200 − 140) nm / 2 min = 30 nm/min</div>
+  <div class="spec-guard">단순 산술 예시입니다. 입력 데이터, 수식 조건, 단위와 공정 정의는 A01/A04 검토가 필요합니다.</div>
+  <button class="primary detail-link" type="button" id="go-deep">Level 3 · 근거와 전제 자세히 →</button>
+</div>
+<aside id="ekl-deep" class="panel" aria-labelledby="deep-title" hidden>
+  <div class="panel-head"><span class="overline">EKL · LEVEL 3 / DEEP DIVE</span><button type="button" class="close" id="close-deep" aria-label="상세 지식 패널 닫기">×</button></div>
+  <button id="back-insight" class="quiet" type="button" style="padding-left:0">← 계산 카드로</button>
+  <h2 id="deep-title" tabindex="-1">식각 속도를 이해하는 법</h2>
+  <p class="k-sub">Knowledge draft · 공학 검수 전 · Version 0.1 (화면 데모)</p>
+  <p class="section-head">1. 개념</p>
+  <p>Etch Rate는 제거된 막의 두께와 공정 시간을 연결하는 개념입니다. 공정·막 종류·측정 조건에 따라 정의와 해석이 달라질 수 있습니다.</p>
+  <p class="section-head">2. 예시 계산</p>
+  <div class="formula">∆ thickness / ∆ time = 30 nm/min (정적 예시)</div>
+  <p class="section-head">3. 판단 전 확인할 것</p>
+  <div class="note">막 종류 · 두께 측정 방식 · 공정 시간 범위 · 계측 불확도 · 단위 변환 · 결측/오류 · 지식 출처 및 검수 버전</div>
+  <p class="section-head">4. SPC 관련 주의</p>
+  <p><b>관리한계(UCL/LCL)</b>는 통계적 변동 감시용이며, 규격한계(USL/LSL)나 인과관계의 증명이 아닙니다.</p>
+  <div class="hr"></div>
+  <p class="section-head">개인 학습 메모 · 시연용</p>
+  <textarea class="readonly-note" readonly aria-label="개인 메모 기능 미구현">개인 메모 저장은 프로토타입에서 제공되지 않습니다. 실제 IndexedDB UX는 ADR 승인·A02 구현 후 적용합니다.</textarea>
+  <p class="tiny">제안 정책: 일반 시뮬레이션 재설정은 개인 메모를 보존하고, 삭제는 별도 확인 절차를 둡니다. 현재 화면은 저장을 수행하지 않습니다.</p>
+</aside>
+<script>
+"use strict";
+/*
+ * OWNER IMAGE SWAP: Replace only the two empty paths below with approved assets.
+ * No CSS or layout structure changes. Prefer transparent WebP / PNG.
+ * Example when files really exist: "assets/illustrations/wafer-owner.webp".
+ * Do not insert nonexistent paths as shipped defaults.
+ */
+const ASSET_OVERRIDES = {
+  "illustration.wafer.v1": "",
+  "illustration.etch-chamber.v1": ""
+};
+const screens = ["command", "evidence", "trace"];
+const navButtons = [...document.querySelectorAll("[data-view]")];
+const breadcrumb = document.getElementById("breadcrumb");
+function selectScreen(id){
+  if(!screens.includes(id)) return;
+  screens.forEach(key=>{document.getElementById("view-"+key).hidden=(id!==key);});
+  navButtons.forEach(btn=>btn.setAttribute("aria-pressed",String(btn.dataset.view===id)));
+  breadcrumb.textContent = {command:"Command Center",evidence:"Equipment Intelligence",trace:"Lot / Wafer Traceability"}[id];
+  closeAll(false);
+  document.getElementById(id+"-title").focus({preventScroll:true});
+  window.scrollTo({top:0,behavior:"instant"});
+}
+screens.forEach(key=>document.getElementById(key+"-title").setAttribute("tabindex","-1"));
+document.querySelectorAll("[data-go], [data-view]").forEach(el=>el.addEventListener("click",()=>selectScreen(el.dataset.go||el.dataset.view)));
+document.querySelectorAll(".clay-slot").forEach(slot=>{
+  const src=ASSET_OVERRIDES[slot.dataset.asset];
+  if(!src) return;
+  const img=slot.querySelector("img");
+  img.onload=()=>{slot.dataset.loaded="true";slot.removeAttribute("role");slot.removeAttribute("aria-label");};
+  img.onerror=()=>{slot.dataset.loaded="false";img.removeAttribute("src");};
+  img.src=src;
+});
+const insight = document.getElementById("ekl-insight");
+const deep = document.getElementById("ekl-deep");
+const overlay = document.getElementById("modal-overlay");
+const narrow = () => window.matchMedia("(max-width:620px)").matches;
+let origin=null, activeConcept="etch-rate";
+function setOverlay(){
+  const visible=(narrow()&&(!insight.hidden||!deep.hidden));
+  overlay.hidden=!visible;
+  insight.setAttribute("aria-modal",String(narrow()));
+  if(narrow()){deep.setAttribute("role","dialog");deep.setAttribute("aria-modal","true");}
+  else {deep.removeAttribute("role");deep.removeAttribute("aria-modal");}
+  document.querySelector(".layout").inert=visible;
+}
+function updateConcept(concept){
+  const control=concept==="control-limit";
+  document.getElementById("insight-title").textContent=control?"SPC 관리한계 · UCL / LCL":"식각 속도 · 계산 원리";
+  document.getElementById("insight-description").textContent=control?
+    "관리한계는 통계적 공정 변동을 감시하기 위한 경계입니다. 제품 규격한계와 다르며 이상 신호만으로 원인을 확정하지 않습니다.":
+    "식각 속도는 막 두께 변화량을 시간으로 나누는 식으로 표현할 수 있습니다. 이 설명은 현재 시나리오 장비 측정값이 아닙니다.";
+  document.getElementById("insight-formula").textContent=control?
+    "UCL / LCL 계산: 추정량·표본·룰 승인 전 (숫자 미제공)":
+    "Etch rate = (200 − 140) nm / 2 min = 30 nm/min";
+  document.getElementById("deep-title").textContent=control?"SPC 관리한계 알아보기":"식각 속도를 이해하는 법";
+}
+function openInsight(trigger,concept){
+  origin=trigger;activeConcept=concept;updateConcept(concept);
+  deep.hidden=true;insight.hidden=false;
+  setOverlay();
+  document.getElementById("insight-title").focus();
+}
+function closeAll(restore=true){
+  deep.hidden=true;insight.hidden=true;setOverlay();
+  if(restore&&origin&&document.contains(origin))origin.focus();
+}
+function openDeep(){
+  insight.hidden=true;deep.hidden=false;setOverlay();
+  document.getElementById("deep-title").focus();
+}
+function backToInsight(){
+  deep.hidden=true;insight.hidden=false;setOverlay();
+  document.getElementById("insight-title").focus();
+}
+document.querySelectorAll("[data-open-ekl]").forEach(btn=>btn.addEventListener("click",()=>openInsight(btn,btn.dataset.openEkl)));
+document.getElementById("close-insight").addEventListener("click",()=>closeAll());
+document.getElementById("go-deep").addEventListener("click",openDeep);
+document.getElementById("close-deep").addEventListener("click",()=>closeAll());
+document.getElementById("back-insight").addEventListener("click",backToInsight);
+overlay.addEventListener("click",()=>closeAll());
+function focusable(panel){return [...panel.querySelectorAll('button:not([disabled]),a[href],input:not([disabled]),textarea:not([disabled])')].filter(el=>!el.hidden);}
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){
+    if(!deep.hidden){e.preventDefault();backToInsight();}
+    else if(!insight.hidden){e.preventDefault();closeAll();}
+  }
+  if(e.key==="Tab"&&narrow()&&(!deep.hidden||!insight.hidden)){
+    const active=!deep.hidden?deep:insight, items=focusable(active);
+    if(!items.length)return;
+    const first=items[0],last=items[items.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  }
+});
+window.addEventListener("resize",setOverlay);
+</script>
+</body>
+</html>
