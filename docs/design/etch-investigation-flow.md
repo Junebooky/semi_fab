@@ -232,3 +232,30 @@ Use machine-stable IDs to link drill-down; no `numericValue || 0` fallbacks; alw
 6. Figma and 3D originals: no linked editable file/assets in this PR; only executable-design documentation and textual wireframes are submitted.
 
 **This specification is for REVIEW, not proof of application implementation or usability testing.**
+
+## 11. Issue #9 implementation alignment — alarm context and synthetic trend (2026-10-15)
+
+**Source of truth for the current editable visual demonstration:** [PR #11 prototype](https://github.com/Junebooky/semi_fab/blob/a03/issue-9-white-emerald-visual/prototypes/fab-one-issue-9.html) at reviewed handoff head `338a6f895093c0d5ebb93beedf38733238740d49`. This section aligns the **design contract** with A01 [P1 review](https://github.com/Junebooky/semi_fab/pull/11#issuecomment-6184254594); PR #7 is documentation and PR #11 is the editable mockup. All example measurements are **unapproved synthetic placeholders**, not production observations.
+
+### Alert-specific navigation invariant
+
+- A row action **must resolve `alertId` before opening evidence**; derive equipment ID, chamber, Run and fixture from the selected record, never from a global hard-coded default. The destination page must display those matching identifiers, or show a user-understandable unavailable state.
+- Prototype example `AL-DEMO-001 → ETCH-02 / CH-B / RUN-DEMO-044 → SYN-ETCH-02-01`; valid example evidence exists.
+- Prototype example `AL-DEMO-002 → ETCH-01 / CH-A → fixture=null`; its evidence action is intentionally **disabled with a Korean reason**. Do not open CH-B evidence or invent CH-A readings. A02's real implementation should support a specific unavailable/error state when a fixture is missing after navigation.
+- This is a prototype fixture-to-alert contract, **not** a domain-approved claim about real equipment.
+
+### Single-series chart/table invariant
+
+The same `DEMO_FIXTURES["SYN-ETCH-02-01"]` sample collection generates both SVG segments and an accessible complete table. It currently contains:
+
+| Time | T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 |
+| --- | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: |
+| Synthetic value [a.u.] | 42 | 44 | 47 | 46 | **null** | **null** | 57 | 80 |
+
+**Every** time point appears as a separate table row; `null` becomes `— / 데이터 없음`, never `0`. Chart has six observations and **two separate polyline segments**: it must not connect T3 to T6. The SVG accessible description and tabular values derive from this one source. On the chart, the explicit warning **“도식용 가상 한계선 · 통계적 관리한계 미검증”** is mandatory; the illustrative UCL/LCL lines have no accepted numerical/statistical validity. Specification limits USL/LSL are not shown as control limits.
+
+### PR #11/A01 handoff and scope
+
+- Source files: `prototypes/fab-one-issue-9.html`, `prototypes/prototype-contract.test.mjs`, `prototypes/README.md` in PR #11. The Node command and mock-DOM checks are described in the README; isolated function tests **4/4 PASS**, actual Node CLI/browser/assistive technology execution **NOT_RUN**.
+- The design architecture allows status `linked_history` / `exposure_possible` / `indeterminate`, but the PR #11 rows are illustrative display examples; do not infer physical exposure solely from timing.
+- **Review chain:** A03 submits exact PR #11 and PR #7 HEAD SHAs to **A01**. Only **A01** may publish `[A01][QA_READY]` identifying the target PR and immutable SHA for A04 final verification. A04 does not inherit A03's isolated unit findings as final QA.
