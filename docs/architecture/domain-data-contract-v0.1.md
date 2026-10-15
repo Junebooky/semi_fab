@@ -59,6 +59,9 @@ erDiagram
         string scenario_id "ETH-SYN-01"
         int seed "20261015"
         int is_active "1: 현재 활성 세션, 0: 과거 아카이브"
+        string integrity_status "VALID | INTEGRITY_COMPROMISED"
+        string integrity_reason "무효화 원인 또는 NULL"
+        string integrity_marked_at_utc "무효화 UTC 또는 NULL"
         string started_at_utc
         string completed_at_utc
     }
@@ -320,6 +323,45 @@ SQLite 공식 규약([SQLite Foreign Key Support](https://www.sqlite.org/foreign
      - 실패 시 전체가 ROLLBACK되므로 활성 세션이 0개로 유실되는 세션 고아(Orphan) 현상을 방지한다.
   4. **쓰기 가드레일:** 공정 실행 및 계측치 기록 서비스는 `is_active = 1` 세션이 없으면 쓰기를 거부하고 `NO_ACTIVE_SIMULATION_SESSION`을 반환한다.
 
+**F07 영속 무효화 ERD/DDL/TS 정합성:** `is_active`는 서비스 활성 표시일 뿐 데이터 신뢰성 표시가 아니다. `integrity_status`는 `VALID`(정상) 또는 종결 상태 `INTEGRITY_COMPROMISED`이며, 오류 원인 및 UTC 시각을 별도 보존한다. 신규 SQLite의 정식 세션·예약 가드 스키마 조각은 다음과 같다. 기존 DB 마이그레이션은 동등한 컬럼/제약과 선행 이력 검사를 보장해야 한다.
+
+```sql
+CREATE TABLE simulation_session (
+    session_id TEXT PRIMARY KEY,
+    scenario_id TEXT NOT NULL,
+    seed INTEGER NOT NULL,
+    is_active INTEGER NOT NULL CHECK (is_active IN (0, 1)),
+    integrity_status TEXT NOT NULL DEFAULT 'VALID'
+        CHECK (integrity_status IN ('VALID', 'INTEGRITY_COMPROMISED')),
+    integrity_reason TEXT,
+    integrity_marked_at_utc TEXT,
+    started_at_utc TEXT NOT NULL,
+    completed_at_utc TEXT,
+    CHECK (
+        (integrity_status = 'VALID'
+          AND integrity_reason IS NULL AND integrity_marked_at_utc IS NULL)
+        OR (integrity_status = 'INTEGRITY_COMPROMISED'
+          AND integrity_reason IS NOT NULL AND integrity_marked_at_utc IS NOT NULL)
+    )
+);
+CREATE UNIQUE INDEX idx_unique_active_session
+  ON simulation_session(is_active) WHERE is_active = 1;
+
+-- 제어 메타데이터: 의도적으로 동적 이력 삭제에 종속되는 FK 없음
+CREATE TABLE session_ingest_guard (
+    session_id TEXT PRIMARY KEY,
+    guard_state TEXT NOT NULL CHECK (guard_state IN ('IDLE', 'OPEN', 'QUARANTINED')),
+    batch_token TEXT,
+    guard_updated_at_utc TEXT NOT NULL,
+    CHECK ((guard_state = 'OPEN' AND batch_token IS NOT NULL)
+       OR (guard_state IN ('IDLE', 'QUARANTINED') AND batch_token IS NULL))
+);
+```
+
+- **F01 보존:** 새 시뮬레이션 세션과 해당 `IDLE` 가드 행의 INSERT를 같은 트랜잭션으로 처리한다. 기존 활성 세션 유니크 인덱스와 Soft-Reset 원자적 활성 교체 규칙은 변경하지 않는다.
+- **F07 사전 예약 필수:** 이벤트·`process_run`·`sensor_measurement`·`fdc_alert` 저장 전에 `is_active=1`, `integrity_status='VALID'`, `guard_state='IDLE'`을 원자 확인하고 `OPEN + batch_token`으로 CAS 1행 전이하여 **별도 COMMIT**. 실제 배치 트랜잭션은 시작 시 유효 소유 토큰 확인, 성공 시 이벤트 저장과 `OPEN → IDLE`을 함께 COMMIT한다. 충돌이면 전체 배치 ROLLBACK 뒤 **다른 트랜잭션**에서 세션 `VALID → INTEGRITY_COMPROMISED` + 사유/시각 및 가드 `OPEN → QUARANTINED`를 각각 CAS 1행 확인하고 함께 COMMIT한다. 선행 커밋 이벤트는 물리적으로 유지되나 일반 조회·통계/CSV에 제공하지 않는다.
+- **재기동/오류 시 fail-closed:** 격리 COMMIT 이전 크래시에도 `OPEN`이 내구적으로 남아 쓰기와 일반 결과 조회를 막는다. 재기동 때 남은 `OPEN`은 자동 IDLE 복구 금지, `INTERRUPTED_BATCH_REQUIRES_REVIEW` 사유로 위 격리 COMMIT을 재시도한다. 실패 중에도 쓰기 금지. 가드 누락/상태 불일치도 정상으로 간주하지 않으며, 기존 데이터 감사 없는 `IDLE` 생성 금지. `INTEGRITY_COMPROMISED`는 `is_active=0`이 되어도 유지, 자동 `VALID` 복귀 금지. 정상 결과 조회는 반드시 세션 `VALID` **및** 가드 `IDLE` 조건을 함께 만족해야 한다. 상세 절차: 재현성 계약 §5.2.
+
 ### 3.5 SPC 이상 경고의 비인과성 공학 원칙 ([F08] 신설)
 반도체 FDC 및 통계적 공정 관리(SPC)의 공학적 한계를 명확히 규정한다:
 - **핵심 원칙:** FDC 이상 알람 및 관리한계 이탈(Outlier/Alarm)은 **"원인 조사를 시작할 근거가 됨을 나타낼 뿐, 해당 로트/웨이퍼의 물리적 결함 확정이나 설비의 특정 고장 원인을 단정하는 인과관계를 증명하지 않는다."**
@@ -547,6 +589,9 @@ export interface SimulationSession {
   scenarioId: string;
   seed: number;
   isActive: boolean;
+  integrityStatus: "VALID" | "INTEGRITY_COMPROMISED"; // isActive와 독립적 영속 무결성 상태
+  integrityReason?: string | null;
+  integrityMarkedAtUtc?: string | null; // 무효화 시 필수 UTC 시간
   startedAtUtc: string;
   completedAtUtc?: string | null;
 }
