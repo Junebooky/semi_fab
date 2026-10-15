@@ -453,4 +453,87 @@ test('P1-A Async Alert Switching Race Condition Defense: Delayed inflight invest
   assert.equal(investigationData.alert_id, criticalAlert.alert_id);
 });
 
+test('P1-A Async Alert Switching Race Condition Defense: Delayed JSON body stream resolution cannot overwrite standby state or newer alert', async () => {
+  const fixture = generateModeAFixtureTest(20261015);
+  const criticalAlert = fixture.alerts[0]; // Active run alert
+  const standbyAlert = fixture.alerts[1];  // Standby alert
+
+  // Simulated component state & refs matching page.tsx
+  let investigationData = null;
+  let selectedAlert = null;
+  let noticeMessage = "";
+  let activeReqId = 0;
+  let currentSelectedAlertId = null;
+
+  // Delayed json body promise
+  let delayedJsonResolve = null;
+  const delayedJsonPromise = new Promise(resolve => {
+    delayedJsonResolve = resolve;
+  });
+
+  async function handleSelectAlertWithDelayedJson(alert, delayJson = false) {
+    selectedAlert = alert;
+    currentSelectedAlertId = alert.alert_id;
+    const reqId = ++activeReqId;
+
+    if (alert.run_id) {
+      try {
+        // Step 1: fetch() resolves fast HTTP 200 response header
+        const res = { ok: true, status: 200 };
+        // Guard 1: after fetch
+        if (reqId !== activeReqId || currentSelectedAlertId !== alert.alert_id) {
+          return;
+        }
+
+        if (res.ok) {
+          // Step 2: res.json() stream resolution is delayed
+          const data = delayJson ? await delayedJsonPromise : fixture.investigation;
+
+          // Guard 2 (P1-A JSON Guard): after await res.json()
+          if (reqId !== activeReqId || currentSelectedAlertId !== alert.alert_id) {
+            return; // DISCARDED!
+          }
+
+          investigationData = data;
+          noticeMessage = `엔지니어링 조사: [${alert.severity}] ${alert.alert_id} 세부 근거 열림`;
+        }
+      } catch {
+        if (reqId !== activeReqId || currentSelectedAlertId !== alert.alert_id) return;
+        investigationData = null;
+      }
+    } else {
+      // Standby alert immediately clears investigation data and notice
+      investigationData = null;
+      noticeMessage = `알림: [${alert.severity}] ${alert.alert_id} 선택됨 - 연결된 공정 Run 없음`;
+    }
+  }
+
+  // 1. User selects CRITICAL alert; HTTP fetch succeeds immediately, but res.json() body stream is delayed
+  const criticalPromise = handleSelectAlertWithDelayedJson(criticalAlert, true);
+  assert.equal(selectedAlert.alert_id, criticalAlert.alert_id);
+  assert.equal(investigationData, null); // Not yet set
+
+  // 2. While res.json() is in-flight / suspended, user clicks STANDBY alert
+  await handleSelectAlertWithDelayedJson(standbyAlert, false);
+  assert.equal(selectedAlert.alert_id, standbyAlert.alert_id);
+  assert.equal(investigationData, null);
+  assert.ok(noticeMessage.includes('연결된 공정 Run 없음'));
+
+  // 3. Now the delayed JSON body finally resolves with the parsed payload!
+  delayedJsonResolve(fixture.investigation);
+  await criticalPromise;
+
+  // 4. Invariant: investigationData MUST REMAIN NULL, notice MUST NOT be overwritten!
+  assert.equal(selectedAlert.alert_id, standbyAlert.alert_id);
+  assert.equal(investigationData, null, "Delayed JSON parsing must NOT overwrite standby state");
+  assert.ok(noticeMessage.includes('연결된 공정 Run 없음'), "Delayed JSON parsing must NOT overwrite standby notice");
+
+  // 5. User clicks critical alert again normally -> loads successfully
+  await handleSelectAlertWithDelayedJson(criticalAlert, false);
+  assert.equal(selectedAlert.alert_id, criticalAlert.alert_id);
+  assert.notEqual(investigationData, null);
+  assert.equal(investigationData.alert_id, criticalAlert.alert_id);
+});
+
+
 
