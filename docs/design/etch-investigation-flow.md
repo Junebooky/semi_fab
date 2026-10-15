@@ -1,6 +1,6 @@
 # Etch Investigation Flow & Wireframes — A03 v0.1
 
-- **Status:** REVIEW, not implemented. [Issue #4](https://github.com/Junebooky/semi_fab/issues/4); 2026-10-15.
+- **Status:** REVIEW, not implemented. **Visual owner direction:** #FFFFFF page/card canvas and green owner-replaceable wafer/chamber slots (Issue #9). [Issue #4](https://github.com/Junebooky/semi_fab/issues/4); 2026-10-15.
 - **User task:** Identify a **synthetic** Etch anomaly, assess evidence and potentially affected Lot/Wafer, document an investigation. This is **NOT** a live FAB monitoring/control surface.
 - **Related:** [foundations](design-system-foundations.md), [EKL UX](ekl-interaction-spec.md), [ADR-001 proposal](https://github.com/Junebooky/semi_fab/pull/2).
 - **Authority:** A01 must approve process rules, anomaly/risk terminology, applicable SPC methods and case workflow. A03 proposes navigation and interaction only.
@@ -34,7 +34,7 @@ flowchart LR
 - Browser Back returns to the previous investigation with filters, scroll and selected alert intact when technically feasible. Explicit reset of a filter is user controlled.
 - "조사 시작" creates a **local simulation case only where the selected approved operating mode supports it**; Mode A may instead navigate to a preseeded read-only case. No claim of shared workflow or production hold/release.
 
-## 2. Screen 01 — FAB Command Center
+## Visual slot integration (Issue #9)\n\n- All screen canvases/primary cards: **#FFFFFF**. Separation by subtle border, spacing and restrained shadows; do not use gray full-page backdrop.\n- **Command Center** introductory/educational card reserves `illustration.wafer.v1`, 196×196 desktop / 132×132 phone, original emerald CSS placeholder now, owner-supplied image later.\n- **Equipment evidence** explanation area reserves `illustration.etch-chamber.v1`, 240×192 desktop / 160×128 phone, never inside measurement chart.\n- Both wrappers use `object-fit:contain`, 12% safe padding and accessible fallbacks per [asset-slot-contract.md](asset-slot-contract.md). They cannot obscure units, axis, control/spec limit labels or candidate statuses.\n- High-fidelity editable prototype follows under independent Issue #9 / PR; these wireframes remain domain-neutral contracts.\n\n## 2. Screen 01 — FAB Command Center
 
 **Primary purpose:** spot an unusual event *without interpreting it as confirmed scrap/cause*.
 
@@ -122,7 +122,7 @@ flowchart LR
 +-----------------------------------------------------------------------------------+
 ```
 
-**Source-of-truth hierarchy:** A01-approved relation rules between chamber/run, lot, wafer and time window decide candidate linking; user-selected `relationshipEvidence` must be explicitly shown. Display distinction `linked` vs `exposure_possible` vs `confirmed_defect` (the last only if separate validated measurement and domain rule exist; generally absent in MVP).
+**A01 provisional domain guidance (PR #7 comment #6184007944):** Show three distinct interpretations: **'연결된 이력' (run/equipment/chamber/step/timestamp trace established)**, **'노출 가능성' (additional A01-approved exposure criterion met)**, and **'판정 불가' (insufficient/missing relationship/rule data)**. Mere temporal coincidence with an alert is not exposure. Never call a lot defective or scrapped on this basis. This remains a design-level wording decision pending data contracts.\n\n**Source-of-truth hierarchy:** A01-approved relation rules between chamber/run, lot, wafer and time window decide candidate linking; user-selected `relationshipEvidence` must be explicitly shown. Display distinction `linked` vs `exposure_possible` vs `confirmed_defect` (the last only if separate validated measurement and domain rule exist; generally absent in MVP).
 
 **Wafer Map contract:** stable orientation, die X/Y axes and coordinate convention, legend bins/measurement name/unit/time, notch direction label, missing/unmeasured/excluded dies visually and semantically distinct. Show accessible data table sorted by X/Y with status and value. No artistic 3D overlays in the map.
 
@@ -194,7 +194,7 @@ interface Alert {
 }
 interface CandidateLink {
   lotId: string; waferIds?: string[]; runId: string; relationType: string;
-  relationshipEvidence: string[]; exposureRuleId?: string; status: "linked" | "exposure_possible" | "not_evaluated";
+  relationshipEvidence: string[]; exposureRuleId?: string; status: "linked_history" | "exposure_possible" | "indeterminate";
 }
 ```
 
