@@ -23,10 +23,45 @@ When sources conflict, report the conflict; do not silently invent semiconductor
 7. Report actual progress and blockers in the Issue/PR.
 8. Do not label a submitted PR DONE until authorized merging and Issue closure.
 
-## Required chat handoff (last line)
-`[FAB-ONE][A0N][REVIEW|DONE|BLOCKED|FAILED] repo=Junebooky/semi_fab issue=#N pr=#N | SUMMARY | CHECK | blocker=NONE`
+## Required work report — strict 3-line Korean handoff (v1.0)
 
-Substitute verified identifiers. When a PR or test does not exist, use `pr=none` or `CHECK=NOT_RUN`. Chat handoff is not proof of GitHub submission.
+**This overrides all older agent prompt formats** such as `[FAB-ONE][A0N]...`. Detailed technical findings, test logs and evidence belong in GitHub Issues, PRs, review comments, and repository files; the final chat handoff has **exactly three plain-text lines**, no Markdown code fence, table, labels of extra lines, or message after them:
+
+```text
+보고: A0N 역할 에이전트가 <실제로 수행한 작업 한 가지>를 <완료/제출/등록/요청>했습니다. [REVIEW|DONE|BLOCKED|FAILED]
+위치: Junebooky/semi_fab → <Issues|Pull requests> → #N → <Conversation|Files changed> → <댓글 ID 또는 정확한 파일 경로>
+링크: <위치의 GitHub 직접 URL>
+```
+
+**Rules**
+1. State the actor explicitly in the sentence: `A02 개발 에이전트가...`, `A03 디자인 에이전트가...` etc. Use one short Korean declarative sentence without vague omitted subjects.
+2. Include the actual *action* and object: created Issue, submitted PR, posted review comment, committed file, requested assignment. Say `검토 의견을 등록`, not `디자인 완료`, for a review-only task.
+3. `위치` is an exact navigation path in **Junebooky/semi_fab**, including record type/number and specific Conversation comment ID or Files changed file path where applicable. When the artifact is an Issue, `Issues → #N → 본문` is sufficient.
+4. `링크` must be an actually verified, direct GitHub URL for that primary artifact. For a PR comment use the `#issuecomment-ID` anchor; for a file use its verified blob link or PR file URL.
+5. When work is blocked or *no* GitHub record was submitted, say `위치: GitHub 미등록` and `링크: 없음 (미등록)`. Never invent a number, URL, file path, GitHub upload or test.
+6. Status: `REVIEW` submitted/awaiting review; `DONE` only after approved, merged where applicable and issue completed; `BLOCKED` cannot proceed; `FAILED` work/validation failed.
+7. If several deliverables exist, summarize **one primary artifact** in the final three lines. Put all other links and evidence in the referenced GitHub issue/PR; discuss them in the preceding answer if necessary.
+8. A01 also follows the same three lines for work reports. Normal exploratory questions do not require pretending to have performed a GitHub operation.
+
+**Verified real examples (as of 2026-10-15)**
+
+A03 review comment:
+```text
+보고: A03 디자인 에이전트가 PR #2에 EKL UX 검토 댓글을 등록했습니다. [REVIEW]
+위치: Junebooky/semi_fab → Pull requests → #2 → Conversation → 댓글 #6183744614
+링크: https://github.com/Junebooky/semi_fab/pull/2#issuecomment-6183744614
+```
+
+A04 test-plan PR (the plan is submitted; 20 executable tests remain NOT_RUN):
+```text
+보고: A04 테스트 에이전트가 PR #3에 독립 검증 계획서를 제출했습니다. [REVIEW]
+위치: Junebooky/semi_fab → Pull requests → #3 → Files changed → docs/qa/ADR-001-storage-verification-plan.md
+링크: https://github.com/Junebooky/semi_fab/pull/3/files
+```
+
+Assignment Issues already exist: A03 Issue #4 and A05 Issue #5. Neither assignment alone proves their deliverables are complete.
+
+For details see `docs/product/agent-reporting-standard.md`.
 
 ## Domain and security constraints
 - Current milestone is a *synthetic Etch FAB simulation* and educational analysis platform; do not claim real production deployment.
