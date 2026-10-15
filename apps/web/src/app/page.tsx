@@ -19,12 +19,12 @@ interface FdcAlert {
   severity: 'INFO' | 'WARNING' | 'CRITICAL';
   equipment_id: string;
   chamber_id: string;
-  run_id: string;
+  run_id: string | null;
   rule_code: string;
   message: string;
   status: string;
   event_time_utc: string;
-  candidate_lot?: string;
+  candidate_lot?: string | null;
   candidate_wafers?: string[];
 }
 
@@ -122,12 +122,23 @@ function generateModeAFixture(seed: number) {
     { step_index: 5, time_label: "T5", sim_time_utc: "2026-10-15T00:00:25.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.0 + (nextRand() - 0.5) * 0.4).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
     { step_index: 6, time_label: "T6", sim_time_utc: "2026-10-15T00:00:30.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(121.3 + prsNoise * 0.5).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
     { step_index: 7, time_label: "T7", sim_time_utc: "2026-10-15T00:00:35.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: t7Prs, unit: "mTorr", quality_flag: "SUSPECT", data_origin: "synthetic" },
+
+    // RF_POWER (Continuous measurement, nominal 1500W at T0~T6, excursion at T7)
+    { step_index: 0, time_label: "T0", sim_time_utc: "2026-10-15T00:00:00.000Z", sensor_id: "RF_POWER", measured_value: +(1500.0 + rfNoise * 0.2).toFixed(1), unit: "W", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 1, time_label: "T1", sim_time_utc: "2026-10-15T00:00:05.000Z", sensor_id: "RF_POWER", measured_value: +(1501.5 + rfNoise * 0.3).toFixed(1), unit: "W", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 2, time_label: "T2", sim_time_utc: "2026-10-15T00:00:10.000Z", sensor_id: "RF_POWER", measured_value: +(1498.2 + rfNoise * 0.2).toFixed(1), unit: "W", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 3, time_label: "T3", sim_time_utc: "2026-10-15T00:00:15.000Z", sensor_id: "RF_POWER", measured_value: +(1502.1 + rfNoise * 0.4).toFixed(1), unit: "W", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 4, time_label: "T4", sim_time_utc: "2026-10-15T00:00:20.000Z", sensor_id: "RF_POWER", measured_value: +(1499.7 + (nextRand() - 0.5) * 4.0).toFixed(1), unit: "W", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 5, time_label: "T5", sim_time_utc: "2026-10-15T00:00:25.000Z", sensor_id: "RF_POWER", measured_value: +(1500.4 + (nextRand() - 0.5) * 4.0).toFixed(1), unit: "W", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 6, time_label: "T6", sim_time_utc: "2026-10-15T00:00:30.000Z", sensor_id: "RF_POWER", measured_value: +(1503.8 + rfNoise * 0.3).toFixed(1), unit: "W", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 7, time_label: "T7", sim_time_utc: "2026-10-15T00:00:35.000Z", sensor_id: "RF_POWER", measured_value: t7Rf, unit: "W", quality_flag: "SUSPECT", data_origin: "synthetic" },
   ];
 
   const lotNum = 800 + (seed % 50);
   const lotId = `LOT-DEMO-${lotNum}`;
   const runId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
   const alertId = `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+  const standbyAlertId = `AL-STANDBY-${String(seed % 1000).padStart(3, '0')}`;
 
   const alerts: FdcAlert[] = [
     {
@@ -137,11 +148,24 @@ function generateModeAFixture(seed: number) {
       chamber_id: "CH-B",
       run_id: runId,
       rule_code: "FDC-RULE-SPC-UCL-01",
-      message: `Chamber Pressure and Signal Spike Detected at step T7 (> UCL 65.0 a.u., measured ${t7Rel} a.u., ${t7Prs} mTorr)`,
+      message: `Chamber Pressure, Signal & RF Power Spike Detected at step T7 (> UCL 65.0 a.u., measured ${t7Rel} a.u., ${t7Prs} mTorr, ${t7Rf} W)`,
       status: "ACTIVE",
       event_time_utc: "2026-10-15T00:00:35.000Z",
       candidate_lot: lotId,
       candidate_wafers: ["W-08", "W-09", "W-10", "W-11", "W-12"]
+    },
+    {
+      alert_id: standbyAlertId,
+      severity: "WARNING",
+      equipment_id: "ETCH-01",
+      chamber_id: "CH-A",
+      run_id: null,
+      rule_code: "FDC-RULE-HEURISTIC-02",
+      message: "Idle chamber standby temp drift warning (연결된 실행 Run 및 웨이퍼 조사 근거 없음)",
+      status: "ACTIVE",
+      event_time_utc: "2026-10-15T00:00:00.000Z",
+      candidate_lot: null,
+      candidate_wafers: []
     }
   ];
 
@@ -169,7 +193,7 @@ function generateModeAFixture(seed: number) {
     recipe_id: "RCP-ETCH-POLY-04",
     total_wafers: 25,
     exposed_wafers: 7,
-    active_alerts_count: 1,
+    active_alerts_count: alerts.length,
     latest_pressure_mtorr: t7Prs,
     latest_rf_power_w: t7Rf,
     latest_relative_signal: t7Rel,
@@ -255,7 +279,7 @@ export default function FabOneDemoPage() {
   // Playback timeline state
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [selectedSensor, setSelectedSensor] = useState<'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE'>('RELATIVE_SIGNAL');
+  const [selectedSensor, setSelectedSensor] = useState<'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE' | 'RF_POWER'>('RELATIVE_SIGNAL');
   const [selectedWafer, setSelectedWafer] = useState<WaferItem | null>(DEFAULT_FIXTURE.wafers[7]); // W-08 default candidate
   const [isAnomalyActive, setIsAnomalyActive] = useState<boolean>(false);
   const [seed, setSeed] = useState<number>(20261015);
@@ -272,6 +296,7 @@ export default function FabOneDemoPage() {
     setAlerts(fixture.alerts);
     setWafers(fixture.wafers);
     setInvestigationData(fixture.investigation);
+    setSelectedAlert(fixture.alerts[0]);
     setNoticeMessage(`⚠️ ${errorMsg} - Mode A 로컬 합성 픽스처로 안전하게 전환되었습니다.`);
   }, [seed]);
 
@@ -308,7 +333,10 @@ export default function FabOneDemoPage() {
       setAlerts(alertData);
       setWafers(waferData);
       setSamples(sampleData);
-      if (invData) setInvestigationData(invData);
+      setInvestigationData(invData);
+      if (alertData.length > 0) {
+        setSelectedAlert(alertData[0]);
+      }
       setMode('B');
       setBackendAvailable(true);
       setConnectionError(null);
@@ -458,12 +486,43 @@ export default function FabOneDemoPage() {
     }
   };
 
-  const handleSelectAlert = (alert: FdcAlert) => {
+  const handleSelectAlert = async (alert: FdcAlert) => {
     setSelectedAlert(alert);
     setIsInvestigationOpen(true);
-    setCurrentStep(7);
-    setIsAnomalyActive(true);
-    setNoticeMessage(`엔지니어링 조사: [${alert.severity}] ${alert.alert_id} (${alert.rule_code}) 세부 근거 및 영향 웨이퍼 분석 열림`);
+
+    if (alert.run_id && alert.run_id === summary.active_run_id) {
+      setCurrentStep(7);
+      setIsAnomalyActive(true);
+
+      if (mode === 'B') {
+        try {
+          const res = await fetch(`http://localhost:8000/api/v1/demo/investigation?alert_id=${alert.alert_id}`, { cache: "no-store" });
+          if (res.ok) {
+            const data: InvestigationDetail = await res.json();
+            setInvestigationData(data);
+            setNoticeMessage(`엔지니어링 조사: [${alert.severity}] ${alert.alert_id} (${alert.rule_code}) 세부 근거 및 영향 웨이퍼 분석 열림`);
+          } else {
+            setInvestigationData(null);
+            setNoticeMessage(`알림: [${alert.severity}] ${alert.alert_id}에 연결된 조사 근거를 불러올 수 없습니다 (HTTP ${res.status}).`);
+          }
+        } catch {
+          setInvestigationData(null);
+          setNoticeMessage(`알림: 백엔드 통신 오류로 [${alert.alert_id}] 조사 근거 조회가 실패했습니다.`);
+        }
+      } else {
+        // Mode A: synthesize fixture matching this run & alert
+        const fixture = generateModeAFixture(seed);
+        fixture.investigation.alert_id = alert.alert_id;
+        fixture.investigation.run_id = alert.run_id;
+        setInvestigationData(fixture.investigation);
+        setNoticeMessage(`엔지니어링 조사: [${alert.severity}] ${alert.alert_id} (${alert.rule_code}) 세부 근거 및 영향 웨이퍼 분석 열림`);
+      }
+    } else {
+      // Standby alert or alert not linked to active process run (P1-02 fix)
+      setIsAnomalyActive(false);
+      setInvestigationData(null);
+      setNoticeMessage(`알림: [${alert.severity}] ${alert.alert_id} (${alert.equipment_id} / ${alert.chamber_id}) 선택됨 - 연결된 공정 Run 및 웨이퍼 조사 근거 없음.`);
+    }
   };
 
   const handleChangeSeed = async () => {
@@ -512,7 +571,7 @@ export default function FabOneDemoPage() {
   // SVG Chart rendering calculation
   // ViewBox: 0 0 600 240
   // X: 60 + (step * 70) => T0:60, T1:130, T2:200, T3:270, T4:340, T5:410, T6:480, T7:550
-  // Y range: 0 to 100 a.u. (for RELATIVE_SIGNAL) or 100 to 200 mTorr (for CHAMBER_PRESSURE)
+  // Y range: 0 to 100 a.u. (for RELATIVE_SIGNAL), 100 to 200 mTorr (for CHAMBER_PRESSURE), or 1000 to 2000 W (for RF_POWER)
   const chartCoordinates = useMemo(() => {
     return filteredSamples.map(sample => {
       const x = 60 + sample.step_index * 70;
@@ -521,10 +580,14 @@ export default function FabOneDemoPage() {
         if (selectedSensor === 'RELATIVE_SIGNAL') {
           // 0 to 100 a.u. => Y from 210 to 30
           y = 210 - (sample.measured_value / 100) * 180;
-        } else {
+        } else if (selectedSensor === 'CHAMBER_PRESSURE') {
           // 100 to 200 mTorr => Y from 210 to 30
           const clamped = Math.max(100, Math.min(200, sample.measured_value));
           y = 210 - ((clamped - 100) / 100) * 180;
+        } else {
+          // 1000 to 2000 W => Y from 210 to 30
+          const clamped = Math.max(1000, Math.min(2000, sample.measured_value));
+          y = 210 - ((clamped - 1000) / 1000) * 180;
         }
       }
       return { ...sample, x, y };
@@ -565,9 +628,18 @@ export default function FabOneDemoPage() {
     return { minX, width: maxX - minX, labels };
   }, [missingPoints]);
 
-  // UCL & Target threshold Y positions
-  const uclY = selectedSensor === 'RELATIVE_SIGNAL' ? (210 - (65 / 100) * 180) : (210 - ((140 - 100) / 100) * 180);
-  const targetY = selectedSensor === 'RELATIVE_SIGNAL' ? (210 - (50 / 100) * 180) : (210 - ((120 - 100) / 100) * 180);
+  // UCL & Target threshold Y positions (P1-01: RF_POWER included)
+  const uclY = selectedSensor === 'RELATIVE_SIGNAL'
+    ? (210 - (65 / 100) * 180)
+    : selectedSensor === 'CHAMBER_PRESSURE'
+    ? (210 - ((140 - 100) / 100) * 180)
+    : (210 - ((1650 - 1000) / 1000) * 180);
+
+  const targetY = selectedSensor === 'RELATIVE_SIGNAL'
+    ? (210 - (50 / 100) * 180)
+    : selectedSensor === 'CHAMBER_PRESSURE'
+    ? (210 - ((120 - 100) / 100) * 180)
+    : (210 - ((1500 - 1000) / 1000) * 180);
 
   return (
     <div className="app-container">
@@ -776,7 +848,7 @@ export default function FabOneDemoPage() {
                 <div>
                   <h2 className="card-title">Chamber Sensor Trend (합성 시계열)</h2>
                   <p className="card-subtitle">
-                    T0~T7 시점 계측값 · {selectedSensor === 'RELATIVE_SIGNAL' ? '광학 센서 결측 구간(T4, T5) 분절 시각화' : '격막 게이지 전구간 연속 계측'} 및 UCL 스파이크 탐지
+                    T0~T7 시점 계측값 · {selectedSensor === 'RELATIVE_SIGNAL' ? '광학 센서 결측 구간(T4, T5) 분절 시각화' : selectedSensor === 'CHAMBER_PRESSURE' ? '격막 게이지 전구간 연속 계측' : 'RF 발생기 전방 전원 연속 계측'} 및 UCL 스파이크 탐지
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -808,6 +880,20 @@ export default function FabOneDemoPage() {
                   >
                     챔버 압력 [mTorr]
                   </button>
+                  <button
+                    type="button"
+                    className={`btn-secondary ${selectedSensor === 'RF_POWER' ? 'active' : ''}`}
+                    style={{
+                      background: selectedSensor === 'RF_POWER' ? '#EFF6FF' : '#FFFFFF',
+                      borderColor: selectedSensor === 'RF_POWER' ? '#93C5FD' : '#E2E8F0',
+                      color: selectedSensor === 'RF_POWER' ? '#1D4ED8' : '#475569',
+                      fontSize: '11px',
+                      padding: '4px 10px'
+                    }}
+                    onClick={() => setSelectedSensor('RF_POWER')}
+                  >
+                    RF 전원 [W]
+                  </button>
                 </div>
               </div>
 
@@ -838,13 +924,21 @@ export default function FabOneDemoPage() {
                         <text x="42" y="169">25</text>
                         <text x="42" y="214">0</text>
                       </>
-                    ) : (
+                    ) : selectedSensor === 'CHAMBER_PRESSURE' ? (
                       <>
                         <text x="42" y="34">200</text>
                         <text x="42" y="79">175</text>
                         <text x="42" y="124">150</text>
                         <text x="42" y="169">125</text>
                         <text x="42" y="214">100</text>
+                      </>
+                    ) : (
+                      <>
+                        <text x="42" y="34">2000</text>
+                        <text x="42" y="79">1750</text>
+                        <text x="42" y="124">1500</text>
+                        <text x="42" y="169">1250</text>
+                        <text x="42" y="214">1000</text>
                       </>
                     )}
                   </g>
@@ -860,7 +954,7 @@ export default function FabOneDemoPage() {
                     strokeDasharray="4 4"
                   />
                   <text x="575" y={uclY - 4} fontSize="9" fill="#D97706" textAnchor="end" fontWeight="700">
-                    UCL 관리한계 기준 ({selectedSensor === 'RELATIVE_SIGNAL' ? '65.0 a.u.' : '140 mTorr'})
+                    UCL 관리한계 기준 ({selectedSensor === 'RELATIVE_SIGNAL' ? '65.0 a.u.' : selectedSensor === 'CHAMBER_PRESSURE' ? '140 mTorr' : '1650 W'})
                   </text>
 
                   <line
@@ -873,7 +967,7 @@ export default function FabOneDemoPage() {
                     strokeDasharray="2 3"
                   />
                   <text x="575" y={targetY - 4} fontSize="9" fill="#64748B" textAnchor="end">
-                    Target 공정 목표 ({selectedSensor === 'RELATIVE_SIGNAL' ? '50.0 a.u.' : '120 mTorr'})
+                    Target 공정 목표 ({selectedSensor === 'RELATIVE_SIGNAL' ? '50.0 a.u.' : selectedSensor === 'CHAMBER_PRESSURE' ? '120 mTorr' : '1500 W'})
                   </text>
 
                   {/* Missing Gap Shading (Dynamic per sensor: only if missing points exist) */}
@@ -991,10 +1085,10 @@ export default function FabOneDemoPage() {
                     <span className="legend-swatch-missing"></span> {selectedSensor === 'RELATIVE_SIGNAL' ? '광학 결측 분절 (T4, T5는 0이 아님)' : '센서 연속 측정 (결측 없음)'}
                   </span>
                   <span className="legend-item">
-                    <span className="legend-swatch-ucl"></span> 가상 관리한계 UCL ({selectedSensor === 'RELATIVE_SIGNAL' ? '65.0 a.u.' : '140 mTorr'})
+                    <span className="legend-swatch-ucl"></span> 가상 관리한계 UCL ({selectedSensor === 'RELATIVE_SIGNAL' ? '65.0 a.u.' : selectedSensor === 'CHAMBER_PRESSURE' ? '140 mTorr' : '1650 W'})
                   </span>
                   <span className="legend-item">
-                    <span className="legend-swatch-target"></span> 기준 목표치 Target ({selectedSensor === 'RELATIVE_SIGNAL' ? '50.0 a.u.' : '120 mTorr'})
+                    <span className="legend-swatch-target"></span> 기준 목표치 Target ({selectedSensor === 'RELATIVE_SIGNAL' ? '50.0 a.u.' : selectedSensor === 'CHAMBER_PRESSURE' ? '120 mTorr' : '1500 W'})
                   </span>
                 </div>
               </div>
@@ -1007,7 +1101,8 @@ export default function FabOneDemoPage() {
                       <th>시점</th>
                       <th>상대 신호 [a.u.]</th>
                       <th>챔버 압력 [mTorr]</th>
-                      <th>선택 센서 품질 ({selectedSensor === 'RELATIVE_SIGNAL' ? '상대 신호' : '챔버 압력'})</th>
+                      <th>RF 전원 [W]</th>
+                      <th>선택 센서 품질</th>
                       <th>출처</th>
                     </tr>
                   </thead>
@@ -1015,7 +1110,8 @@ export default function FabOneDemoPage() {
                     {[0, 1, 2, 3, 4, 5, 6, 7].map(step => {
                       const sig = samples.find(s => s.sensor_id === 'RELATIVE_SIGNAL' && s.step_index === step);
                       const prs = samples.find(s => s.sensor_id === 'CHAMBER_PRESSURE' && s.step_index === step);
-                      const activeSample = selectedSensor === 'RELATIVE_SIGNAL' ? sig : prs;
+                      const rf = samples.find(s => s.sensor_id === 'RF_POWER' && s.step_index === step);
+                      const activeSample = selectedSensor === 'RELATIVE_SIGNAL' ? sig : selectedSensor === 'CHAMBER_PRESSURE' ? prs : rf;
                       const isCurrent = currentStep === step;
                       const isAnomaly = step === 7;
 
@@ -1040,6 +1136,15 @@ export default function FabOneDemoPage() {
                             {prs?.measured_value !== null ? (
                               <span style={{ fontWeight: isAnomaly ? 800 : 500, color: isAnomaly ? '#DC2626' : 'inherit' }}>
                                 {prs?.measured_value} mTorr
+                              </span>
+                            ) : (
+                              <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>NULL (결측)</span>
+                            )}
+                          </td>
+                          <td>
+                            {rf?.measured_value !== null && rf?.measured_value !== undefined ? (
+                              <span style={{ fontWeight: isAnomaly ? 800 : 500, color: isAnomaly ? '#DC2626' : 'inherit' }}>
+                                {rf.measured_value.toFixed(1)} W
                               </span>
                             ) : (
                               <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>NULL (결측)</span>
@@ -1169,28 +1274,162 @@ export default function FabOneDemoPage() {
               })}
 
               {/* Engineering Investigation Panel (BUILD-02) */}
-              {isInvestigationOpen && investigationData && (
-                <div id="engineering-investigation-panel" className="investigation-panel">
-                  <div className="investigation-header-row">
-                    <div className="investigation-title-wrap">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B9F78" strokeWidth="2.5">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="16" y1="13" x2="8" y2="13"></line>
-                        <line x1="16" y1="17" x2="8" y2="17"></line>
-                        <polyline points="10 9 9 9 8 9"></polyline>
-                      </svg>
-                      <div>
-                        <h3 className="investigation-title">엔지니어링 공정 이상 조사 (Engineering Investigation)</h3>
-                        <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                          대상 알람: <strong>{investigationData.alert_id}</strong> ({investigationData.rule_code}) · 관리 시점 T{investigationData.anomaly_step}
+              {isInvestigationOpen && (
+                investigationData ? (
+                  <div id="engineering-investigation-panel" className="investigation-panel">
+                    <div className="investigation-header-row">
+                      <div className="investigation-title-wrap">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B9F78" strokeWidth="2.5">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                          <polyline points="14 2 14 8 20 8"></polyline>
+                          <line x1="16" y1="13" x2="8" y2="13"></line>
+                          <line x1="16" y1="17" x2="8" y2="17"></line>
+                          <polyline points="10 9 9 9 8 9"></polyline>
+                        </svg>
+                        <div>
+                          <h3 className="investigation-title">엔지니어링 공정 이상 조사 (Engineering Investigation)</h3>
+                          <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                            대상 알람: <strong>{investigationData.alert_id}</strong> ({investigationData.rule_code}) · 관리 시점 T{investigationData.anomaly_step}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="pill" style={{ background: '#FEF3C7', color: '#B45309', borderColor: '#FCD34D' }}>
+                          {investigationData.status === 'UNDER_INVESTIGATION' ? '조사 진행 중 (Under Investigation)' : investigationData.status}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ padding: '3px 8px', fontSize: '11px' }}
+                          onClick={() => setIsInvestigationOpen(false)}
+                        >
+                          닫기 ✕
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Domain Disclaimer Banner (Explicit requirement: Do not describe sensor anomaly as confirmed defect) */}
+                    <div className="investigation-disclaimer">
+                      <strong>품질 분석 가이드라인:</strong> {investigationData.disclaimer}
+                    </div>
+
+                    {/* Context Meta Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', padding: '10px 12px', background: '#F8FAFC', borderRadius: '8px', fontSize: '11px' }}>
+                      <div>장비/챔버: <strong>{investigationData.equipment_id} / {investigationData.chamber_id}</strong></div>
+                      <div>공정 Run: <strong>{investigationData.run_id}</strong></div>
+                      <div>소속 Lot: <strong>{investigationData.lot_id}</strong></div>
+                      <div>적용 Recipe: <strong>{investigationData.recipe_id}</strong></div>
+                    </div>
+
+                    {/* 3 Metric Evidence Cards */}
+                    <div style={{ marginTop: '14px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                        이상 시점(T{investigationData.anomaly_step}) 센서 계측 근거 (클릭 시 차트 연동 전환):
+                      </div>
+                      <div className="metric-evidence-grid">
+                        {investigationData.evidence_sensors.map(ev => {
+                          const isSensorSelected = selectedSensor === ev.sensor_id;
+                          return (
+                            <div
+                              key={ev.sensor_id}
+                              className="evidence-card"
+                              style={{
+                                borderColor: isSensorSelected ? '#0B9F78' : '#E2E8F0',
+                                borderWidth: isSensorSelected ? '2px' : '1px',
+                                cursor: 'pointer',
+                                background: isSensorSelected ? '#F0FDF4' : '#F8FAFC'
+                              }}
+                              onClick={() => {
+                                setSelectedSensor(ev.sensor_id as 'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE' | 'RF_POWER');
+                                setCurrentStep(7);
+                              }}
+                              title="클릭 시 좌측 시계열 트렌드 차트에 해당 센서를 표시합니다"
+                            >
+                              <div className="evidence-label">{ev.sensor_name}</div>
+                              <div className="evidence-val-row">
+                                <span className="evidence-val">{ev.measured_value} {ev.unit}</span>
+                                <span className="evidence-delta-pill">+{ev.deviation_percent}%</span>
+                              </div>
+                              <div className="evidence-sub">
+                                UCL 한계: {ev.ucl_threshold} {ev.unit} · Target: {ev.target_value} {ev.unit}
+                              </div>
+                              <div style={{ fontSize: '10px', color: '#64748B', display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                                <span>품질 플래그: <strong>{ev.quality_flag}</strong></span>
+                                {isSensorSelected && <span style={{ color: '#0B9F78', fontWeight: 700 }}>✓ 차트 표시 중</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Impact Wafer Breakdown */}
+                    <div style={{ marginTop: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                          카세트 웨이퍼 영향 구간 구분 (총 {investigationData.total_wafers}매):
+                        </div>
+                        <span style={{ fontSize: '11px', color: '#64748B' }}>
+                          노출 확정 {investigationData.confirmed_exposed_wafers.length}매 · 잠재 후보 {investigationData.candidate_exposed_wafers.length}매 · 미노출 {investigationData.unexposed_wafers_count}매
+                        </span>
+                      </div>
+
+                      <div style={{ marginTop: '8px' }}>
+                        <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>
+                          잠재 영향 후보군 (Candidate Exposed - 클릭 시 우측 카세트 슬롯 상세 확인):
+                        </div>
+                        <div className="candidate-wafers-strip">
+                          {investigationData.candidate_exposed_wafers.map(wId => {
+                            const isWaferActive = selectedWafer?.wafer_id === wId;
+                            return (
+                              <button
+                                key={wId}
+                                type="button"
+                                id={`investigation-wafer-btn-${wId}`}
+                                className={`candidate-wafer-btn ${isWaferActive ? 'active' : ''}`}
+                                onClick={() => {
+                                  const found = wafers.find(w => w.wafer_id === wId);
+                                  if (found) setSelectedWafer(found);
+                                }}
+                              >
+                                <span>{wId}</span>
+                                <span style={{ fontSize: '9px', opacity: 0.8 }}>
+                                  #{wafers.find(w => w.wafer_id === wId)?.slot_number}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span className="pill" style={{ background: '#FEF3C7', color: '#B45309', borderColor: '#FCD34D' }}>
-                        {investigationData.status === 'UNDER_INVESTIGATION' ? '조사 진행 중 (Under Investigation)' : investigationData.status}
-                      </span>
+
+                    {/* Recommended Dispositions */}
+                    <div style={{ marginTop: '16px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                        엔지니어 권고 조치 (Recommended Engineering Dispositions):
+                      </div>
+                      <div className="disposition-list">
+                        {investigationData.recommended_dispositions.map((disp, idx) => (
+                          <div key={idx} className="disposition-item">
+                            <span>{disp}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    id="engineering-investigation-panel"
+                    className="investigation-panel empty-investigation"
+                    style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '16px', borderRadius: '8px' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '18px' }}>ℹ️</span>
+                        <h3 style={{ fontSize: '14px', fontWeight: 700, margin: 0, color: '#475569' }}>
+                          연결된 공정/웨이퍼 조사 근거 없음
+                        </h3>
+                      </div>
                       <button
                         type="button"
                         className="btn-secondary"
@@ -1200,119 +1439,13 @@ export default function FabOneDemoPage() {
                         닫기 ✕
                       </button>
                     </div>
+                    <p style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.6', margin: 0 }}>
+                      선택된 알람 <strong>{selectedAlert?.alert_id}</strong>({selectedAlert?.rule_code})은 실행 중인 공정 Run 및 웨이퍼 가공과 연동된 FDC Excursion 알람이 아닙니다.<br />
+                      (설비: <strong>{selectedAlert?.equipment_id ?? '-'}</strong> / 챔버: <strong>{selectedAlert?.chamber_id ?? '-'}</strong> · 소속 Run: <strong>{selectedAlert?.run_id ?? '없음(대기 상태)'}</strong>)<br />
+                      다른 챔버(CH-B)의 T7 공정 시계열 및 웨이퍼 조사 근거와 교차 결합되지 않으며, 해당 알람에 대한 웨이퍼 영향 분석은 제공되지 않습니다.
+                    </p>
                   </div>
-
-                  {/* Domain Disclaimer Banner (Explicit requirement: Do not describe sensor anomaly as confirmed defect) */}
-                  <div className="investigation-disclaimer">
-                    <strong>품질 분석 가이드라인:</strong> {investigationData.disclaimer}
-                  </div>
-
-                  {/* Context Meta Grid */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', padding: '10px 12px', background: '#F8FAFC', borderRadius: '8px', fontSize: '11px' }}>
-                    <div>장비/챔버: <strong>{investigationData.equipment_id} / {investigationData.chamber_id}</strong></div>
-                    <div>공정 Run: <strong>{investigationData.run_id}</strong></div>
-                    <div>소속 Lot: <strong>{investigationData.lot_id}</strong></div>
-                    <div>적용 Recipe: <strong>{investigationData.recipe_id}</strong></div>
-                  </div>
-
-                  {/* 3 Metric Evidence Cards */}
-                  <div style={{ marginTop: '14px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                      이상 시점(T{investigationData.anomaly_step}) 센서 계측 근거 (클릭 시 차트 연동 전환):
-                    </div>
-                    <div className="metric-evidence-grid">
-                      {investigationData.evidence_sensors.map(ev => {
-                        const isSensorSelected = selectedSensor === ev.sensor_id;
-                        return (
-                          <div
-                            key={ev.sensor_id}
-                            className="evidence-card"
-                            style={{
-                              borderColor: isSensorSelected ? '#0B9F78' : '#E2E8F0',
-                              borderWidth: isSensorSelected ? '2px' : '1px',
-                              cursor: (ev.sensor_id === 'RELATIVE_SIGNAL' || ev.sensor_id === 'CHAMBER_PRESSURE') ? 'pointer' : 'default',
-                              background: isSensorSelected ? '#F0FDF4' : '#F8FAFC'
-                            }}
-                            onClick={() => {
-                              if (ev.sensor_id === 'RELATIVE_SIGNAL' || ev.sensor_id === 'CHAMBER_PRESSURE') {
-                                setSelectedSensor(ev.sensor_id);
-                                setCurrentStep(7);
-                              }
-                            }}
-                            title="클릭 시 좌측 시계열 트렌드 차트에 해당 센서를 표시합니다"
-                          >
-                            <div className="evidence-label">{ev.sensor_name}</div>
-                            <div className="evidence-val-row">
-                              <span className="evidence-val">{ev.measured_value} {ev.unit}</span>
-                              <span className="evidence-delta-pill">+{ev.deviation_percent}%</span>
-                            </div>
-                            <div className="evidence-sub">
-                              UCL 한계: {ev.ucl_threshold} {ev.unit} · Target: {ev.target_value} {ev.unit}
-                            </div>
-                            <div style={{ fontSize: '10px', color: '#64748B', display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                              <span>품질 플래그: <strong>{ev.quality_flag}</strong></span>
-                              {isSensorSelected && <span style={{ color: '#0B9F78', fontWeight: 700 }}>✓ 차트 표시 중</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Impact Wafer Breakdown */}
-                  <div style={{ marginTop: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-                        카세트 웨이퍼 영향 구간 구분 (총 {investigationData.total_wafers}매):
-                      </div>
-                      <span style={{ fontSize: '11px', color: '#64748B' }}>
-                        노출 확정 {investigationData.confirmed_exposed_wafers.length}매 · 잠재 후보 {investigationData.candidate_exposed_wafers.length}매 · 미노출 {investigationData.unexposed_wafers_count}매
-                      </span>
-                    </div>
-
-                    <div style={{ marginTop: '8px' }}>
-                      <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>
-                        잠재 영향 후보군 (Candidate Exposed - 클릭 시 우측 카세트 슬롯 상세 확인):
-                      </div>
-                      <div className="candidate-wafers-strip">
-                        {investigationData.candidate_exposed_wafers.map(wId => {
-                          const isWaferActive = selectedWafer?.wafer_id === wId;
-                          return (
-                            <button
-                              key={wId}
-                              type="button"
-                              id={`investigation-wafer-btn-${wId}`}
-                              className={`candidate-wafer-btn ${isWaferActive ? 'active' : ''}`}
-                              onClick={() => {
-                                const found = wafers.find(w => w.wafer_id === wId);
-                                if (found) setSelectedWafer(found);
-                              }}
-                            >
-                              <span>{wId}</span>
-                              <span style={{ fontSize: '9px', opacity: 0.8 }}>
-                                #{wafers.find(w => w.wafer_id === wId)?.slot_number}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Recommended Dispositions */}
-                  <div style={{ marginTop: '16px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                      엔지니어 권고 조치 (Recommended Engineering Dispositions):
-                    </div>
-                    <div className="disposition-list">
-                      {investigationData.recommended_dispositions.map((disp, idx) => (
-                        <div key={idx} className="disposition-item">
-                          <span>{disp}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+                )
               )}
             </section>
           </div>
@@ -1391,7 +1524,12 @@ export default function FabOneDemoPage() {
                   <tr>
                     <td>RF Generator 출력</td>
                     <td style={{ color: currentStep === 7 ? '#DC2626' : 'inherit' }}>
-                      {currentStep === 7 ? '895.0 W (과출력)' : '750.0 W (정상)'}
+                      {(() => {
+                        const rfSample = samples.find(s => s.sensor_id === 'RF_POWER' && s.step_index === currentStep);
+                        if (!rfSample || rfSample.measured_value === null) return 'NULL (결측)';
+                        const isSuspect = rfSample.quality_flag === 'SUSPECT' || currentStep === 7;
+                        return `${rfSample.measured_value.toFixed(1)} W ${isSuspect ? '(과출력)' : '(정상)'}`;
+                      })()}
                     </td>
                   </tr>
                   <tr>

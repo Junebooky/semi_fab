@@ -369,37 +369,59 @@ def get_demo_investigation(alert_id: Optional[str] = Query(default=None)):
     """
     Returns detailed engineering investigation context for an FDC excursion alert.
     Correlates sensor time-series spike evidence at step T7 with candidate affected wafers.
+    Guarantees strict binding between alert, equipment/chamber, run, and wafer evidence.
     """
     with db_session() as conn:
-        # Find active session & run
-        run = conn.execute(
-            """
-            SELECT r.run_id, r.equipment_id, r.chamber_id, r.recipe_id, r.lot_id, r.start_time_utc
-            FROM process_run r
-            JOIN simulation_session s ON r.session_id = s.session_id
-            WHERE s.is_active = 1
-            ORDER BY r.start_time_utc DESC LIMIT 1;
-            """
-        ).fetchone()
-        if not run:
-            run = conn.execute("SELECT run_id, equipment_id, chamber_id, recipe_id, lot_id, start_time_utc FROM process_run ORDER BY start_time_utc DESC LIMIT 1;").fetchone()
-        if not run:
-            raise HTTPException(status_code=404, detail="No active process run found")
-
-        run_id = run["run_id"]
-
-        # Find alert
         if alert_id:
             alert = conn.execute("SELECT * FROM fdc_alert WHERE alert_id = ?;", (alert_id,)).fetchone()
-        else:
-            alert = conn.execute("SELECT * FROM fdc_alert WHERE run_id = ? ORDER BY event_time_utc DESC LIMIT 1;", (run_id,)).fetchone()
-        
-        target_alert_id = alert["alert_id"] if alert else f"AL-{run_id}-001"
-        severity = alert["severity"] if alert else "CRITICAL"
-        rule_code = alert["rule_code"] if alert else "FDC-RULE-SPC-UCL-01"
-        event_time = alert["event_time_utc"] if alert else run["start_time_utc"]
+            if not alert:
+                raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' not found")
+            
+            if not alert["run_id"]:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Alert '{alert_id}' is a standby equipment alert with no active process run or wafer investigation context"
+                )
+            
+            run = conn.execute(
+                "SELECT run_id, session_id, equipment_id, chamber_id, recipe_id, lot_id, start_time_utc FROM process_run WHERE run_id = ?;",
+                (alert["run_id"],)
+            ).fetchone()
+            if not run:
+                raise HTTPException(status_code=404, detail=f"Process run '{alert['run_id']}' for alert '{alert_id}' not found")
 
-        # Fetch step 7 measurements for this run
+            # Verify run belongs to active simulation session to avoid cross-session contamination
+            session = conn.execute("SELECT is_active FROM simulation_session WHERE session_id = ?;", (run["session_id"],)).fetchone()
+            if not session or not session["is_active"]:
+                raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' belongs to an inactive or previous simulation session")
+        else:
+            # Default to latest active session's active run
+            run = conn.execute(
+                """
+                SELECT r.run_id, r.session_id, r.equipment_id, r.chamber_id, r.recipe_id, r.lot_id, r.start_time_utc
+                FROM process_run r
+                JOIN simulation_session s ON r.session_id = s.session_id
+                WHERE s.is_active = 1
+                ORDER BY r.start_time_utc DESC LIMIT 1;
+                """
+            ).fetchone()
+            if not run:
+                raise HTTPException(status_code=404, detail="No active process run found in active simulation session")
+
+            alert = conn.execute(
+                "SELECT * FROM fdc_alert WHERE run_id = ? ORDER BY event_time_utc DESC LIMIT 1;",
+                (run["run_id"],)
+            ).fetchone()
+            if not alert:
+                raise HTTPException(status_code=404, detail=f"No FDC excursion alert found for active run {run['run_id']}")
+
+        run_id = run["run_id"]
+        target_alert_id = alert["alert_id"]
+        severity = alert["severity"]
+        rule_code = alert["rule_code"]
+        event_time = alert["event_time_utc"]
+
+        # Fetch step 7 measurements for this specific run
         sample_rows = conn.execute(
             """
             SELECT sensor_id, measured_value, unit, quality_flag
@@ -409,53 +431,39 @@ def get_demo_investigation(alert_id: Optional[str] = Query(default=None)):
             (run_id,)
         ).fetchall()
         
+        if not sample_rows:
+            raise HTTPException(status_code=404, detail=f"No sensor measurement evidence recorded at step 7 for run {run_id}")
+
         meas_map = {row["sensor_id"]: row for row in sample_rows}
 
-        # Build evidence sensors
+        # Build evidence sensors from actual measurements only (no invented observations)
         evidence = []
-        # 1. RELATIVE_SIGNAL
-        rel_meas = meas_map.get("RELATIVE_SIGNAL")
-        rel_val = float(rel_meas["measured_value"]) if rel_meas and rel_meas["measured_value"] is not None else 80.0
-        evidence.append(SensorEvidence(
-            sensor_id="RELATIVE_SIGNAL",
-            sensor_name="광학 발광 상대 신호 (OES Relative Signal)",
-            measured_value=rel_val,
-            unit="a.u.",
-            quality_flag=rel_meas["quality_flag"] if rel_meas else "SUSPECT",
-            ucl_threshold=65.0,
-            target_value=50.0,
-            deviation_percent=round(((rel_val - 65.0) / 65.0) * 100.0, 1)
-        ))
+        meta_configs = [
+            ("RELATIVE_SIGNAL", "광학 발광 상대 신호 (OES Relative Signal)", 65.0, 50.0),
+            ("CHAMBER_PRESSURE", "챔버 공정 진공 압력 (Capacitance Manometer)", 140.0, 120.0),
+            ("RF_POWER", "RF 플라즈마 전원 출력 (RF Generator Forward Power)", 1650.0, 1500.0),
+        ]
 
-        # 2. CHAMBER_PRESSURE
-        prs_meas = meas_map.get("CHAMBER_PRESSURE")
-        prs_val = float(prs_meas["measured_value"]) if prs_meas and prs_meas["measured_value"] is not None else 168.5
-        evidence.append(SensorEvidence(
-            sensor_id="CHAMBER_PRESSURE",
-            sensor_name="챔버 공정 진공 압력 (Capacitance Manometer)",
-            measured_value=prs_val,
-            unit="mTorr",
-            quality_flag=prs_meas["quality_flag"] if prs_meas else "SUSPECT",
-            ucl_threshold=140.0,
-            target_value=120.0,
-            deviation_percent=round(((prs_val - 140.0) / 140.0) * 100.0, 1)
-        ))
+        for sid, sname, ucl, tgt in meta_configs:
+            meas = meas_map.get(sid)
+            if meas and meas["measured_value"] is not None:
+                val = float(meas["measured_value"])
+                dev = round(((val - ucl) / ucl) * 100.0, 1)
+                evidence.append(SensorEvidence(
+                    sensor_id=sid,
+                    sensor_name=sname,
+                    measured_value=val,
+                    unit=meas["unit"],
+                    quality_flag=meas["quality_flag"],
+                    ucl_threshold=ucl,
+                    target_value=tgt,
+                    deviation_percent=dev
+                ))
 
-        # 3. RF_POWER
-        rf_meas = meas_map.get("RF_POWER")
-        rf_val = float(rf_meas["measured_value"]) if rf_meas and rf_meas["measured_value"] is not None else 1820.0
-        evidence.append(SensorEvidence(
-            sensor_id="RF_POWER",
-            sensor_name="RF 플라즈마 전원 출력 (RF Generator Forward Power)",
-            measured_value=rf_val,
-            unit="W",
-            quality_flag=rf_meas["quality_flag"] if rf_meas else "SUSPECT",
-            ucl_threshold=1650.0,
-            target_value=1500.0,
-            deviation_percent=round(((rf_val - 1650.0) / 1650.0) * 100.0, 1)
-        ))
+        if not evidence:
+            raise HTTPException(status_code=404, detail=f"No valid sensor evidence found at step 7 for run {run_id}")
 
-        # Wafers
+        # Fetch actual wafers for this run
         wafer_rows = conn.execute(
             """
             SELECT wafer_id, exposure_status
@@ -466,14 +474,12 @@ def get_demo_investigation(alert_id: Optional[str] = Query(default=None)):
             (run_id,)
         ).fetchall()
 
+        if not wafer_rows:
+            raise HTTPException(status_code=404, detail=f"No wafer cassette records found for run {run_id}")
+
         confirmed_wafers = [w["wafer_id"] for w in wafer_rows if w["exposure_status"] == "CONFIRMED_EXPOSED"]
         candidate_wafers = [w["wafer_id"] for w in wafer_rows if w["exposure_status"] == "CANDIDATE_EXPOSED"]
         unexposed_count = len([w for w in wafer_rows if w["exposure_status"] == "NOT_EXPOSED"])
-
-        if not confirmed_wafers and not candidate_wafers:
-            confirmed_wafers = [f"W-0{i}" for i in range(1, 8)]
-            candidate_wafers = ["W-08", "W-09", "W-10", "W-11", "W-12"]
-            unexposed_count = 13
 
         return InvestigationDetail(
             investigation_id=f"INV-{target_alert_id}",
@@ -489,14 +495,14 @@ def get_demo_investigation(alert_id: Optional[str] = Query(default=None)):
             rule_code=rule_code,
             status="UNDER_INVESTIGATION",
             evidence_sensors=evidence,
-            total_wafers=25,
+            total_wafers=len(wafer_rows),
             confirmed_exposed_wafers=confirmed_wafers,
             candidate_exposed_wafers=candidate_wafers,
             unexposed_wafers_count=unexposed_count,
             disclaimer="※ [품질 분석 가이드라인] 센서 이상 계측(FDC Spike)은 식각 챔버 내 공정 조건 일탈(Excursion) 감지이며, 웨이퍼의 물리적 결함(Defect) 확정 원인이 아닙니다. 결함 확정은 후속 계측(Defect Review / EDS)을 통한 교차 분석이 필수적입니다.",
             recommended_dispositions=[
-                "[장비 조치] CH-B 챔버 일시 공정 인터록 및 쿼츠 링/RF 정합 회로 점검",
-                "[품질 조치] 잠재 영향군(W-08~W-12) 결함 검측(Defect Inspection) 우선 배정",
+                f"[장비 조치] {run['chamber_id']} 챔버 일시 공정 인터록 및 쿼츠 링/RF 정합 회로 점검",
+                f"[품질 조치] 잠재 영향군({candidate_wafers[0] if candidate_wafers else '후보군'}~{candidate_wafers[-1] if candidate_wafers else ''}) 결함 검측(Defect Inspection) 우선 배정",
                 "[공정 승인] 로트 처리 보류(Hold) 등록 및 수석 엔지니어 검토 대기"
             ]
         )

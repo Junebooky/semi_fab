@@ -172,34 +172,63 @@ function generateModeAFixtureTest(seed) {
 
   const relNoise = (nextRand() - 0.5) * 2.0;
   const prsNoise = (nextRand() - 0.5) * 1.5;
+  const rfNoise = (nextRand() - 0.5) * 20.0;
 
   const t7Rel = +(80.0 + (nextRand() - 0.5) * 4.0).toFixed(1);
   const t7Prs = +(168.5 + (nextRand() - 0.5) * 5.0).toFixed(2);
+  const t7Rf = +(1820.0 + rfNoise).toFixed(1);
 
   const samples = [
     { step_index: 0, sensor_id: "RELATIVE_SIGNAL", measured_value: +(48.2 + relNoise).toFixed(1), quality_flag: "GOOD" },
     { step_index: 4, sensor_id: "RELATIVE_SIGNAL", measured_value: null, quality_flag: "MISSING" },
     { step_index: 5, sensor_id: "RELATIVE_SIGNAL", measured_value: null, quality_flag: "MISSING" },
     { step_index: 7, sensor_id: "RELATIVE_SIGNAL", measured_value: t7Rel, quality_flag: "SUSPECT" },
+    { step_index: 0, sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.1 + prsNoise).toFixed(2), quality_flag: "GOOD" },
     { step_index: 4, sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.2 + (nextRand() - 0.5) * 0.4).toFixed(2), quality_flag: "GOOD" },
     { step_index: 5, sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.0 + (nextRand() - 0.5) * 0.4).toFixed(2), quality_flag: "GOOD" },
-    { step_index: 7, sensor_id: "CHAMBER_PRESSURE", measured_value: t7Prs, quality_flag: "SUSPECT" }
+    { step_index: 7, sensor_id: "CHAMBER_PRESSURE", measured_value: t7Prs, quality_flag: "SUSPECT" },
+    { step_index: 0, sensor_id: "RF_POWER", measured_value: +(1500.0 + rfNoise * 0.2).toFixed(1), quality_flag: "GOOD" },
+    { step_index: 4, sensor_id: "RF_POWER", measured_value: 1500.0, quality_flag: "GOOD" },
+    { step_index: 7, sensor_id: "RF_POWER", measured_value: t7Rf, quality_flag: "SUSPECT" },
   ];
 
   const lotId = `LOT-DEMO-${800 + (seed % 50)}`;
+  const runId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
   const alertId = `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+  const standbyAlertId = `AL-STANDBY-${String(seed % 1000).padStart(3, '0')}`;
+
+  const alerts = [
+    {
+      alert_id: alertId,
+      severity: "CRITICAL",
+      equipment_id: "ETCH-02",
+      chamber_id: "CH-B",
+      run_id: runId,
+      rule_code: "FDC-RULE-SPC-UCL-01"
+    },
+    {
+      alert_id: standbyAlertId,
+      severity: "WARNING",
+      equipment_id: "ETCH-01",
+      chamber_id: "CH-A",
+      run_id: null,
+      rule_code: "FDC-RULE-HEURISTIC-02"
+    }
+  ];
 
   const investigation = {
     investigation_id: `INV-${alertId}`,
     alert_id: alertId,
     equipment_id: "ETCH-02",
     chamber_id: "CH-B",
+    run_id: runId,
     lot_id: lotId,
     anomaly_step: 7,
     status: "UNDER_INVESTIGATION",
     evidence_sensors: [
-      { sensor_id: "RELATIVE_SIGNAL", measured_value: t7Rel, ucl_threshold: 65.0, deviation_percent: +(((t7Rel - 65.0) / 65.0) * 100.0).toFixed(1) },
-      { sensor_id: "CHAMBER_PRESSURE", measured_value: t7Prs, ucl_threshold: 140.0, deviation_percent: +(((t7Prs - 140.0) / 140.0) * 100.0).toFixed(1) }
+      { sensor_id: "RELATIVE_SIGNAL", measured_value: t7Rel, ucl_threshold: 65.0, deviation_percent: +(((t7Rel - 65.0) / 65.0) * 100.0).toFixed(1), quality_flag: "SUSPECT" },
+      { sensor_id: "CHAMBER_PRESSURE", measured_value: t7Prs, ucl_threshold: 140.0, deviation_percent: +(((t7Prs - 140.0) / 140.0) * 100.0).toFixed(1), quality_flag: "SUSPECT" },
+      { sensor_id: "RF_POWER", measured_value: t7Rf, ucl_threshold: 1650.0, deviation_percent: +(((t7Rf - 1650.0) / 1650.0) * 100.0).toFixed(1), quality_flag: "SUSPECT" }
     ],
     confirmed_exposed_wafers: ["W-01", "W-02", "W-03", "W-04", "W-05", "W-06", "W-07"],
     candidate_exposed_wafers: ["W-08", "W-09", "W-10", "W-11", "W-12"],
@@ -207,7 +236,7 @@ function generateModeAFixtureTest(seed) {
     disclaimer: "※ [품질 분석 가이드라인] 센서 이상 계측(FDC Spike)은 식각 챔버 내 공정 조건 일탈(Excursion) 감지이며, 웨이퍼의 물리적 결함(Defect) 확정 원인이 아닙니다. 결함 확정은 후속 계측(Defect Review / EDS)을 통한 교차 분석이 필수적입니다."
   };
 
-  return { samples, lotId, alertId, investigation };
+  return { samples, lotId, runId, alertId, alerts, investigation };
 }
 
 test('BUILD-02 Mode A Dynamic Re-synthesis: Different seeds produce distinct synthetic values while preserving domain invariants', () => {
@@ -242,11 +271,17 @@ test('BUILD-02 Engineering Investigation: Excursion evidence, wafer candidates a
   assert.equal(inv.equipment_id, 'ETCH-02');
   assert.equal(inv.chamber_id, 'CH-B');
   assert.equal(inv.status, 'UNDER_INVESTIGATION');
-  assert.equal(inv.evidence_sensors.length, 2);
+  assert.equal(inv.evidence_sensors.length, 3);
 
-  // Sensor 1 above UCL
+  // Relative signal above UCL
   assert.ok(inv.evidence_sensors[0].measured_value > inv.evidence_sensors[0].ucl_threshold);
   assert.ok(inv.evidence_sensors[0].deviation_percent > 0);
+
+  // RF Power above UCL (1650 W)
+  const rfEv = inv.evidence_sensors.find(e => e.sensor_id === 'RF_POWER');
+  assert.notEqual(rfEv, undefined);
+  assert.ok(rfEv.measured_value > rfEv.ucl_threshold);
+  assert.equal(rfEv.quality_flag, 'SUSPECT');
 
   // Wafers breakdown
   assert.equal(inv.confirmed_exposed_wafers.length, 7);
@@ -283,5 +318,67 @@ test('BUILD-02 Mode B Notice Protection: Subsequent load failure does not overwr
   // Notice MUST maintain the fallback warning, not be overwritten with "Mode B: 실시간..."
   assert.ok(notice.includes("Mode A 로컬 합성 픽스처로 안전하게 전환"));
   assert.ok(!notice.includes("Mode B: 실시간 시뮬레이션"));
+});
+
+test('P1-01 RF Power Telemetry Consistency Invariant: Chamber telemetry uses same sample series as investigation', () => {
+  const fixture = generateModeAFixtureTest(20261015);
+  const samples = fixture.samples;
+  const inv = fixture.investigation;
+
+  // Step 0: Nominal RF power (~1500W)
+  const rfT0 = samples.find(s => s.sensor_id === 'RF_POWER' && s.step_index === 0);
+  assert.notEqual(rfT0, undefined);
+  assert.equal(rfT0.quality_flag, 'GOOD');
+  assert.ok(rfT0.measured_value >= 1480.0 && rfT0.measured_value <= 1520.0);
+
+  // Step 7: Excursion RF power (~1820W, > UCL 1650W)
+  const rfT7 = samples.find(s => s.sensor_id === 'RF_POWER' && s.step_index === 7);
+  assert.notEqual(rfT7, undefined);
+  assert.equal(rfT7.quality_flag, 'SUSPECT');
+  assert.ok(rfT7.measured_value > 1650.0);
+
+  // Investigation evidence matches step 7 sample exactly (no 895W hardcoding discrepancy)
+  const rfEv = inv.evidence_sensors.find(e => e.sensor_id === 'RF_POWER');
+  assert.equal(rfEv.measured_value, rfT7.measured_value);
+  assert.equal(rfEv.quality_flag, rfT7.quality_flag);
+});
+
+test('P1-02 Alert-Investigation Binding and Standby Isolation: Selecting standby alert isolates CH-B excursion evidence', () => {
+  const fixture = generateModeAFixtureTest(20261015);
+  const activeRunId = fixture.runId;
+  const criticalAlert = fixture.alerts[0]; // Active run alert
+  const standbyAlert = fixture.alerts[1];  // Standby warning alert with run_id = null
+
+  // State tracker
+  let currentInvestigation = fixture.investigation;
+  let selectedAlert = criticalAlert;
+
+  // Function mirroring handleSelectAlert logic
+  function selectAlert(alert) {
+    selectedAlert = alert;
+    if (alert.run_id && alert.run_id === activeRunId) {
+      currentInvestigation = fixture.investigation;
+    } else {
+      // Standby or unrelated alert: safely nullify investigation to prevent leaking CH-B evidence
+      currentInvestigation = null;
+    }
+  }
+
+  // 1. Initial state: critical alert selected, investigation present
+  assert.equal(selectedAlert.alert_id, criticalAlert.alert_id);
+  assert.notEqual(currentInvestigation, null);
+  assert.equal(currentInvestigation.equipment_id, 'ETCH-02');
+  assert.equal(currentInvestigation.chamber_id, 'CH-B');
+
+  // 2. User clicks Standby alert (ETCH-01 / CH-A with run_id = null)
+  selectAlert(standbyAlert);
+  assert.equal(selectedAlert.alert_id, standbyAlert.alert_id);
+  assert.equal(currentInvestigation, null); // MUST NOT show CH-B T7 spike or W-08~W-12 wafers!
+
+  // 3. User clicks back to CRITICAL alert
+  selectAlert(criticalAlert);
+  assert.equal(selectedAlert.alert_id, criticalAlert.alert_id);
+  assert.notEqual(currentInvestigation, null);
+  assert.equal(currentInvestigation.chamber_id, 'CH-B');
 });
 

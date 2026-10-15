@@ -283,6 +283,96 @@ class TestEtchDemoAPI(unittest.TestCase):
         self.assertIn("물리적 결함(Defect) 확정 원인이 아닙니다", data["disclaimer"])
         self.assertGreaterEqual(len(data["recommended_dispositions"]), 3)
 
+    def test_11_investigation_alert_binding_and_standby_isolation(self):
+        """
+        P1-02 Verification:
+        Guarantees that:
+        1. An active-run CRITICAL alert query returns exact matching run/equipment/wafer evidence.
+        2. A standby WARNING alert (AL-DEMO-002) without an active run returns HTTP 404 and NEVER leaks CH-B T7 excursion evidence.
+        3. A non-existent alert ID returns HTTP 404.
+        4. Cross-session querying for an old inactive session alert is rejected (HTTP 404).
+        """
+        # 1. Active run alert
+        alerts_res = self.client.get("/api/v1/demo/alerts")
+        self.assertEqual(alerts_res.status_code, 200)
+        alerts = alerts_res.json()
+        critical_alerts = [a for a in alerts if a["severity"] == "CRITICAL" and a["run_id"] is not None]
+        self.assertGreaterEqual(len(critical_alerts), 1)
+        active_critical = critical_alerts[0]
+
+        res = self.client.get(f"/api/v1/demo/investigation?alert_id={active_critical['alert_id']}")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["alert_id"], active_critical["alert_id"])
+        self.assertEqual(data["equipment_id"], "ETCH-02")
+        self.assertEqual(data["chamber_id"], "CH-B")
+        self.assertIn("RUN-DEMO-", data["run_id"])
+
+        # 2. Standby warning alert without active run
+        standby_alerts = [a for a in alerts if a["severity"] == "WARNING" or a["run_id"] is None]
+        self.assertGreaterEqual(len(standby_alerts), 1)
+        standby_alert = standby_alerts[0]
+
+        res_standby = self.client.get(f"/api/v1/demo/investigation?alert_id={standby_alert['alert_id']}")
+        self.assertEqual(res_standby.status_code, 404)
+        self.assertIn("standby", res_standby.json()["detail"].lower())
+
+        # 3. Non-existent alert
+        res_nonexistent = self.client.get("/api/v1/demo/investigation?alert_id=AL-INVALID-999")
+        self.assertEqual(res_nonexistent.status_code, 404)
+
+        # 4. Inactive session isolation test
+        # Create a new active session
+        new_run_res = self.client.post("/api/v1/demo/runs", json={
+            "seed": 9999,
+            "scenario_id": "ETH-SYN-01",
+            "equipment_id": "ETCH-02",
+            "chamber_id": "CH-B"
+        })
+        self.assertEqual(new_run_res.status_code, 201)
+
+        # Previous active alert now belongs to an inactive session
+        res_old_alert = self.client.get(f"/api/v1/demo/investigation?alert_id={active_critical['alert_id']}")
+        self.assertEqual(res_old_alert.status_code, 404)
+        self.assertIn("inactive", res_old_alert.json()["detail"].lower())
+
+    def test_12_rf_power_consistency_and_samples(self):
+        """
+        P1-01 Verification:
+        Ensures RF_POWER measurements are consistent between time-series samples and investigation evidence:
+        1. T0~T6 samples are around nominal target (1500W, GOOD).
+        2. T7 sample is an anomaly excursion (>1650W UCL, SUSPECT).
+        3. Investigation RF_POWER evidence exact match with step 7 measurement.
+        """
+        summary_res = self.client.get("/api/v1/demo/summary")
+        self.assertEqual(summary_res.status_code, 200)
+        run_id = summary_res.json()["active_run_id"]
+
+        rf_res = self.client.get(f"/api/v1/demo/runs/{run_id}/samples?sensor_id=RF_POWER")
+        self.assertEqual(rf_res.status_code, 200)
+        rf_samples = rf_res.json()
+        self.assertEqual(len(rf_samples), 8)
+
+        # Steps 0~6: Nominal
+        for s in rf_samples:
+            if s["step_index"] < 7:
+                self.assertEqual(s["quality_flag"], "GOOD")
+                self.assertLess(s["measured_value"], 1650.0)
+                self.assertGreater(s["measured_value"], 1400.0)
+
+        # Step 7: Excursion
+        t7_rf = [s for s in rf_samples if s["step_index"] == 7][0]
+        self.assertEqual(t7_rf["quality_flag"], "SUSPECT")
+        self.assertGreater(t7_rf["measured_value"], 1650.0)
+
+        # Investigation evidence matches
+        inv_res = self.client.get("/api/v1/demo/investigation")
+        self.assertEqual(inv_res.status_code, 200)
+        evidence = inv_res.json()["evidence_sensors"]
+        rf_ev = [e for e in evidence if e["sensor_id"] == "RF_POWER"][0]
+        self.assertEqual(rf_ev["measured_value"], t7_rf["measured_value"])
+        self.assertEqual(rf_ev["quality_flag"], t7_rf["quality_flag"])
+
 
 if __name__ == "__main__":
     unittest.main()
