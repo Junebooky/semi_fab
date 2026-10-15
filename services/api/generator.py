@@ -32,8 +32,34 @@ def generate_etch_demo_dataset(
         t_iso = t.strftime("%Y-%m-%dT%H:%M:%S.000Z")
         time_label = f"T{step_idx}"
         
+        # Perturbations
+        prs_noise = (rng.random() - 0.5) * 1.2
+        rf_noise = (rng.random() - 0.5) * 15.0
+
+        # Step 7 is anomaly spike
+        if step_idx == 7:
+            prs_val = round(168.50 + prs_noise, 2)
+            rf_val = round(1820.0 + rf_noise, 1)
+            q_flag_prs = "SUSPECT"
+            q_flag_rf = "SUSPECT"
+        elif step_idx == 4:
+            prs_val = round(120.20 + (rng.random() - 0.5) * 0.4, 2)
+            rf_val = round(1500.0 + rf_noise, 1)
+            q_flag_prs = "GOOD"
+            q_flag_rf = "GOOD"
+        elif step_idx == 5:
+            prs_val = round(120.00 + (rng.random() - 0.5) * 0.4, 2)
+            rf_val = round(1500.0 + rf_noise, 1)
+            q_flag_prs = "GOOD"
+            q_flag_rf = "GOOD"
+        else:
+            prs_val = round(120.45 + (rel_val - 45.0) * 0.8 + prs_noise, 2)
+            rf_val = round(1500.0 + (rel_val - 45.0) * 4.5 + rf_noise, 1)
+            q_flag_prs = "GOOD"
+            q_flag_rf = "GOOD"
+
         if rel_val is None:
-            # Missing sensor packet
+            # RELATIVE_SIGNAL is MISSING at T4 and T5 (e.g. optical shutter closed during stabilization)
             samples.append({
                 "measurement_id": f"MEAS-{run_id}-REL-{step_idx}",
                 "session_id": session_id,
@@ -41,34 +67,6 @@ def generate_etch_demo_dataset(
                 "sensor_id": "RELATIVE_SIGNAL",
                 "measured_value": None,
                 "unit": "a.u.",
-                "quality_flag": "MISSING",
-                "data_origin": "synthetic",
-                "event_time_utc": t_iso,
-                "sim_time_utc": t_iso,
-                "step_index": step_idx,
-                "time_label": time_label
-            })
-            samples.append({
-                "measurement_id": f"MEAS-{run_id}-PRS-{step_idx}",
-                "session_id": session_id,
-                "run_id": run_id,
-                "sensor_id": "CHAMBER_PRESSURE",
-                "measured_value": None,
-                "unit": "mTorr",
-                "quality_flag": "MISSING",
-                "data_origin": "synthetic",
-                "event_time_utc": t_iso,
-                "sim_time_utc": t_iso,
-                "step_index": step_idx,
-                "time_label": time_label
-            })
-            samples.append({
-                "measurement_id": f"MEAS-{run_id}-RFP-{step_idx}",
-                "session_id": session_id,
-                "run_id": run_id,
-                "sensor_id": "RF_POWER",
-                "measured_value": None,
-                "unit": "W",
                 "quality_flag": "MISSING",
                 "data_origin": "synthetic",
                 "event_time_utc": t_iso,
@@ -77,20 +75,7 @@ def generate_etch_demo_dataset(
                 "time_label": time_label
             })
         else:
-            # Deterministic perturbation
-            prs_noise = (rng.random() - 0.5) * 1.2
-            rf_noise = (rng.random() - 0.5) * 15.0
-            
-            # T7 is anomaly spike
-            if step_idx == 7:
-                prs_val = round(168.50 + prs_noise, 2)
-                rf_val = round(1820.0 + rf_noise, 1)
-                q_flag = "SUSPECT"
-            else:
-                prs_val = round(120.45 + (rel_val - 45.0) * 0.8 + prs_noise, 2)
-                rf_val = round(1500.0 + (rel_val - 45.0) * 4.5 + rf_noise, 1)
-                q_flag = "GOOD"
-
+            q_flag_rel = "SUSPECT" if step_idx == 7 else "GOOD"
             samples.append({
                 "measurement_id": f"MEAS-{run_id}-REL-{step_idx}",
                 "session_id": session_id,
@@ -98,41 +83,45 @@ def generate_etch_demo_dataset(
                 "sensor_id": "RELATIVE_SIGNAL",
                 "measured_value": float(rel_val),
                 "unit": "a.u.",
-                "quality_flag": q_flag,
+                "quality_flag": q_flag_rel,
                 "data_origin": "synthetic",
                 "event_time_utc": t_iso,
                 "sim_time_utc": t_iso,
                 "step_index": step_idx,
                 "time_label": time_label
             })
-            samples.append({
-                "measurement_id": f"MEAS-{run_id}-PRS-{step_idx}",
-                "session_id": session_id,
-                "run_id": run_id,
-                "sensor_id": "CHAMBER_PRESSURE",
-                "measured_value": prs_val,
-                "unit": "mTorr",
-                "quality_flag": q_flag,
-                "data_origin": "synthetic",
-                "event_time_utc": t_iso,
-                "sim_time_utc": t_iso,
-                "step_index": step_idx,
-                "time_label": time_label
-            })
-            samples.append({
-                "measurement_id": f"MEAS-{run_id}-RFP-{step_idx}",
-                "session_id": session_id,
-                "run_id": run_id,
-                "sensor_id": "RF_POWER",
-                "measured_value": rf_val,
-                "unit": "W",
-                "quality_flag": q_flag,
-                "data_origin": "synthetic",
-                "event_time_utc": t_iso,
-                "sim_time_utc": t_iso,
-                "step_index": step_idx,
-                "time_label": time_label
-            })
+
+        # CHAMBER_PRESSURE (continuous measurement)
+        samples.append({
+            "measurement_id": f"MEAS-{run_id}-PRS-{step_idx}",
+            "session_id": session_id,
+            "run_id": run_id,
+            "sensor_id": "CHAMBER_PRESSURE",
+            "measured_value": prs_val,
+            "unit": "mTorr",
+            "quality_flag": q_flag_prs,
+            "data_origin": "synthetic",
+            "event_time_utc": t_iso,
+            "sim_time_utc": t_iso,
+            "step_index": step_idx,
+            "time_label": time_label
+        })
+
+        # RF_POWER (continuous measurement)
+        samples.append({
+            "measurement_id": f"MEAS-{run_id}-RFP-{step_idx}",
+            "session_id": session_id,
+            "run_id": run_id,
+            "sensor_id": "RF_POWER",
+            "measured_value": rf_val,
+            "unit": "W",
+            "quality_flag": q_flag_rf,
+            "data_origin": "synthetic",
+            "event_time_utc": t_iso,
+            "sim_time_utc": t_iso,
+            "step_index": step_idx,
+            "time_label": time_label
+        })
 
     # Wafers
     wafers = []

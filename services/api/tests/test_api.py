@@ -197,6 +197,51 @@ class TestEtchDemoAPI(unittest.TestCase):
         latest_samples = self.client.get(f"/api/v1/demo/runs/{latest_summary['active_run_id']}/samples").json()
         self.assertEqual(len(latest_samples), 24)  # 8 steps * 3 sensors
 
+    def test_09_sensor_quality_differentiation(self):
+        """
+        Regression test for P1-01:
+        Verify that CHAMBER_PRESSURE and RF_POWER maintain continuous measurements
+        with GOOD quality flag across all steps including T4 and T5, while RELATIVE_SIGNAL
+        correctly models the optical shutter gap as MISSING at T4 and T5.
+        At T7 anomaly spike, quality_flag is SUSPECT.
+        """
+        summary = self.client.get("/api/v1/demo/summary").json()
+        run_id = summary["active_run_id"]
+
+        # 1. CHAMBER_PRESSURE checks
+        prs_res = self.client.get(f"/api/v1/demo/runs/{run_id}/samples?sensor_id=CHAMBER_PRESSURE")
+        self.assertEqual(prs_res.status_code, 200)
+        prs_samples = prs_res.json()
+        self.assertEqual(len(prs_samples), 8)
+
+        for s in prs_samples:
+            step = s["step_index"]
+            self.assertIsNotNone(s["measured_value"], f"Pressure at T{step} must not be None")
+            if step == 7:
+                self.assertEqual(s["quality_flag"], "SUSPECT", "Pressure at T7 must be SUSPECT")
+                self.assertGreater(s["measured_value"], 140.0)
+            else:
+                self.assertEqual(s["quality_flag"], "GOOD", f"Pressure at T{step} must be GOOD")
+                self.assertLess(s["measured_value"], 140.0, f"Pressure at T{step} must be below UCL")
+                self.assertGreater(s["measured_value"], 100.0, f"Pressure at T{step} must be above vacuum lower bound")
+
+        # 2. RELATIVE_SIGNAL checks
+        rel_res = self.client.get(f"/api/v1/demo/runs/{run_id}/samples?sensor_id=RELATIVE_SIGNAL")
+        self.assertEqual(rel_res.status_code, 200)
+        rel_samples = rel_res.json()
+        self.assertEqual(len(rel_samples), 8)
+
+        t4_rel = [s for s in rel_samples if s["step_index"] == 4][0]
+        t5_rel = [s for s in rel_samples if s["step_index"] == 5][0]
+        self.assertIsNone(t4_rel["measured_value"])
+        self.assertEqual(t4_rel["quality_flag"], "MISSING")
+        self.assertIsNone(t5_rel["measured_value"])
+        self.assertEqual(t5_rel["quality_flag"], "MISSING")
+
+        t7_rel = [s for s in rel_samples if s["step_index"] == 7][0]
+        self.assertIsNotNone(t7_rel["measured_value"])
+        self.assertEqual(t7_rel["quality_flag"], "SUSPECT")
+
 
 if __name__ == "__main__":
     unittest.main()

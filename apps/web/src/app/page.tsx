@@ -126,6 +126,8 @@ const DEFAULT_SUMMARY: DemoSummary = {
 export default function FabOneDemoPage() {
   const [mode, setMode] = useState<'A' | 'B'>('A');
   const [backendAvailable, setBackendAvailable] = useState<boolean>(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [summary, setSummary] = useState<DemoSummary>(DEFAULT_SUMMARY);
   const [samples, setSamples] = useState<SensorSample[]>(FIXTURE_SAMPLES);
   const [alerts, setAlerts] = useState<FdcAlert[]>(FIXTURE_ALERTS);
@@ -140,53 +142,74 @@ export default function FabOneDemoPage() {
   const [seed, setSeed] = useState<number>(20261015);
   const [noticeMessage, setNoticeMessage] = useState<string>("FAB ONE 식각 공정 시뮬레이터 준비 완료");
 
-  // Attempt backend health check on mount
+  // Centralized fallback to Mode A
+  const fallbackToModeA = useCallback((errorMsg: string) => {
+    setMode('A');
+    setBackendAvailable(false);
+    setConnectionError(errorMsg);
+    setSummary(DEFAULT_SUMMARY);
+    setSamples(FIXTURE_SAMPLES);
+    setAlerts(FIXTURE_ALERTS);
+    setWafers(FIXTURE_WAFERS);
+    setNoticeMessage(`⚠️ ${errorMsg} - Mode A 로컬 합성 픽스처로 안전하게 전환되었습니다.`);
+  }, []);
+
+  const loadBackendData = useCallback(async () => {
+    try {
+      const [sumRes, alertRes, waferRes] = await Promise.all([
+        fetch("http://localhost:8000/api/v1/demo/summary", { cache: "no-store" }),
+        fetch("http://localhost:8000/api/v1/demo/alerts", { cache: "no-store" }),
+        fetch("http://localhost:8000/api/v1/demo/wafers", { cache: "no-store" }),
+      ]);
+
+      if (!sumRes.ok || !alertRes.ok || !waferRes.ok) {
+        fallbackToModeA(`서버 응답 오류 (HTTP summary:${sumRes.status}, alerts:${alertRes.status}, wafers:${waferRes.status})`);
+        return;
+      }
+
+      const sumData: DemoSummary = await sumRes.json();
+      const alertData: FdcAlert[] = await alertRes.json();
+      const waferData: WaferItem[] = await waferRes.json();
+
+      const sampleRes = await fetch(`http://localhost:8000/api/v1/demo/runs/${sumData.active_run_id}/samples`, { cache: "no-store" });
+      if (!sampleRes.ok) {
+        fallbackToModeA(`시계열 센서 로드 실패 (HTTP ${sampleRes.status})`);
+        return;
+      }
+      const sampleData: SensorSample[] = await sampleRes.json();
+
+      setSummary(sumData);
+      setAlerts(alertData);
+      setWafers(waferData);
+      setSamples(sampleData);
+      setMode('B');
+      setBackendAvailable(true);
+      setConnectionError(null);
+    } catch {
+      fallbackToModeA("백엔드 통신 실패 (네트워크 단절)");
+    }
+  }, [fallbackToModeA]);
+
   const checkBackend = useCallback(async () => {
+    setIsConnecting(true);
+    setConnectionError(null);
     try {
       const res = await fetch("http://localhost:8000/api/v1/health", { cache: "no-store" });
       if (res.ok) {
-        setBackendAvailable(true);
-        setMode('B');
-        loadBackendData();
-      } else {
-        setBackendAvailable(false);
-        setMode('A');
-      }
-    } catch {
-      setBackendAvailable(false);
-      setMode('A');
-    }
-  }, []);
-
-  const loadBackendData = async () => {
-    try {
-      const [sumRes, alertRes, waferRes] = await Promise.all([
-        fetch("http://localhost:8000/api/v1/demo/summary"),
-        fetch("http://localhost:8000/api/v1/demo/alerts"),
-        fetch("http://localhost:8000/api/v1/demo/wafers"),
-      ]);
-
-      if (sumRes.ok && alertRes.ok && waferRes.ok) {
-        const sumData: DemoSummary = await sumRes.json();
-        const alertData: FdcAlert[] = await alertRes.json();
-        const waferData: WaferItem[] = await waferRes.json();
-
-        setSummary(sumData);
-        setAlerts(alertData);
-        setWafers(waferData);
-
-        // Fetch samples for active run
-        const sampleRes = await fetch(`http://localhost:8000/api/v1/demo/runs/${sumData.active_run_id}/samples`);
-        if (sampleRes.ok) {
-          const sampleData: SensorSample[] = await sampleRes.json();
-          setSamples(sampleData);
+        const data = await res.json();
+        if (data.status === "ok") {
+          await loadBackendData();
+          setIsConnecting(false);
+          return;
         }
       }
+      fallbackToModeA(`헬스체크 실패 (HTTP ${res.status})`);
     } catch {
-      // Fallback to fixture
-      setMode('A');
+      fallbackToModeA("백엔드 서버(포트 8000) 미실행");
+    } finally {
+      setIsConnecting(false);
     }
-  };
+  }, [fallbackToModeA, loadBackendData]);
 
   useEffect(() => {
     checkBackend();
@@ -211,25 +234,35 @@ export default function FabOneDemoPage() {
     };
   }, [isPlaying]);
 
-  // Update anomaly active status based on currentStep
+  // Filter current series
+  const filteredSamples = useMemo(() => {
+    return samples.filter(s => s.sensor_id === selectedSensor);
+  }, [samples, selectedSensor]);
+
+  // Current value at currentStep
+  const currentSample = useMemo(() => {
+    return filteredSamples.find(s => s.step_index === currentStep);
+  }, [filteredSamples, currentStep]);
+
+  // Update anomaly active status based on currentStep and selectedSensor
   useEffect(() => {
+    const currentSampleForSelected = filteredSamples.find(s => s.step_index === currentStep);
     if (currentStep === 7) {
       setIsAnomalyActive(true);
-      setNoticeMessage("경고: T7 시점 센서 급증 이상 발생! FDC-SPC-001 알람 트리거됨.");
-    } else if (currentStep === 4 || currentStep === 5) {
+      setNoticeMessage(`경고: T7 시점 센서 급증 이상 발생! FDC-SPC-001 알람 트리거됨 (${selectedSensor}: ${currentSampleForSelected?.measured_value ?? '-'} ${currentSampleForSelected?.unit || ''}).`);
+    } else if (currentSampleForSelected?.quality_flag === 'MISSING' || currentSampleForSelected?.measured_value === null) {
       setIsAnomalyActive(false);
-      setNoticeMessage(`시점 T${currentStep}: 센서 결측 구간. 0으로 보간하지 않고 단절 처리.`);
+      setNoticeMessage(`시점 T${currentStep}: ${selectedSensor} 데이터 결측(MISSING). 0으로 보간하지 않고 단절 처리.`);
     } else {
       setIsAnomalyActive(false);
-      setNoticeMessage(`시점 T${currentStep}: 정상 식각 공정 진행 중.`);
+      setNoticeMessage(`시점 T${currentStep}: ${selectedSensor} 정상 계측 (${currentSampleForSelected?.measured_value ?? '-'} ${currentSampleForSelected?.unit || ''}).`);
     }
-  }, [currentStep]);
+  }, [currentStep, selectedSensor, filteredSamples]);
 
   // Action handlers
   const handleStartDemo = async () => {
     setCurrentStep(0);
     setIsPlaying(true);
-    setNoticeMessage("데모 시뮬레이션 시작 (T0 ~ T7 순차 재생)");
 
     if (mode === 'B') {
       try {
@@ -244,11 +277,16 @@ export default function FabOneDemoPage() {
           })
         });
         if (res.ok) {
-          loadBackendData();
+          await loadBackendData();
+          setNoticeMessage(`Mode B: 실시간 시뮬레이션 시작 (Seed: ${seed}, T0 ~ T7 재생)`);
+        } else {
+          fallbackToModeA(`새 데모 Run 생성 실패 (HTTP ${res.status})`);
         }
       } catch {
-        // Continue with local playback
+        fallbackToModeA("새 데모 Run 요청 중 서버 응답 없음");
       }
+    } else {
+      setNoticeMessage("Mode A: 합성 픽스처 데모 시작 (T0 ~ T7 순차 재생)");
     }
   };
 
@@ -274,9 +312,12 @@ export default function FabOneDemoPage() {
 
     if (mode === 'B') {
       try {
-        await fetch("http://localhost:8000/api/v1/demo/seek-anomaly", { method: "POST" });
+        const res = await fetch("http://localhost:8000/api/v1/demo/seek-anomaly", { method: "POST" });
+        if (!res.ok) {
+          fallbackToModeA(`이상 구간 탐색 API 실패 (HTTP ${res.status})`);
+        }
       } catch {
-        // Local state already updated
+        fallbackToModeA("이상 탐색 API 요청 중 서버 응답 없음");
       }
     }
   };
@@ -287,11 +328,10 @@ export default function FabOneDemoPage() {
     setSeed(nextSeed);
     setCurrentStep(0);
     setIsPlaying(false);
-    setNoticeMessage(`새 난수 시드(Seed: ${nextSeed}) 적용됨.`);
 
     if (mode === 'B') {
       try {
-        await fetch("http://localhost:8000/api/v1/demo/runs", {
+        const res = await fetch("http://localhost:8000/api/v1/demo/runs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -301,22 +341,19 @@ export default function FabOneDemoPage() {
             chamber_id: "CH-B"
           })
         });
-        loadBackendData();
+        if (res.ok) {
+          await loadBackendData();
+          setNoticeMessage(`Mode B: 새 난수 시드(Seed: ${nextSeed}) 적용 및 백엔드 재합성 완료.`);
+        } else {
+          fallbackToModeA(`시드 변경 실패 (HTTP ${res.status})`);
+        }
       } catch {
-        // Fallback
+        fallbackToModeA("시드 변경 중 서버 응답 없음");
       }
+    } else {
+      setNoticeMessage(`Mode A: 시드(Seed: ${nextSeed}) 설정됨.`);
     }
   };
-
-  // Filter current series
-  const filteredSamples = useMemo(() => {
-    return samples.filter(s => s.sensor_id === selectedSensor);
-  }, [samples, selectedSensor]);
-
-  // Current value at currentStep
-  const currentSample = useMemo(() => {
-    return filteredSamples.find(s => s.step_index === currentStep);
-  }, [filteredSamples, currentStep]);
 
   // SVG Chart rendering calculation
   // ViewBox: 0 0 600 240
@@ -340,16 +377,39 @@ export default function FabOneDemoPage() {
     });
   }, [filteredSamples, selectedSensor]);
 
-  // Path 1 (T0..T3) and Path 2 (T6..T7) ensuring missing T4/T5 is NOT connected to 0!
-  const segmentPaths = useMemo(() => {
-    const seg1 = chartCoordinates.filter(c => c.step_index <= 3 && c.y !== null);
-    const seg2 = chartCoordinates.filter(c => c.step_index >= 6 && c.y !== null);
+  // Dynamic path segmentation based on actual valid points (P1-01 fix: Never connects across missing points, but keeps continuous points intact)
+  const dynamicSegments = useMemo(() => {
+    const segments: string[] = [];
+    let currentPts: { x: number; y: number }[] = [];
 
-    const d1 = seg1.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-    const d2 = seg2.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-
-    return { d1, d2 };
+    chartCoordinates.forEach(pt => {
+      if (pt.y !== null && pt.quality_flag !== 'MISSING') {
+        currentPts.push({ x: pt.x, y: pt.y });
+      } else {
+        if (currentPts.length > 0) {
+          segments.push(currentPts.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' '));
+          currentPts = [];
+        }
+      }
+    });
+    if (currentPts.length > 0) {
+      segments.push(currentPts.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' '));
+    }
+    return segments;
   }, [chartCoordinates]);
+
+  // Dynamic missing range detection for currently selected sensor (P1-01 fix)
+  const missingPoints = useMemo(() => {
+    return chartCoordinates.filter(c => c.quality_flag === 'MISSING' || c.measured_value === null);
+  }, [chartCoordinates]);
+
+  const missingRange = useMemo(() => {
+    if (missingPoints.length === 0) return null;
+    const minX = Math.min(...missingPoints.map(p => p.x)) - 35;
+    const maxX = Math.max(...missingPoints.map(p => p.x)) + 35;
+    const labels = missingPoints.map(p => p.time_label).join(', ');
+    return { minX, width: maxX - minX, labels };
+  }, [missingPoints]);
 
   // UCL & Target threshold Y positions
   const uclY = selectedSensor === 'RELATIVE_SIGNAL' ? (210 - (65 / 100) * 180) : (210 - ((140 - 100) / 100) * 180);
@@ -374,9 +434,13 @@ export default function FabOneDemoPage() {
               Mode B · Live API Connected (Port 8000)
             </span>
           ) : (
-            <span className="pill pill-mode-a" title="백엔드 미실행 시에도 브라우저에서 독립 동작하는 합성 픽스처 모드">
-              <span className="pulse-dot"></span>
-              Mode A · Standalone Synthetic Fixture
+            <span
+              className="pill pill-mode-a"
+              style={{ borderColor: connectionError ? '#FCD34D' : '#BAE6FD' }}
+              title={connectionError ? `API 오류 (${connectionError}): Mode A 로컬 픽스처로 동작 중` : "백엔드 미실행 시에도 브라우저에서 독립 동작하는 합성 픽스처 모드"}
+            >
+              <span className="pulse-dot" style={{ background: connectionError ? '#D97706' : '#0369A1' }}></span>
+              Mode A · Standalone Synthetic Fixture {connectionError ? '(API 미연결 / 폴백)' : ''}
             </span>
           )}
 
@@ -396,9 +460,10 @@ export default function FabOneDemoPage() {
             className="btn-secondary"
             style={{ padding: '4px 10px', fontSize: '11px' }}
             onClick={checkBackend}
+            disabled={isConnecting}
             title="백엔드 연결 상태를 다시 확인합니다"
           >
-            {backendAvailable ? "API 연결됨" : "API 재연결 시도"}
+            {isConnecting ? "연결 확인 중..." : (backendAvailable ? "API 연결됨 (재확인)" : "API 재연결 시도")}
           </button>
         </div>
       </header>
@@ -489,7 +554,8 @@ export default function FabOneDemoPage() {
             </span>
             {[0, 1, 2, 3, 4, 5, 6, 7].map(step => {
               const isCurrent = currentStep === step;
-              const isMissing = step === 4 || step === 5;
+              const stepSample = filteredSamples.find(s => s.step_index === step);
+              const isMissing = stepSample?.quality_flag === 'MISSING' || stepSample?.measured_value === null;
               const isAnomaly = step === 7;
               let classNames = "step-chip";
               if (isCurrent) classNames += " active";
@@ -556,7 +622,7 @@ export default function FabOneDemoPage() {
                 <div>
                   <h2 className="card-title">Chamber Sensor Trend (합성 시계열)</h2>
                   <p className="card-subtitle">
-                    T0~T7 시점 계측값 · 결측 구간(T4, T5) 분절 시각화 및 UCL 스파이크 탐지
+                    T0~T7 시점 계측값 · {selectedSensor === 'RELATIVE_SIGNAL' ? '광학 센서 결측 구간(T4, T5) 분절 시각화' : '격막 게이지 전구간 연속 계측'} 및 UCL 스파이크 탐지
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -656,40 +722,43 @@ export default function FabOneDemoPage() {
                     Target 공정 목표 ({selectedSensor === 'RELATIVE_SIGNAL' ? '50.0 a.u.' : '120 mTorr'})
                   </text>
 
-                  {/* Missing Gap Shading (T4 to T5) */}
-                  <rect
-                    x="305"
-                    y="30"
-                    width="140"
-                    height="180"
-                    fill="#F8FAFC"
-                    stroke="#CBD5E1"
-                    strokeDasharray="3 3"
-                    opacity="0.9"
-                  />
-                  <text x="375" y="125" fontSize="10" fill="#94A3B8" textAnchor="middle" fontWeight="600">
-                    데이터 결측 구간 (T4~T5)
-                  </text>
+                  {/* Missing Gap Shading (Dynamic per sensor: only if missing points exist) */}
+                  {missingRange && (
+                    <g>
+                      <rect
+                        x={missingRange.minX}
+                        y="30"
+                        width={missingRange.width}
+                        height="180"
+                        fill="#F8FAFC"
+                        stroke="#CBD5E1"
+                        strokeDasharray="3 3"
+                        opacity="0.9"
+                      />
+                      <text
+                        x={missingRange.minX + missingRange.width / 2}
+                        y="125"
+                        fontSize="10"
+                        fill="#94A3B8"
+                        textAnchor="middle"
+                        fontWeight="600"
+                      >
+                        데이터 결측 구간 ({missingRange.labels})
+                      </text>
+                    </g>
+                  )}
 
-                  {/* Sensor Curves (Split path ensures NO line to 0 at missing points!) */}
-                  {segmentPaths.d1 && (
+                  {/* Sensor Curves (Dynamic segments: Never connects across missing points, but keeps continuous points intact) */}
+                  {dynamicSegments.map((dStr, idx) => (
                     <path
-                      d={segmentPaths.d1}
+                      key={idx}
+                      d={dStr}
                       fill="none"
                       stroke="#0B9F78"
                       strokeWidth="2.5"
                       strokeLinecap="round"
                     />
-                  )}
-                  {segmentPaths.d2 && (
-                    <path
-                      d={segmentPaths.d2}
-                      fill="none"
-                      stroke="#0B9F78"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                    />
-                  )}
+                  ))}
 
                   {/* Points */}
                   {chartCoordinates.map(pt => {
@@ -765,13 +834,13 @@ export default function FabOneDemoPage() {
                     <span className="legend-swatch-solid"></span> 합성 계측선 (연속 구간)
                   </span>
                   <span className="legend-item">
-                    <span className="legend-swatch-missing"></span> 결측 분절 (T4, T5는 0이 아님)
+                    <span className="legend-swatch-missing"></span> {selectedSensor === 'RELATIVE_SIGNAL' ? '광학 결측 분절 (T4, T5는 0이 아님)' : '센서 연속 측정 (결측 없음)'}
                   </span>
                   <span className="legend-item">
-                    <span className="legend-swatch-ucl"></span> 가상 관리한계 UCL (65.0 a.u.)
+                    <span className="legend-swatch-ucl"></span> 가상 관리한계 UCL ({selectedSensor === 'RELATIVE_SIGNAL' ? '65.0 a.u.' : '140 mTorr'})
                   </span>
                   <span className="legend-item">
-                    <span className="legend-swatch-target"></span> 기준 목표치 Target (50.0 a.u.)
+                    <span className="legend-swatch-target"></span> 기준 목표치 Target ({selectedSensor === 'RELATIVE_SIGNAL' ? '50.0 a.u.' : '120 mTorr'})
                   </span>
                 </div>
               </div>
@@ -784,7 +853,7 @@ export default function FabOneDemoPage() {
                       <th>시점</th>
                       <th>상대 신호 [a.u.]</th>
                       <th>챔버 압력 [mTorr]</th>
-                      <th>품질 플래그</th>
+                      <th>선택 센서 품질 ({selectedSensor === 'RELATIVE_SIGNAL' ? '상대 신호' : '챔버 압력'})</th>
                       <th>출처</th>
                     </tr>
                   </thead>
@@ -792,6 +861,7 @@ export default function FabOneDemoPage() {
                     {[0, 1, 2, 3, 4, 5, 6, 7].map(step => {
                       const sig = samples.find(s => s.sensor_id === 'RELATIVE_SIGNAL' && s.step_index === step);
                       const prs = samples.find(s => s.sensor_id === 'CHAMBER_PRESSURE' && s.step_index === step);
+                      const activeSample = selectedSensor === 'RELATIVE_SIGNAL' ? sig : prs;
                       const isCurrent = currentStep === step;
                       const isAnomaly = step === 7;
 
@@ -827,15 +897,15 @@ export default function FabOneDemoPage() {
                               style={{
                                 padding: '2px 8px',
                                 fontSize: '10px',
-                                background: sig?.quality_flag === 'MISSING' ? '#F1F5F9' : (isAnomaly ? '#FEE2E2' : '#ECFDF5'),
-                                color: sig?.quality_flag === 'MISSING' ? '#64748B' : (isAnomaly ? '#B91C1C' : '#047857'),
-                                borderColor: sig?.quality_flag === 'MISSING' ? '#CBD5E1' : (isAnomaly ? '#FECACA' : '#A7F3D0')
+                                background: activeSample?.quality_flag === 'MISSING' ? '#F1F5F9' : (isAnomaly ? '#FEE2E2' : '#ECFDF5'),
+                                color: activeSample?.quality_flag === 'MISSING' ? '#64748B' : (isAnomaly ? '#B91C1C' : '#047857'),
+                                borderColor: activeSample?.quality_flag === 'MISSING' ? '#CBD5E1' : (isAnomaly ? '#FECACA' : '#A7F3D0')
                               }}
                             >
-                              {sig?.quality_flag}
+                              {activeSample?.quality_flag || 'GOOD'}
                             </span>
                           </td>
-                          <td style={{ color: '#64748B', fontSize: '11px' }}>{sig?.data_origin || 'synthetic'}</td>
+                          <td style={{ color: '#64748B', fontSize: '11px' }}>{activeSample?.data_origin || 'synthetic'}</td>
                         </tr>
                       );
                     })}
