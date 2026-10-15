@@ -440,7 +440,10 @@ $$\text{Etch Rate (nm/min)} = \frac{T_{\text{before}} - T_{\text{after}}}{\Delta
 #### 1) 공정성능지수 ($P_p, P_{pk}$ — 전체 표본 변동 기반, Overall Variation)
 $$s = \sqrt{\frac{1}{n - 1} \sum_{i=1}^n (x_i - \bar{x})^2}$$
 
-$$P_p = \frac{\text{USL} - \text{LSL}}{6s}, \quad P_{pu} = \frac{\text{USL} - \bar{x}}{3s}, \quad P_{pl} = \frac{\bar{x} - \text{LSL}}{3s}, \quad P_{pk} = \min(P_{pu}, P_{pl})$$
+$P_p = \frac{\text{USL} - \text{LSL}}{6s}, \quad P_{pu} = \frac{\text{USL} - \bar{x}}{3s}, \quad P_{pl} = \frac{\bar{x} - \text{LSL}}{3s}, \quad P_{pk} = \min(P_{pu}, P_{pl})$
+
+- **Overall 계산 가능 조건:** 전체 표본 수 `N = sampleCount >= 2`, 표본 평균 및 분산 입력은 유한값, 전체 표본 표준편차 `s`는 **유한하고 `s > 0`**이어야 한다. `capabilityType: "OVERALL_PERFORMANCE"`는 `sigmaEstimator: "SAMPLE_STD_S"`를 사용하며 **부분군 `k`는 계산 필수 입력이 아니다**. 부분군을 정의하지 않은 경우 `subgroupCount`는 생략하거나 `null`로 전송한다. `N < 20`은 `SAMPLE_SIZE_BELOW_RECOMMENDED_20` **권고 경고**(계산 가능성 자체와 분리)이고, `SUBGROUP_COUNT_BELOW_MINIMUM_5`는 overall에 절대 부착하지 않는다. 유효한 `N=35, k=null, s>0`는 경고 없이 `OK`(양측) 또는 `ONE_SIDED_SPEC_EVALUATED`(단측)이며, `k=3, N=30`을 함께 제공해도 overall에는 부분군 수 경고가 없다.
+- **평가 불가:** overall에서 `N<2`는 `INSUFFICIENT_SAMPLE_SIZE`, `s=0`은 `ZERO_VARIANCE_ERROR`, 비유한 입력/음의 `s`는 `NON_FINITE_OR_INVALID_SIGMA`로 `EVALUATION_INVALID`; 계산 결과로 NaN/Infinity를 보내지 않는다. USL/LSL 단측 여부는 아래 §6.3-3의 `indexPStatus`/`indexPkStatus`와 최상위 상태 우선순위에 따른다.
 
 #### 2) 공정능력지수 ($C_p, C_{pk}$ — 군내 변동 기반, Within-Subgroup Variation)
 공정이 통계적 관리 상태에 있음을 전제로, 부분군 군내 변동 추정량($\hat{\sigma}_{\text{within}}$)을 사용한다:
@@ -464,12 +467,14 @@ $$C_p = \frac{\text{USL} - \text{LSL}}{6\hat{\sigma}_{\text{within}}}, \quad C_{
   - 유효 자유도 $\nu$에 대한 불편화 보정:
     $$\hat{\sigma}_{\text{within}} = \frac{s_{\text{pooled}}}{c_4(\nu + 1)}, \quad c_4(N) \approx \sqrt{\frac{2}{N-1}} \frac{\Gamma(N/2)}{\Gamma((N-1)/2)}$$
   - **부분군 및 총 표본수 경계 조건 규정 ($k \ge 5$ 및 $N \ge 20$, [F06] 해결):**
-    군내 변동($C_p, C_{pk}$) 및 전체 변동($P_p, P_{pk}$)의 통계적 유효성을 위해 부분군 수 $k$와 총 표본 수 $N = \sum_{i=1}^k m_i$의 경계를 다음과 같이 분리 평가한다:
-    - **정상 평가 ($k \ge 5$ 및 $N \ge 20$):** 군내 변동 및 전체 변동 모두 충분한 통계적 신뢰도를 확보함 $\to$ `status: "OK"` (양측) 또는 `"ONE_SIDED_SPEC_EVALUATED"` (단측), `warnings: []`.
+    **이하 `k` 기준은 군내 변동 `WITHIN_SUBGROUP_CAPABILITY`($C_p, C_{pk}$)에만 적용한다.** 이 유형은 부분군 수 `k` 및 각 `m_i >= 2`, 유효 자유도 `ν > 0`, 유한한 `σ_within > 0`이 필수이며, `N = ∑ m_i`와 `k`의 권고 경고를 다음과 같이 분리한다. `OVERALL_PERFORMANCE`의 `k=null`에는 이 규칙을 적용하지 않는다:
+    - **정상 평가 ($k \ge 5$ 및 $N \ge 20$):** 군내 변동 지표의 권고 표본/부분군 기준을 만족함 $\to$ `status: "OK"` (양측) 또는 `"ONE_SIDED_SPEC_EVALUATED"` (단측), `warnings: []`.
     - **표본수 부족 경고 ($k \ge 5$이나 $N < 20$, 예: $k=5, m_i=2 \implies N=10$):** 부분군 수는 최소 기준을 만족하므로 $s_{\text{pooled}}/c_4(\nu+1)$ 보정 및 $C_p, C_{pk}$ 계산은 정상 수행하되, 총 표본수 부족 경고를 부착함 $\to$ `status: "ASSUMPTION_WARNING"`, `warnings: ["SAMPLE_SIZE_BELOW_RECOMMENDED_20"]`.
     - **부분군수 부족 경고 ($k < 5$이나 $N \ge 20$, 예: $k=4, m_i=5 \implies N=20$):** 군내 변동 추정 신뢰도 부족 경고 부착 $\to$ `status: "ASSUMPTION_WARNING"`, `warnings: ["SUBGROUP_COUNT_BELOW_MINIMUM_5"]`.
     - **복합 경고 ($k < 5$ 및 $N < 20$, 예: $k=3, m_i=2 \implies N=6$):** 두 경고를 모두 배열에 수집 $\to$ `status: "ASSUMPTION_WARNING"`, `warnings: ["SUBGROUP_COUNT_BELOW_MINIMUM_5", "SAMPLE_SIZE_BELOW_RECOMMENDED_20"]`.
-    - **계산 불가 ($N < 2$ 또는 $s=0$ 또는 $\hat{\sigma}_{\text{within}}=0$):** 계산 불능 $\to$ `status: "EVALUATION_INVALID"`, `errorCode: "INSUFFICIENT_SAMPLE_SIZE"` 또는 `"ZERO_VARIANCE_ERROR"`.
+    - **계산 불가 (필수 부분군 정보 누락, $N < 2$, 비유한 또는 $\hat{\sigma}_{\text{within}} \le 0$):** within 계산 불능 $\to$ `status: "EVALUATION_INVALID"`, `errorCode: "INSUFFICIENT_SAMPLE_SIZE"` 또는 `"ZERO_VARIANCE_ERROR"`.
+
+- **경계 분리 반례:** 같은 `N=30, k=3`이고 분모가 유효하다면 `OVERALL_PERFORMANCE`는 `warnings: []`, `status: "OK"`(양측)이고, `WITHIN_SUBGROUP_CAPABILITY`는 `warnings: ["SUBGROUP_COUNT_BELOW_MINIMUM_5"]`, `status: "ASSUMPTION_WARNING"`이다. `N=35, k=null`의 overall 단측 상한은 아래 응답 예시대로 `indexP=null`, `indexPk≈1.333`, `status: "ONE_SIDED_SPEC_EVALUATED"`, `warnings: []`이다.
 
 #### 3) 단측 규격(One-Sided Specification) 처리 규약 및 세부 상태 필드 ([F06] 세분화)
 - **상한 규격(USL)만 있는 경우:**
@@ -492,7 +497,7 @@ $$C_p = \frac{\text{USL} - \text{LSL}}{6\hat{\sigma}_{\text{within}}}, \quad C_{
     "sampleMean": 10.5,
     "sigmaEstimate": 1.125,
     "sampleCount": 35,
-    "subgroupCount": 7,
+    "subgroupCount": null,
     "status": "ONE_SIDED_SPEC_EVALUATED",
     "specType": "UPPER_SPEC_ONLY",
     "usl": 15.0,
@@ -511,7 +516,7 @@ $$C_p = \frac{\text{USL} - \text{LSL}}{6\hat{\sigma}_{\text{within}}}, \quad C_{
 | 식각 속도 (Etch Rate) | $T_{\text{before}}=200\,\text{nm}, T_{\text{after}}=140\,\text{nm}, \Delta t=2\,\text{min}$ | `30.0 nm/min` | $\Delta t \le 0 \to \text{ERROR}$, $T_{\text{before}} < T_{\text{after}} \to \text{음수 유지 + SUSPECT}$ |
 | $P_p / P_{pk}$ (양측) | 샘플 `[9, 10, 11]`, USL=13, LSL=7 ($\bar{x}=10, s=1$) | $P_p = 1.000$, $P_{pk} = 1.000$ | $s=0 \to \text{ERROR}$, $n < 2 \to \text{INVALID}$ |
 | $P_p / P_{pk}$ (규격 이탈) | 샘플 평균 $\bar{x}=15$, $s=1$, USL=13, LSL=7 | $P_p = 1.000$, $P_{pk} \approx -0.667$ | 음수 $P_{pk}$ 정상 산출, 0으로 클램프 금지 |
-| $P_p / P_{pk}$ (단측 상한, $N \ge 20$) | 샘플 평균 $\bar{x}=10.5, s=1.125, N=35$, USL=15 | $P_p = \text{null}$, $P_{pk} \approx 1.333$ | `indexPStatus: UNDEFINED_FOR_ONE_SIDED`, `indexPkStatus: EVALUATED`, `status: ONE_SIDED_SPEC_EVALUATED` |
+| $P_p / P_{pk}$ (단측 상한, $N \ge 20$) | 샘플 평균 $\bar{x}=10.5, s=1.125, N=35, k=null$, USL=15 | $P_p = \text{null}$, $P_{pk} \approx 1.333$ | `indexPStatus: UNDEFINED_FOR_ONE_SIDED`, `indexPkStatus: EVALUATED`, `status: ONE_SIDED_SPEC_EVALUATED` |
 | $C_p / C_{pk}$ ($k=5, N=10$) | $k=5, m_i=2, s_{\text{pooled}}=1.0, \bar{x}=10$, USL=13, LSL=7 | $C_p \approx 0.951, C_{pk} \approx 0.951$ | $\hat{\sigma} = 1.0/c_4(6) \approx 1.051$. `status: ASSUMPTION_WARNING`, `warnings: ["SAMPLE_SIZE_BELOW_RECOMMENDED_20"]` |
 | $C_p / C_{pk}$ ($k=5, N=20$) | $k=5, m_i=4, s_{\text{pooled}}=1.0, \bar{x}=10$, USL=13, LSL=7 | $C_p \approx 0.985, C_{pk} \approx 0.985$ | $\hat{\sigma} = 1.0/c_4(16) \approx 1.017$. `status: OK`, `warnings: []` |
 | $C_{pk}$ 단측 + 저표본 ($k=5, N=10$) | $k=5, m_i=2, \bar{x}=10, s_{\text{pooled}}=1.0$, USL=13, LSL=null | $C_p = \text{null}, C_{pk} \approx 0.951$ | `status: ASSUMPTION_WARNING`, `warnings: ["SAMPLE_SIZE_BELOW_RECOMMENDED_20"]`, `indexPStatus: UNDEFINED_FOR_ONE_SIDED` |
@@ -522,14 +527,14 @@ $$C_p = \frac{\text{USL} - \text{LSL}}{6\hat{\sigma}_{\text{within}}}, \quad C_{
   $$\text{EVALUATION\_INVALID (1순위)} > \text{ASSUMPTION\_WARNING (2순위)} > \text{ONE\_SIDED\_SPEC\_EVALUATED (3순위)} > \text{OK (4순위)}$$
 - **평가 불가 (`status = "EVALUATION_INVALID"`):**
   - $N < 2$: 표본 표준편차 계산 불가 (`errorCode: "INSUFFICIENT_SAMPLE_SIZE"`).
-  - 표본 산포 $\hat{\sigma} = 0$: 분모 0으로 인한 계산 불능 (`errorCode: "ZERO_VARIANCE_ERROR"`).
+  - 해당 계산 유형의 분모 `s`(overall) 또는 $\hat{\sigma}_{\text{within}}$ (within)가 0: 분모 0으로 인한 계산 불능 (`errorCode: "ZERO_VARIANCE_ERROR"`).
   - USL 및 LSL이 모두 누락된 경우 (`errorCode: "MISSING_SPEC_LIMITS"`).
 - **단측 규격 처리 (`status = "ONE_SIDED_SPEC_EVALUATED"`):**
   - 상한(USL) 또는 하한(LSL) 중 한쪽만 정의된 경우, $C_p$ 및 $P_p$는 양측 폭이 없으므로 `null` 처리하고 세부 상태를 `indexPStatus: "UNDEFINED_FOR_ONE_SIDED"`로 전달. $C_{pk}$ 및 $P_{pk}$는 단측 규격 공식으로 계산하여 `indexPkStatus: "EVALUATED"`로 반환.
   - 단측 규격에 표본수 부족 경고가 중첩될 경우, 우선순위 계층에 의해 최상위 `status = "ASSUMPTION_WARNING"`을 부여하고 `warnings` 배열에 경고 코드를 담는다.
 - **신뢰도 권고 경고 (`status = "ASSUMPTION_WARNING"`):**
   - $N < 20$: 표본수 권고 미달 경고 (`warnings: ["SAMPLE_SIZE_BELOW_RECOMMENDED_20"]`).
-  - $k < 5$: 군내 변동 부분군수 미달 경고 (`warnings: ["SUBGROUP_COUNT_BELOW_MINIMUM_5"]`).
+  - $k < 5$: **`WITHIN_SUBGROUP_CAPABILITY` 한정** 군내 변동 부분군수 미달 경고 (`warnings: ["SUBGROUP_COUNT_BELOW_MINIMUM_5"]`).
   - 정규성 가정 미충족(왜도/첨도 과다 또는 정규성 검정 기각) 시 `NON_NORMAL_DISTRIBUTION_WARNING` 경고 부착.
 - **음수 및 극단값 처리:**
   - 공정 평균이 규격 한계를 이탈하여 $C_{pk} < 0, P_{pk} < 0$이 산출될 경우 절댓값 변환이나 0으로의 클램핑 없이 그대로 반환한다.
@@ -646,7 +651,7 @@ export interface CapabilityResult {
   sampleMean: number;
   sigmaEstimate: number;
   sampleCount: number;
-  subgroupCount?: number;
+  subgroupCount?: number | null; // overall에서는 생략/null 허용; within에는 유효한 k 필수
   status: MetricStatus;
   specType?: "BILATERAL" | "UPPER_SPEC_ONLY" | "LOWER_SPEC_ONLY";
   usl?: number | null;
