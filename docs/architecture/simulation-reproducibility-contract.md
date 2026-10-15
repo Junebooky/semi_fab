@@ -350,6 +350,8 @@ def quantize_value(val: float | str | None, precision: int) -> str:
        - FAB ONE MVP (Mode B)는 **로컬 단일 사용자(Single-User Local Desktop)** 환경으로 한정된다.
        - 파괴적 공장 초기화(Factory Wipe) 기능은 데이터 안전을 위해 **기본 비활성화(Disabled by default)** 상태로 봉인되며, 프로젝트 오너의 명시적 승인 전까지는 UI 및 실행 API 엔드포인트가 비활성화 상태를 유지한다.
 
+     - **F04-P0 단일 UTC 리스 TEXT 계약:** `started_at_utc`, `lease_expires_at_utc`, `heartbeat_at_utc`, `committed_at_utc` 및 모든 비교 파라미터 `:now`는 **`YYYY-MM-DDTHH:MM:SS.sssZ`(UTC 고정 3자리 밀리초)**로 생성·저장한다. `:now`는 각 트랜잭션의 판정 시점마다 단일 SQLite UTC 시계 `strftime('%Y-%m-%dT%H:%M:%fZ','now')`로 새로 생성·바인딩한다(Phase 1 시각을 Phase 2/3에 재사용하지 않음). Phase 1 리스 만료는 같은 `:now`에 `+30 seconds`를 더해 **동일 형식**으로 기록한다. `datetime()` 공백형, 타임존 오프셋, 초 정밀도 시각 등 혼합 포맷 행은 비교 전에 정규화 검증되지 않으면 실행 fail-closed; TEXT 사전식 비교에 혼합 금지. `lease >= :now`이면 아직 유효(동률 포함), `lease < :now`이면 만료로 간주한다. 반례: `'2026-10-15 16:17:30' >= '2026-10-15T16:17:10.000Z'`는 `0`이나, 정규화한 `'2026-10-15T16:17:30.000Z' >= '2026-10-15T16:17:10.000Z'`는 `1`, 이 경우 `<`는 `0`이다. 이 동일 경계를 전역 가드/stale CAS/pre-delete/COMMITTED CAS/취소 경합 모두에 적용한다.
+
      - **전역 단일 활성 와이프 가드 (Global Active Wipe Guard):**
        - 서로 다른 `operationId`를 가진 파괴 요청이 동시에 유입되어 경합하는 것을 차단하기 위해, 서버는 트랜잭션 1(`BEGIN IMMEDIATE`)에서 현재 유효한 리스를 가진 `PENDING` 작업이 존재하는지 전역 검사한다:
          ```sql
@@ -400,7 +402,7 @@ def quantize_value(val: float | str | None, precision: int) -> str:
               worker_id, lease_expires_at_utc, started_at_utc
           ) VALUES (
               :operation_id, 'FACTORY_WIPE', :wipe_option, 'PENDING',
-              :worker_id, datetime('now', '+30 seconds'), :now
+              :worker_id, strftime('%Y-%m-%dT%H:%M:%fZ', :now, '+30 seconds'), :now
           );
           COMMIT;
           ```
@@ -449,7 +451,18 @@ def quantize_value(val: float | str | None, precision: int) -> str:
           -- END IF;
           ```
        3. **예외/오류 시 처리 (트랜잭션 3):**
-          트랜잭션 2 도중 오류 발생 시 해당 트랜잭션은 즉시 `ROLLBACK`되며, 별도 에러 핸들러 트랜잭션에서 저널에 `(status = 'FAILED', error_message = :err)`를 독립 커밋한다.
+          트랜잭션 2의 **실제 실행 오류** 발생 시 먼저 `ROLLBACK`하고, 별도 `BEGIN IMMEDIATE`에서 **현재 워커가 소유한 `PENDING`만** `FAILED`로 전이한다. Pre-Delete 거부, 취소 확정, 리스 상실 및 확정 종결 상태는 Phase 3의 강제 FAILED 대상이 아니다. `COMMITTED/CANCELLED/FAILED` 종결은 단조·불변이다.
+          ```sql
+          BEGIN IMMEDIATE;
+          UPDATE system_operation_journal
+          SET status = 'FAILED', error_message = :err
+          WHERE operation_id = :operation_id
+            AND status = 'PENDING'
+            AND worker_id = :my_worker_id;
+          -- cursor.rowcount == 1: COMMIT, FAILED 확정
+          -- cursor.rowcount == 0: ROLLBACK 후 현재 상태 재조회; 종결 상태 절대 덮어쓰기 금지
+          ```
+          별도 오류 처리 COMMIT 자체가 실패/불명확하면 서버는 `UNKNOWN`으로 처리하고 재조회·복구한다. 만료 `PENDING`은 오직 기존 stale lease CAS로 회수한다.
 
   3. **3단계 (서버 커밋 확인 후 클라이언트 상태 승격 및 `UNKNOWN` 취소 안전성):**
      - **핵심 안전 불변식 (Crucial Safety Invariant):**
