@@ -4,96 +4,14 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } fr
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
-
-// Domain Interfaces
-export interface FdcAlert {
-  alert_id: string;
-  severity: 'CRITICAL' | 'WARNING' | 'INFO';
-  equipment_id: string;
-  chamber_id: string;
-  run_id: string | null;
-  rule_code: string;
-  message: string;
-  status: 'ACTIVE' | 'CLEARED' | 'ACKNOWLEDGED';
-  event_time_utc: string;
-  candidate_lot: string | null;
-  candidate_wafers: string[];
-}
-
-export interface DemoSummary {
-  equipment_id: string;
-  chamber_id: string;
-  active_session_id: string;
-  active_run_id: string;
-  lot_id: string;
-  recipe_id: string;
-  total_wafers: number;
-  exposed_wafers: number;
-  active_alerts_count: number;
-  latest_pressure_mtorr?: number | null;
-  latest_rf_power_w?: number | null;
-  latest_relative_signal?: number | null;
-  mode: 'A' | 'B';
-  data_origin: string;
-}
-
-export interface ErrorState {
-  status: number;
-  title: string;
-  message: string;
-}
-
-// Built-in Mode A Deterministic Synthetic Alarm Fixture Generator
-function generateModeACommandCenterAlarms(seed: number): FdcAlert[] {
-  const lotNum = 800 + (seed % 50);
-  const lotId = `LOT-DEMO-${lotNum}`;
-  const runId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
-  const alertId = `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`;
-  const standbyAlertId = `AL-STANDBY-${String(seed % 1000).padStart(3, '0')}`;
-  const infoAlertId = `AL-INFO-${String(seed % 1000).padStart(3, '0')}`;
-
-  return [
-    {
-      alert_id: alertId,
-      severity: 'CRITICAL',
-      equipment_id: 'ETCH-02',
-      chamber_id: 'CH-B',
-      run_id: runId,
-      rule_code: 'FDC-RULE-SPC-UCL-01',
-      message: '식각 챔버 압력/광학 신호/RF Power 복합 급증 (Step T7 공정 일탈 감지, > UCL 65.0 a.u.)',
-      status: 'ACTIVE',
-      event_time_utc: '2026-10-15T00:00:35.000Z',
-      candidate_lot: lotId,
-      candidate_wafers: ['W-08', 'W-09', 'W-10', 'W-11', 'W-12'],
-    },
-    {
-      alert_id: standbyAlertId,
-      severity: 'WARNING',
-      equipment_id: 'ETCH-01',
-      chamber_id: 'CH-A',
-      run_id: null,
-      rule_code: 'FDC-RULE-HEURISTIC-02',
-      message: '대기 챔버(CH-A) 진공도 및 온도 미세 드리프트 감지 (공정 Run 무관, 조사 미지원)',
-      status: 'ACTIVE',
-      event_time_utc: '2026-10-15T00:00:00.000Z',
-      candidate_lot: null,
-      candidate_wafers: [],
-    },
-    {
-      alert_id: infoAlertId,
-      severity: 'INFO',
-      equipment_id: 'ETCH-02',
-      chamber_id: 'LOADPORT-01',
-      run_id: runId,
-      rule_code: 'FDC-RULE-INFO-01',
-      message: '카세트 로드포트 도어 인터록 주기 점검 정상 확인 (Routine Status Check OK)',
-      status: 'CLEARED',
-      event_time_utc: '2026-10-14T23:59:00.000Z',
-      candidate_lot: lotId,
-      candidate_wafers: [],
-    },
-  ];
-}
+import {
+  FdcAlert,
+  DemoSummary,
+  ErrorState,
+  generateModeACommandCenterAlarms,
+  isInvestigationSupported,
+  applyFilterAndSort,
+} from '@/components/command-center/command-center-contract';
 
 function CommandCenterContent() {
   const searchParams = useSearchParams();
@@ -124,6 +42,7 @@ function CommandCenterContent() {
   const activeReqIdRef = useRef<number>(0);
 
   // Unified data loader: Summary-first run discovery & explicit alerts query (P1-A compliant)
+  // NOTE: loadAlarms is strictly decoupled from UI selection/filter state to eliminate cyclic dependencies!
   const loadAlarms = useCallback(async () => {
     const reqId = ++activeReqIdRef.current;
     setIsLoading(true);
@@ -141,9 +60,11 @@ function CommandCenterContent() {
       setAlarms(fixtureAlarms);
       const synRunId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
       setActiveRunId(synRunId);
-      if (!selectedAlertId || !fixtureAlarms.some(a => a.alert_id === selectedAlertId)) {
-        setSelectedAlertId(fixtureAlarms[0]?.alert_id ?? null);
-      }
+      setSelectedAlertId((prev) => {
+        if (prev && fixtureAlarms.some((a) => a.alert_id === prev)) return prev;
+        if (queryAlert && fixtureAlarms.some((a) => a.alert_id === queryAlert)) return queryAlert;
+        return fixtureAlarms[0]?.alert_id ?? null;
+      });
       setIsLoading(false);
       setNotice(`Mode A: 백엔드 미연결(오프라인)에 따른 로컬 합성 픽스처 알람 큐(${fixtureAlarms.length}건) 표시.`);
       return;
@@ -281,88 +202,80 @@ function CommandCenterContent() {
     setActiveRunId(currentRunId);
     setMode('B');
     setErrorState(null);
-    if (alertsData.length > 0) {
-      if (!selectedAlertId || !alertsData.some(a => a.alert_id === selectedAlertId)) {
-        setSelectedAlertId(alertsData[0].alert_id);
-      }
-    } else {
-      setSelectedAlertId(null);
-    }
+    setSelectedAlertId((prev) => {
+      if (prev && alertsData.some((a) => a.alert_id === prev)) return prev;
+      if (queryAlert && alertsData.some((a) => a.alert_id === queryAlert)) return queryAlert;
+      return alertsData[0]?.alert_id ?? null;
+    });
     setNotice(`Mode B (Live API): 활성 공정 Run (${currentRunId}) FDC 알람 큐(${alertsData.length}건) 동기화 완료.`);
     setIsLoading(false);
-  }, [seed, selectedAlertId]);
+  }, [seed]);
 
-  // Initial load
+  // Initial data load (runs once on mount or seed change only)
   useEffect(() => {
     loadAlarms();
   }, [loadAlarms]);
 
-  // Sync if URL search param changes
-  useEffect(() => {
-    if (queryAlert && queryAlert !== selectedAlertId) {
-      setSelectedAlertId(queryAlert);
-    }
-  }, [queryAlert, selectedAlertId]);
-
-  // Filtered and Sorted Alarms
+  // Filtered and Sorted Alarms (pure derivation)
   const filteredAndSortedAlarms = useMemo(() => {
-    let result = [...alarms];
-
-    if (severityFilter !== 'ALL') {
-      result = result.filter(a => a.severity === severityFilter);
-    }
-
-    if (statusFilter !== 'ALL') {
-      result = result.filter(a => a.status === statusFilter);
-    }
-
-    if (equipmentFilter !== 'ALL') {
-      result = result.filter(a => `${a.equipment_id} / ${a.chamber_id}` === equipmentFilter);
-    }
-
-    result.sort((a, b) => {
-      const timeA = new Date(a.event_time_utc).getTime();
-      const timeB = new Date(b.event_time_utc).getTime();
-      return sortOrder === 'NEWEST' ? timeB - timeA : timeA - timeB;
-    });
-
-    return result;
+    return applyFilterAndSort(alarms, severityFilter, statusFilter, equipmentFilter, sortOrder);
   }, [alarms, severityFilter, statusFilter, equipmentFilter, sortOrder]);
 
   // Synchronize selectedAlert with filtered list
   const selectedAlert = useMemo(() => {
     if (!selectedAlertId) return null;
-    return filteredAndSortedAlarms.find(a => a.alert_id === selectedAlertId) || null;
+    return filteredAndSortedAlarms.find((a) => a.alert_id === selectedAlertId) || null;
   }, [filteredAndSortedAlarms, selectedAlertId]);
 
-  // When filtered list changes, ensure selection remains coherent
+  // [P1-A Fix]: Coherent filter, selection, and URL synchronization without cyclic re-fetching
   useEffect(() => {
-    if (filteredAndSortedAlarms.length > 0) {
-      if (!selectedAlertId || !filteredAndSortedAlarms.some(a => a.alert_id === selectedAlertId)) {
-        setSelectedAlertId(filteredAndSortedAlarms[0].alert_id);
-      }
-    } else {
+    if (filteredAndSortedAlarms.length === 0) {
       setSelectedAlertId(null);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('alert')) {
+          url.searchParams.delete('alert');
+          window.history.replaceState(null, '', url.pathname + (url.search ? url.search : ''));
+        }
+      }
+    } else if (!selectedAlertId || !filteredAndSortedAlarms.some((a) => a.alert_id === selectedAlertId)) {
+      const nextId = filteredAndSortedAlarms[0].alert_id;
+      setSelectedAlertId(nextId);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('alert', nextId);
+        window.history.replaceState(null, '', url.pathname + url.search);
+      }
     }
   }, [filteredAndSortedAlarms, selectedAlertId]);
 
   // Counts for KPI and filter badges
   const totalCount = alarms.length;
-  const criticalCount = alarms.filter(a => a.severity === 'CRITICAL').length;
-  const warningCount = alarms.filter(a => a.severity === 'WARNING').length;
-  const infoCount = alarms.filter(a => a.severity === 'INFO').length;
+  const criticalCount = alarms.filter((a) => a.severity === 'CRITICAL').length;
+  const warningCount = alarms.filter((a) => a.severity === 'WARNING').length;
+  const infoCount = alarms.filter((a) => a.severity === 'INFO').length;
 
   // Equipment options extracted dynamically
   const equipmentOptions = useMemo(() => {
     const set = new Set<string>();
-    alarms.forEach(a => set.add(`${a.equipment_id} / ${a.chamber_id}`));
+    alarms.forEach((a) => set.add(`${a.equipment_id} / ${a.chamber_id}`));
     return Array.from(set);
   }, [alarms]);
 
+  // [P1-A Fix]: User direct selection updates state and synchronizes URL simultaneously
   const handleSelectAlert = (aId: string) => {
     setSelectedAlertId(aId);
-    router.replace(`/command-center?alert=${encodeURIComponent(aId)}`, { scroll: false });
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('alert', aId);
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
   };
+
+  // [P1-C Fix]: Rigorous investigation telemetry eligibility evaluation
+  const selectedInvCheck = useMemo(() => {
+    return isInvestigationSupported(selectedAlert, activeRunId);
+  }, [selectedAlert, activeRunId]);
 
   return (
     <div className="app-container">
@@ -380,17 +293,16 @@ function CommandCenterContent() {
         <nav style={{ display: 'flex', gap: '8px' }} aria-label="화면 탭">
           <Link href="/" className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="3" width="7" height="7"></rect>
-              <rect x="14" y="3" width="7" height="7"></rect>
-              <rect x="14" y="14" width="7" height="7"></rect>
-              <rect x="3" y="14" width="7" height="7"></rect>
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
             </svg>
-            식각 챔버 시뮬레이터 (Home)
+            홈 (FDC 모니터링)
           </Link>
           <Link href="/traceability" className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
@@ -403,40 +315,45 @@ function CommandCenterContent() {
           </Link>
         </nav>
 
-        {/* Status Pills */}
         <div className="top-status-pills">
-          <span className="badge-synthetic" title="모든 알람 및 계측 데이터는 가상 시나리오 합성(Synthetic) 계약을 준수합니다">
-            🧪 data_origin: synthetic
+          <span className="pill" style={{ background: '#ECFDF5', color: '#047857', borderColor: '#A7F3D0' }}>
+            {mode === 'A' ? 'Mode A (합성 픽스처)' : 'Mode B (FastAPI 연동)'}
           </span>
-
-          {mode === 'B' ? (
-            <span className="pill pill-mode-b">
-              <span className="pulse-dot"></span>
-              Mode B · Live API
-            </span>
-          ) : (
-            <span className="pill pill-mode-a">
-              <span className="pulse-dot"></span>
-              Mode A · Synthetic Fixture
-            </span>
-          )}
+          <span className="pill" style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE' }}>
+            Run: {activeRunId || '미가동'}
+          </span>
         </div>
       </header>
 
-      {/* Main Wrapper */}
-      <main className="main-wrapper">
-        {/* Notice Box */}
-        <div className="notice-box" role="status">
-          <strong>커맨드 센터 상태 안내:</strong> {notice}
+      {/* Main Content */}
+      <main className="main-content">
+        {/* Notice Banner */}
+        <div className="notice-banner" role="status">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px' }}>📡</span>
+            <span style={{ fontWeight: 600 }}>{notice}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => loadAlarms()}
+              disabled={isLoading}
+              style={{ fontSize: '11px', padding: '4px 10px' }}
+            >
+              {isLoading ? '동기화 중...' : '새로고침 (Refresh)'}
+            </button>
+            <span style={{ fontSize: '11px', color: '#64748B' }}>
+              Seed: <strong>{seed}</strong>
+            </span>
+          </div>
         </div>
 
-        {/* KPI Overview Bar */}
-        <div className="cc-kpi-bar" aria-label="FDC 알람 큐 핵심 지표">
+        {/* Global Statistics Bar (KPI Badges) */}
+        <div className="cc-kpi-bar">
           <div className="cc-kpi-item">
-            <span className="cc-kpi-label">활성 공정 Run ID</span>
-            <span className="cc-kpi-val" style={{ fontSize: '13px', color: '#0B9F78' }}>
-              {activeRunId || '미배정 (대기)'}
-            </span>
+            <span className="cc-kpi-label">FDC 관제 대상</span>
+            <span className="cc-kpi-val">ETCH 설비군</span>
           </div>
           <div className="cc-kpi-item">
             <span className="cc-kpi-label">전체 수집 알람</span>
@@ -463,130 +380,113 @@ function CommandCenterContent() {
         {/* 2-Column Command Center Layout */}
         <div className="cc-layout-grid">
           {/* Left Column: FDC Alarm Queue */}
-          <aside className="cc-queue-card" aria-label="FDC 알람 목록 큐">
+          <aside className="cc-queue-card" aria-label="FDC 알람 큐">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <div>
-                <h2 style={{ fontSize: '16px', fontWeight: 800, margin: 0, color: '#17263B' }}>
-                  FDC 알람 큐 (Alarm Queue)
+                <h2 style={{ fontSize: '15px', fontWeight: 800, color: '#17263B', margin: 0 }}>
+                  🚨 실시간 FDC 알람 큐
                 </h2>
                 <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                  공정 Run에 바인딩된 설비 이상 감지 알람 목록
+                  호스트 팹 FDC 시스템 알람 이벤트 수집 목록 (Run 계통성 검증 완료)
                 </div>
               </div>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => loadAlarms()}
-                style={{ padding: '4px 10px', fontSize: '11px' }}
-                title="알람 큐 새로고침"
-              >
-                새로고침 ↻
-              </button>
+              <span className="pill" style={{ background: '#F1F5F9', color: '#475569', fontSize: '11px' }}>
+                {filteredAndSortedAlarms.length} / {totalCount} 건
+              </span>
             </div>
 
-            {/* Severity Filter Chips */}
-            <div style={{ marginBottom: '8px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: '#48586D', marginBottom: '4px' }}>
-                심각도(Severity) 필터:
-              </div>
-              <div className="cc-filter-row" role="tablist" aria-label="심각도 필터">
-                <button
-                  type="button"
-                  id="cc-filter-sev-all"
-                  className={`cc-filter-chip ${severityFilter === 'ALL' ? 'active' : ''}`}
-                  onClick={() => setSeverityFilter('ALL')}
-                >
-                  전체 ({totalCount})
-                </button>
-                <button
-                  type="button"
-                  id="cc-filter-sev-critical"
-                  className={`cc-filter-chip critical ${severityFilter === 'CRITICAL' ? 'active critical' : ''}`}
-                  onClick={() => setSeverityFilter('CRITICAL')}
-                >
-                  CRITICAL ({criticalCount})
-                </button>
-                <button
-                  type="button"
-                  id="cc-filter-sev-warning"
-                  className={`cc-filter-chip warning ${severityFilter === 'WARNING' ? 'active warning' : ''}`}
-                  onClick={() => setSeverityFilter('WARNING')}
-                >
-                  WARNING ({warningCount})
-                </button>
-                <button
-                  type="button"
-                  id="cc-filter-sev-info"
-                  className={`cc-filter-chip info ${severityFilter === 'INFO' ? 'active info' : ''}`}
-                  onClick={() => setSeverityFilter('INFO')}
-                >
-                  INFO ({infoCount})
-                </button>
-              </div>
-            </div>
-
-            {/* Status & Sorting Control Bar */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #EDF1F5' }}>
-              <div style={{ flex: 1, minWidth: '120px' }}>
-                <label htmlFor="cc-select-status" style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#64748B', marginBottom: '2px' }}>
-                  상태 필터
-                </label>
-                <select
-                  id="cc-select-status"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                  style={{ width: '100%', padding: '4px 6px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '11px' }}
-                >
-                  <option value="ALL">전체 상태</option>
-                  <option value="ACTIVE">ACTIVE (활성)</option>
-                  <option value="CLEARED">CLEARED (해제)</option>
-                  <option value="ACKNOWLEDGED">ACKNOWLEDGED (확인)</option>
-                </select>
-              </div>
-
-              <div style={{ flex: 1, minWidth: '120px' }}>
-                <label htmlFor="cc-select-equipment" style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#64748B', marginBottom: '2px' }}>
-                  설비 / 챔버
-                </label>
-                <select
-                  id="cc-select-equipment"
-                  value={equipmentFilter}
-                  onChange={(e) => setEquipmentFilter(e.target.value)}
-                  style={{ width: '100%', padding: '4px 6px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '11px' }}
-                >
-                  <option value="ALL">전체 설비/챔버</option>
-                  {equipmentOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
+            {/* Filter Section */}
+            <div className="cc-filter-section">
+              {/* Severity Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', minWidth: '45px' }}>심각도:</span>
+                <div className="cc-filter-group">
+                  {(['ALL', 'CRITICAL', 'WARNING', 'INFO'] as const).map((sev) => (
+                    <button
+                      key={sev}
+                      type="button"
+                      className={`cc-filter-chip ${severityFilter === sev ? 'active' : ''}`}
+                      onClick={() => setSeverityFilter(sev)}
+                    >
+                      {sev === 'ALL' ? '전체' : sev}
+                    </button>
                   ))}
-                </select>
+                </div>
               </div>
 
-              <div style={{ width: '100px' }}>
-                <label htmlFor="cc-select-sort" style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#64748B', marginBottom: '2px' }}>
-                  정렬 기준
-                </label>
-                <select
-                  id="cc-select-sort"
-                  value={sortOrder}
-                  onChange={(e) => setSortOrder(e.target.value as any)}
-                  style={{ width: '100%', padding: '4px 6px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '11px' }}
-                >
-                  <option value="NEWEST">최신순</option>
-                  <option value="OLDEST">오래된순</option>
-                </select>
+              {/* Status Filter */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', minWidth: '45px' }}>상태:</span>
+                <div className="cc-filter-group">
+                  {(['ALL', 'ACTIVE', 'CLEARED', 'ACKNOWLEDGED'] as const).map((st) => (
+                    <button
+                      key={st}
+                      type="button"
+                      className={`cc-filter-chip ${statusFilter === st ? 'active' : ''}`}
+                      onClick={() => setStatusFilter(st)}
+                    >
+                      {st === 'ALL' ? '전체' : st}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Equipment & Chamber Filter & Sort */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>설비:</span>
+                  <select
+                    value={equipmentFilter}
+                    onChange={(e) => setEquipmentFilter(e.target.value)}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      borderRadius: '6px',
+                      border: '1px solid #CBD5E1',
+                      background: '#FFFFFF',
+                      color: '#1E293B',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <option value="ALL">전체 설비/챔버</option>
+                    {equipmentOptions.map((opt) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569' }}>정렬:</span>
+                  <button
+                    type="button"
+                    className={`cc-filter-chip ${sortOrder === 'NEWEST' ? 'active' : ''}`}
+                    onClick={() => setSortOrder('NEWEST')}
+                    style={{ fontSize: '10px', padding: '3px 8px' }}
+                  >
+                    최신순 ↓
+                  </button>
+                  <button
+                    type="button"
+                    className={`cc-filter-chip ${sortOrder === 'OLDEST' ? 'active' : ''}`}
+                    onClick={() => setSortOrder('OLDEST')}
+                    style={{ fontSize: '10px', padding: '3px 8px' }}
+                  >
+                    과거순 ↑
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Error Notification on Left Panel */}
+            {/* Error Message if API failed */}
             {errorState && (
               <div
                 style={{
+                  padding: '12px 14px',
                   background: '#FEF2F2',
-                  border: '1px solid #FECACA',
-                  borderRadius: '8px',
-                  padding: '10px 12px',
-                  marginBottom: '12px',
-                  fontSize: '11px',
+                  border: '1px solid #FCA5A5',
+                  borderRadius: '6px',
+                  margin: '12px 0',
+                  fontSize: '12px',
                   color: '#991B1B',
                   lineHeight: 1.4,
                 }}
@@ -620,8 +520,8 @@ function CommandCenterContent() {
                 </button>
               </div>
             ) : (
-              /* Scrollable Alarm Queue */
-              <div className="cc-alarm-list-scroll">
+              /* Scrollable Alarm Queue - [P1-B Fix]: Semantic <button> for native keyboard accessibility */
+              <div className="cc-alarm-list-scroll" role="feed" aria-label="알람 큐 목록">
                 {filteredAndSortedAlarms.map((alert) => {
                   const isSelected = selectedAlertId === alert.alert_id;
                   let sevBg = '#FEE2E2';
@@ -641,14 +541,20 @@ function CommandCenterContent() {
                     leftBorderColor = '#2563EB';
                   }
 
-                  const isInvestigatable = Boolean(alert.run_id && alert.severity === 'CRITICAL');
+                  // [P1-C Fix]: Rigorous eligibility check for queue badge
+                  const invCheck = isInvestigationSupported(alert, activeRunId);
 
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={alert.alert_id}
                       id={`cc-alarm-item-${alert.alert_id}`}
                       className={`cc-alarm-item ${isSelected ? 'selected' : ''}`}
                       onClick={() => handleSelectAlert(alert.alert_id)}
+                      aria-pressed={isSelected}
+                      aria-selected={isSelected}
+                      tabIndex={0}
+                      aria-label={`알람 ${alert.alert_id}, 심각도 ${alert.severity}, 설비 ${alert.equipment_id} ${alert.chamber_id}`}
                       style={{
                         borderLeftColor: isSelected ? '#0B9F78' : leftBorderColor,
                         borderLeftWidth: '4px',
@@ -702,63 +608,30 @@ function CommandCenterContent() {
                         <span style={{ fontSize: '10px', color: '#94A3B8' }}>
                           규칙: {alert.rule_code}
                         </span>
-                        {isInvestigatable ? (
+                        {invCheck.supported ? (
                           <span style={{ fontSize: '10px', color: '#0B9F78', fontWeight: 700 }}>
                             🔬 센서 조사 지원
                           </span>
                         ) : (
                           <span style={{ fontSize: '10px', color: '#94A3B8' }}>
-                            대기/단독 경보
+                            {alert.run_id ? '센서조사 미지원' : '대기/단독 경보'}
                           </span>
                         )}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             )}
           </aside>
 
-          {/* Right Column: Selected Alarm Detail & Investigation Flow */}
-          {isLoading ? (
-            <div className="trace-loading-card" role="status">
-              <div className="pulse-dot" style={{ width: '12px', height: '12px', background: '#0B9F78' }}></div>
-              <div style={{ fontWeight: 800, fontSize: '16px', color: '#17263B', marginTop: '16px' }}>
-                FDC 알람 및 공정 계통 데이터 동기화 중...
-              </div>
-              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px' }}>
-                활성 공정 Run과 알람 데이터의 출처 일관성을 안전하게 검증합니다.
-              </div>
-            </div>
-          ) : errorState ? (
-            <div className="trace-not-found-card" role="alert">
-              <div className="not-found-icon" aria-hidden="true">⚠️</div>
-              <h2 className="not-found-title">{errorState.title}</h2>
-              <div className="not-found-badge">오류 코드: HTTP {errorState.status}</div>
-              <p className="not-found-desc">{errorState.message}</p>
-              <div className="not-found-disclaimer">
-                <strong>※ FAB ONE 도메인 무결성 규약:</strong><br />
-                서버 오류(HTTP {errorState.status}) 또는 데이터 계통성 위반 발생 시, 다른 Run 알람을 혼합하거나 임의의 합성 알람으로 대체하지 않고 조회를 차단(Fail-Closed)합니다.
-              </div>
-              <div className="not-found-actions">
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => loadAlarms()}
-                >
-                  알람 목록 재시도 ↻
-                </button>
-                <Link href="/" className="btn-secondary" style={{ textDecoration: 'none' }}>
-                  챔버 대시보드로 이동 ↗
-                </Link>
-              </div>
-            </div>
-          ) : selectedAlert ? (
-            <section className="cc-detail-card" aria-label="선택 알람 상세 및 조사 정보">
-              {/* Header Banner */}
-              <div className="trace-header-banner">
+          {/* Right Column: Selected Alarm Engineering Detail Card */}
+          {selectedAlert ? (
+            <section className="cc-detail-card" aria-label="선택 알람 상세">
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #EDF1F5', paddingBottom: '14px', marginBottom: '18px' }}>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                     <span
                       className="pill"
                       style={{
@@ -772,39 +645,49 @@ function CommandCenterContent() {
                     >
                       {selectedAlert.severity}
                     </span>
-                    <h1 style={{ fontSize: '20px', fontWeight: 850, margin: 0, color: '#17263B' }}>
+                    <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#17263B', margin: 0 }}>
                       {selectedAlert.alert_id}
-                    </h1>
-                    <span className="pill" style={{ padding: '2px 8px', fontSize: '11px' }}>
+                    </h2>
+                    <span className="pill" style={{ fontSize: '10px', color: '#047857', background: '#ECFDF5', borderColor: '#A7F3D0' }}>
                       {selectedAlert.status}
                     </span>
-                    <EngineeringTermTrigger conceptId="spc-ucl-missing" label="SPC 관리한계 기준" showBadge />
                   </div>
-                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
-                    FDC 규칙: <strong>{selectedAlert.rule_code}</strong> · 설비: {selectedAlert.equipment_id} ({selectedAlert.chamber_id})
+                  <div style={{ fontSize: '12px', color: '#64748B' }}>
+                    FDC 이상 감지 규칙: <strong>{selectedAlert.rule_code}</strong>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <Link
-                    href="/"
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
                     className="btn-secondary"
-                    style={{ textDecoration: 'none', padding: '6px 12px', fontSize: '11px' }}
+                    onClick={() => {
+                      if (navigator.clipboard) {
+                        navigator.clipboard.writeText(selectedAlert.alert_id);
+                        setNotice(`알람 ID '${selectedAlert.alert_id}' 클립보드 복사 완료.`);
+                      }
+                    }}
+                    style={{ fontSize: '11px', padding: '6px 10px' }}
+                    title="알람 ID 복사"
                   >
-                    대시보드 보기 ↗
-                  </Link>
+                    ID 복사
+                  </button>
                 </div>
               </div>
 
               {/* Metadata Grid */}
-              <div className="trace-meta-grid">
+              <div className="trace-meta-grid" style={{ marginBottom: '18px' }}>
                 <div className="trace-meta-col">
-                  <span className="trace-meta-label">공정 Run ID</span>
-                  <span className="trace-meta-value">{selectedAlert.run_id || '대기 상태 (None)'}</span>
+                  <span className="trace-meta-label">대상 설비 / 챔버</span>
+                  <span className="trace-meta-value">
+                    {selectedAlert.equipment_id} · {selectedAlert.chamber_id}
+                  </span>
                 </div>
                 <div className="trace-meta-col">
-                  <span className="trace-meta-label">설비 / 챔버</span>
-                  <span className="trace-meta-value">{selectedAlert.equipment_id} · {selectedAlert.chamber_id}</span>
+                  <span className="trace-meta-label">공정 Run ID</span>
+                  <span className="trace-meta-value">
+                    {selectedAlert.run_id || '해당 없음 (대기/Standby)'}
+                  </span>
                 </div>
                 <div className="trace-meta-col">
                   <span className="trace-meta-label">발생 시각 (UTC)</span>
@@ -828,8 +711,8 @@ function CommandCenterContent() {
                 </div>
               </div>
 
-              {/* Investigation Capability Section */}
-              {selectedAlert.run_id && selectedAlert.severity === 'CRITICAL' ? (
+              {/* [P1-C Fix]: Investigation Capability Section rigorously gated by actual telemetry evidence */}
+              {selectedInvCheck.supported ? (
                 <div className="trace-alert-link-card" style={{ marginBottom: '20px' }}>
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -839,10 +722,10 @@ function CommandCenterContent() {
                       </strong>
                     </div>
                     <div style={{ fontSize: '12px', color: '#7F1D1D', marginTop: '6px', lineHeight: '1.5' }}>
-                      식각 챔버(CH-B) 스텝 T7 구간의 시계열 센서(OES 상대 신호, 챔버 압력, RF Power) 급증 계측 근거와 카세트 웨이퍼 영향 구간을 즉시 분석할 수 있습니다.
+                      식각 설비({selectedAlert.equipment_id}) 챔버({selectedAlert.chamber_id}) 활성 공정({selectedAlert.run_id})의 스텝 T7 구간 시계열 센서(RF Power, OES 상대 신호, 압력) 급증 계측 근거 및 영향 카세트 웨이퍼 분석이 지원됩니다.
                     </div>
 
-                    {/* Candidate Wafers Preview */}
+                    {/* Candidate Wafers Preview (Rendered exclusively when verified candidate wafers exist) */}
                     {selectedAlert.candidate_wafers && selectedAlert.candidate_wafers.length > 0 && (
                       <div style={{ marginTop: '12px' }}>
                         <div style={{ fontSize: '11px', fontWeight: 700, color: '#991B1B', marginBottom: '6px' }}>
@@ -900,15 +783,33 @@ function CommandCenterContent() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                     <span style={{ fontSize: '16px' }}>ℹ️</span>
                     <strong style={{ fontSize: '13px', color: '#475569' }}>
-                      조사 미지원 알람 (No Active Run Investigation Context)
+                      조사 미지원 알람 (No Investigation Telemetry Available)
                     </strong>
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.6' }}>
-                    본 경보는 대기 챔버 점검 또는 일반 설비 상태 알람으로, 연결된 가동 공정 Run 및 웨이퍼 가공 이력이 없습니다.
-                    FAB ONE 도메인 무결성 규약에 따라 타 알람의 센서 계측 근거로 왜곡 연결하지 않으며, 허위 조사 동선을 제공하지 않습니다.
+                    {selectedInvCheck.reason}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '6px' }}>
+                    FAB ONE 도메인 무결성 규약에 따라 타 알람의 센서 계측 근거로 왜곡 연결하지 않으며, 허위 조사 동선을 제공하지 않습니다 (Fail-closed).
                   </div>
                 </div>
               )}
+
+              {/* Engineering Knowledge Layer Integration (EKL Level 1) */}
+              <div style={{ marginBottom: '20px', padding: '14px 16px', background: '#F0FDF4', borderRadius: '8px', border: '1px solid #BBF7D0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#166534' }}>
+                    📚 FDC 알람 연계 엔지니어링 지식 (EKL L1)
+                  </span>
+                  <span style={{ fontSize: '10px', color: '#15803D' }}>클릭 시 공학 계산기 및 심층 학습 제공</span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <EngineeringTermTrigger conceptId="spc-ucl-missing" label="SPC 관리한계 기준" showBadge />
+                  <EngineeringTermTrigger conceptId="wafer-exposure-status" label="웨이퍼 노출 상태 정의" showBadge />
+                  <EngineeringTermTrigger conceptId="rf-power" label="RF Power 출력 이상" showBadge />
+                  <EngineeringTermTrigger conceptId="oes-relative-signal" label="OES 상대 신호 변곡" showBadge />
+                </div>
+              </div>
 
               {/* Engineering Safety Disclaimers */}
               <div style={{ padding: '14px 16px', background: '#FFFDF5', borderRadius: '8px', border: '1px solid #FEF08A', fontSize: '11px', color: '#854D0E', lineHeight: '1.6' }}>
@@ -936,7 +837,7 @@ function CommandCenterContent() {
 
 export default function CommandCenterPage() {
   return (
-    <Suspense fallback={<div style={{ padding: '40px', textAlign: 'center', color: '#64748B' }}>로딩 중...</div>}>
+    <Suspense fallback={<div className="loading-container">커맨드 센터 로딩 중...</div>}>
       <CommandCenterContent />
     </Suspense>
   );

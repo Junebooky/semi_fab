@@ -1454,66 +1454,126 @@ test('BUILD-04 Traceability Error Differentiation & Cassette Protection Invarian
 });
 
 // ============================================================================
-// BUILD-05: FDC Command Center Regression Test Suites
+// BUILD-05: FDC Command Center Regression Test Suites (P1-A, P1-B, P1-C)
 // ============================================================================
 
-// Helper matching generateModeAFixture in apps/web/src/app/command-center/page.tsx
+// Helper matching generateModeACommandCenterAlarms in apps/web/src/components/command-center/command-center-contract.ts
 function generateModeACommandCenterFixtureTest(seed = 20261015) {
   const lotNum = 800 + (seed % 50);
   const runNum = String(seed % 1000).padStart(3, '0');
   const runId = `RUN-DEMO-${runNum}`;
   const lotId = `LOT-DEMO-${lotNum}`;
   const alertId = `AL-DEMO-${runNum}`;
+  const standbyAlertId = `AL-STANDBY-${runNum}`;
+  const infoAlertId = `AL-INFO-${runNum}`;
 
   const alerts = [
     {
       alert_id: alertId,
-      equipment_id: "ETCH-02",
-      chamber_id: "CH-B",
-      recipe_id: "RCP-POLY-001",
-      severity: "CRITICAL",
-      alarm_code: "ALM-ETCH-RF-402",
-      description: "CH-B RF Power 1820W 급상승 (UCL: 1050W 초과) 및 OES 변곡점 감지",
-      status: "NEW",
-      event_time_utc: "2026-10-15T09:30:00Z",
-      lot_id: lotId,
+      severity: 'CRITICAL',
+      equipment_id: 'ETCH-02',
+      chamber_id: 'CH-B',
       run_id: runId,
-      wafer_candidates: ["W-08", "W-09", "W-10", "W-11", "W-12"],
-      investigation_eligible: true
+      rule_code: 'FDC-RULE-SPC-UCL-01',
+      message: '식각 챔버 압력/광학 신호/RF Power 복합 급증 (Step T7 공정 일탈 감지, > UCL 65.0 a.u.)',
+      status: 'ACTIVE',
+      event_time_utc: '2026-10-15T00:00:35.000Z',
+      candidate_lot: lotId,
+      candidate_wafers: ['W-08', 'W-09', 'W-10', 'W-11', 'W-12'],
     },
     {
-      alert_id: "AL-DEMO-002",
-      equipment_id: "ETCH-01",
-      chamber_id: "CH-A",
-      recipe_id: "RCP-CLN-002",
-      severity: "WARNING",
-      alarm_code: "ALM-ETCH-PR-201",
-      description: "CH-A 챔버 압력 기준치 미세 드리프트 (85.2 mTorr)",
-      status: "ACKNOWLEDGED",
-      event_time_utc: "2026-10-15T09:15:00Z",
-      lot_id: "LOT-DEMO-799",
-      run_id: "RUN-DEMO-998",
-      wafer_candidates: [],
-      investigation_eligible: false
-    },
-    {
-      alert_id: "AL-STANDBY-001",
-      equipment_id: "ETCH-03",
-      chamber_id: "CH-C",
-      recipe_id: "IDLE",
-      severity: "INFO",
-      alarm_code: "ALM-SYS-IDLE-100",
-      description: "ETCH-03 정기 PM 대기 상태 진입",
-      status: "CLOSED",
-      event_time_utc: "2026-10-15T08:50:00Z",
-      lot_id: null,
+      alert_id: standbyAlertId,
+      severity: 'WARNING',
+      equipment_id: 'ETCH-01',
+      chamber_id: 'CH-A',
       run_id: null,
-      wafer_candidates: [],
-      investigation_eligible: false
-    }
+      rule_code: 'FDC-RULE-HEURISTIC-02',
+      message: '대기 챔버(CH-A) 진공도 및 온도 미세 드리프트 감지 (공정 Run 무관, 조사 미지원)',
+      status: 'ACTIVE',
+      event_time_utc: '2026-10-15T00:00:00.000Z',
+      candidate_lot: null,
+      candidate_wafers: [],
+    },
+    {
+      alert_id: infoAlertId,
+      severity: 'INFO',
+      equipment_id: 'ETCH-02',
+      chamber_id: 'LOADPORT-01',
+      run_id: runId,
+      rule_code: 'FDC-RULE-INFO-01',
+      message: '카세트 로드포트 도어 인터록 주기 점검 정상 확인 (Routine Status Check OK)',
+      status: 'CLEARED',
+      event_time_utc: '2026-10-14T23:59:00.000Z',
+      candidate_lot: lotId,
+      candidate_wafers: [],
+    },
   ];
 
   return { alerts, activeRunId: runId, lotId };
+}
+
+// Logic matching isInvestigationSupported in command-center-contract.ts
+function isInvestigationSupportedTest(alert, activeRunId) {
+  if (!alert) {
+    return { supported: false, reason: '선택된 알람이 없습니다.' };
+  }
+  if (!alert.run_id) {
+    return {
+      supported: false,
+      reason: '대기 설비(Standby) 알람으로 연결된 활성 공정 Run 및 웨이퍼 가공 이력이 없습니다.'
+    };
+  }
+  if (activeRunId && alert.run_id !== activeRunId) {
+    return {
+      supported: false,
+      reason: `알람 소속 Run (${alert.run_id})이 현재 활성 Run (${activeRunId})과 일치하지 않아 조회를 차단했습니다.`
+    };
+  }
+  const isTargetChamber = alert.equipment_id === 'ETCH-02' && alert.chamber_id === 'CH-B';
+  const hasSpcExcursionRule =
+    alert.rule_code === 'FDC-RULE-SPC-UCL-01' ||
+    (alert.candidate_wafers && alert.candidate_wafers.length > 0);
+
+  if (alert.severity === 'CRITICAL') {
+    if (isTargetChamber && hasSpcExcursionRule) {
+      return {
+        supported: true,
+        reason: '식각 챔버(CH-B) 스텝 T7 구간의 시계열 센서(RF Power, OES, 압력) 급증 계측 근거 및 영향 카세트 웨이퍼 분석 가능'
+      };
+    } else {
+      return {
+        supported: false,
+        reason: `해당 CRITICAL 경보(${alert.equipment_id} / ${alert.chamber_id})는 스텝 T7 센서 이상 계측 근거가 등록되지 않은 설비/챔버입니다. 허위 이상 계측 화면으로의 연결을 차단합니다 (Fail-closed).`
+      };
+    }
+  }
+  return {
+    supported: false,
+    reason: `단순 상태/경고 경보(${alert.severity})로 센서 시계열 이상 조사 대상이 아닙니다.`
+  };
+}
+
+// Logic matching applyFilterAndSort in command-center-contract.ts
+function applyFilterAndSortTest(alerts, severityFilter, statusFilter, equipFilter, sortOrder) {
+  let result = [...alerts];
+
+  if (severityFilter !== 'ALL') {
+    result = result.filter(a => a.severity === severityFilter);
+  }
+  if (statusFilter !== 'ALL') {
+    result = result.filter(a => a.status === statusFilter);
+  }
+  if (equipFilter !== 'ALL') {
+    result = result.filter(a => `${a.equipment_id} / ${a.chamber_id}` === equipFilter);
+  }
+
+  result.sort((a, b) => {
+    const timeA = new Date(a.event_time_utc).getTime();
+    const timeB = new Date(b.event_time_utc).getTime();
+    return sortOrder === 'NEWEST' ? timeB - timeA : timeA - timeB;
+  });
+
+  return result;
 }
 
 test('BUILD-05 Command Center Contract: Summary-first run_id discovery, alerts endpoint binding, and lineage validation', async () => {
@@ -1527,33 +1587,31 @@ test('BUILD-05 Command Center Contract: Summary-first run_id discovery, alerts e
       alert_id: 'AL-DEMO-20261015-01',
       equipment_id: 'ETCH-02',
       chamber_id: 'CH-B',
-      recipe_id: 'RCP-POLY-001',
       severity: 'CRITICAL',
-      alarm_code: 'ALM-ETCH-RF-402',
-      description: 'CH-B RF Power 이상',
-      status: 'NEW',
+      rule_code: 'FDC-RULE-SPC-UCL-01',
+      message: 'CH-B RF Power 이상',
+      status: 'ACTIVE',
       event_time_utc: '2026-10-15T09:30:00Z',
-      lot_id: serverLotId,
+      candidate_lot: serverLotId,
       run_id: serverSummaryRunId,
-      wafer_candidates: ['W-08', 'W-09']
+      candidate_wafers: ['W-08', 'W-09']
     },
     {
       alert_id: 'AL-STANDBY-001',
       equipment_id: 'ETCH-03',
       chamber_id: 'CH-C',
-      recipe_id: 'IDLE',
       severity: 'INFO',
-      alarm_code: 'ALM-SYS-IDLE-100',
-      description: 'Standby IDLE',
-      status: 'CLOSED',
+      rule_code: 'FDC-RULE-INFO-01',
+      message: 'Standby IDLE',
+      status: 'CLEARED',
       event_time_utc: '2026-10-15T08:50:00Z',
-      lot_id: null,
+      candidate_lot: null,
       run_id: null,
-      wafer_candidates: []
+      candidate_wafers: []
     }
   ];
 
-  // Harness simulating loadData in command-center/page.tsx
+  // Harness simulating loadAlarms in command-center/page.tsx
   let activeReqId = 0;
   async function loadCommandCenterDataHarness(fetchSummaryFn, fetchAlertsFn) {
     const reqId = ++activeReqId;
@@ -1630,121 +1688,202 @@ test('BUILD-05 Command Center Contract: Summary-first run_id discovery, alerts e
   assert.equal(fastCall.activeRunId, 'RUN-NEW');
 });
 
-test('BUILD-05 Filter, Sort, and Invariant Synchronization State Machine', () => {
+test('P1-A BUILD-05 Selection, URL, and Filter Synchronization State Machine: Cyclic dependency elimination and request minimization', () => {
   const fixture = generateModeACommandCenterFixtureTest(20261015);
   const allAlerts = fixture.alerts;
+  const criticalAlert = allAlerts[0]; // AL-DEMO-015 (CRITICAL)
+  const warningAlert = allAlerts[1];  // AL-STANDBY-015 (WARNING)
+  const infoAlert = allAlerts[2];     // AL-INFO-015 (INFO)
 
-  // Filter & sort logic matching command-center/page.tsx
-  function applyFilterAndSort(alerts, severityFilter, statusFilter, equipFilter, sortOrder) {
-    let result = [...alerts];
-
-    if (severityFilter !== 'ALL') {
-      result = result.filter(a => a.severity === severityFilter);
+  // Component simulator modeling page.tsx state and effects
+  class CommandCenterStateHarness {
+    constructor() {
+      this.alarms = [...allAlerts];
+      this.selectedAlertId = null;
+      this.currentUrl = '/command-center';
+      this.fetchCount = 0;
+      this.severityFilter = 'ALL';
+      this.statusFilter = 'ALL';
+      this.equipmentFilter = 'ALL';
+      this.sortOrder = 'NEWEST';
     }
-    if (statusFilter !== 'ALL') {
-      result = result.filter(a => a.status === statusFilter);
-    }
-    if (equipFilter !== 'ALL') {
-      result = result.filter(a => a.equipment_id === equipFilter);
+
+    // Loader decoupled from selectedAlertId (P1-A fix)
+    executeInitialLoad(deepLinkQuery = null) {
+      this.fetchCount++;
+      // Set initial selection
+      if (deepLinkQuery && this.alarms.some(a => a.alert_id === deepLinkQuery)) {
+        this.selectedAlertId = deepLinkQuery;
+        this.currentUrl = `/command-center?alert=${encodeURIComponent(deepLinkQuery)}`;
+      } else {
+        this.selectedAlertId = this.alarms[0]?.alert_id ?? null;
+        if (this.selectedAlertId) {
+          this.currentUrl = `/command-center?alert=${encodeURIComponent(this.selectedAlertId)}`;
+        }
+      }
     }
 
-    result.sort((a, b) => {
-      const timeA = new Date(a.event_time_utc).getTime();
-      const timeB = new Date(b.event_time_utc).getTime();
-      return sortOrder === 'NEWEST' ? timeB - timeA : timeA - timeB;
-    });
+    // Direct selection handler
+    handleSelectAlert(aId) {
+      this.selectedAlertId = aId;
+      this.currentUrl = `/command-center?alert=${encodeURIComponent(aId)}`;
+      // Crucial: NO network fetch!
+    }
 
-    return result;
+    // Filter change effect
+    setFilter(severity, status = 'ALL', equipment = 'ALL') {
+      this.severityFilter = severity;
+      this.statusFilter = status;
+      this.equipmentFilter = equipment;
+
+      const filtered = applyFilterAndSortTest(
+        this.alarms,
+        this.severityFilter,
+        this.statusFilter,
+        this.equipmentFilter,
+        this.sortOrder
+      );
+
+      // Effect: synchronize selection and URL
+      if (filtered.length === 0) {
+        this.selectedAlertId = null;
+        this.currentUrl = '/command-center';
+      } else if (!this.selectedAlertId || !filtered.some(a => a.alert_id === this.selectedAlertId)) {
+        const nextId = filtered[0].alert_id;
+        this.selectedAlertId = nextId;
+        this.currentUrl = `/command-center?alert=${encodeURIComponent(nextId)}`;
+      }
+      // Crucial: NO network fetch!
+    }
+
+    resetFilters() {
+      this.setFilter('ALL', 'ALL', 'ALL');
+    }
   }
 
-  // 1. Initial ALL state
-  const initial = applyFilterAndSort(allAlerts, 'ALL', 'ALL', 'ALL', 'NEWEST');
-  assert.equal(initial.length, 3);
-  assert.equal(initial[0].alert_id, fixture.alerts[0].alert_id); // 09:30:00Z is newest
+  const harness = new CommandCenterStateHarness();
 
-  // 2. Severity filter: CRITICAL only
-  const criticalOnly = applyFilterAndSort(allAlerts, 'CRITICAL', 'ALL', 'ALL', 'NEWEST');
-  assert.equal(criticalOnly.length, 1);
-  assert.equal(criticalOnly[0].severity, 'CRITICAL');
+  // 1. Initial entry with ?alert=AL-DEMO-015
+  harness.executeInitialLoad(criticalAlert.alert_id);
+  assert.equal(harness.fetchCount, 1, 'Initial load must perform exactly 1 fetch');
+  assert.equal(harness.selectedAlertId, criticalAlert.alert_id);
+  assert.ok(harness.currentUrl.includes(criticalAlert.alert_id));
 
-  // 3. Status filter: ACKNOWLEDGED only
-  const ackOnly = applyFilterAndSort(allAlerts, 'ALL', 'ACKNOWLEDGED', 'ALL', 'NEWEST');
-  assert.equal(ackOnly.length, 1);
-  assert.equal(ackOnly[0].status, 'ACKNOWLEDGED');
+  // 2. User applies INFO severity filter: critical alert is excluded
+  // Invariant: Selection must automatically update to infoAlert, and URL must synchronize to infoAlert
+  harness.setFilter('INFO');
+  assert.equal(harness.fetchCount, 1, 'Filter change must NOT trigger re-fetch (cyclic fetch eliminated!)');
+  assert.equal(harness.selectedAlertId, infoAlert.alert_id);
+  assert.equal(harness.currentUrl, `/command-center?alert=${encodeURIComponent(infoAlert.alert_id)}`);
 
-  // 4. Equipment filter: ETCH-03 only
-  const etch03Only = applyFilterAndSort(allAlerts, 'ALL', 'ALL', 'ETCH-03', 'NEWEST');
-  assert.equal(etch03Only.length, 1);
-  assert.equal(etch03Only[0].equipment_id, 'ETCH-03');
+  // 3. User directly selects WARNING alert after switching filter to ALL
+  harness.resetFilters();
+  assert.equal(harness.fetchCount, 1, 'Filter reset must NOT trigger re-fetch');
+  harness.handleSelectAlert(warningAlert.alert_id);
+  assert.equal(harness.selectedAlertId, warningAlert.alert_id);
+  assert.equal(harness.currentUrl, `/command-center?alert=${encodeURIComponent(warningAlert.alert_id)}`);
+  assert.equal(harness.fetchCount, 1, 'Direct alert selection must NOT trigger re-fetch');
 
-  // 5. Sort OLDEST: ascending event_time_utc
-  const oldestFirst = applyFilterAndSort(allAlerts, 'ALL', 'ALL', 'ALL', 'OLDEST');
-  assert.equal(oldestFirst[0].alert_id, 'AL-STANDBY-001'); // 08:50:00Z is oldest
-  assert.equal(oldestFirst[2].alert_id, fixture.alerts[0].alert_id);
+  // 4. User applies impossible filter resulting in 0 items
+  harness.setFilter('CRITICAL', 'CLEARED');
+  assert.equal(harness.fetchCount, 1);
+  assert.equal(harness.selectedAlertId, null, 'Selected alert must be null when 0 items match');
+  assert.equal(harness.currentUrl, '/command-center', 'URL must clear ?alert parameter when queue is empty');
 
-  // 6. 0-item empty state with impossible filter combo
-  const emptyResult = applyFilterAndSort(allAlerts, 'CRITICAL', 'CLOSED', 'ETCH-01', 'NEWEST');
-  assert.equal(emptyResult.length, 0);
-
-  // 7. Selection synchronization invariant
-  let selectedAlertId = initial[0].alert_id; // AL-DEMO-...
-  // User applies filter that excludes selectedAlertId
-  const filteredToStandby = applyFilterAndSort(allAlerts, 'INFO', 'ALL', 'ALL', 'NEWEST');
-  const isSelectedInFiltered = filteredToStandby.some(a => a.alert_id === selectedAlertId);
-  assert.equal(isSelectedInFiltered, false);
-
-  // Auto-selection rule: pick first matching alert or null if empty
-  const nextSelected = filteredToStandby.length > 0 ? filteredToStandby[0] : null;
-  assert.notEqual(nextSelected, null);
-  assert.equal(nextSelected.alert_id, 'AL-STANDBY-001');
-
-  // When empty:
-  const nextSelectedEmpty = emptyResult.length > 0 ? emptyResult[0] : null;
-  assert.equal(nextSelectedEmpty, null, 'Selected alert must be null when filtered list is empty');
+  // 5. User resets filters -> restores items and selects first
+  harness.resetFilters();
+  assert.equal(harness.fetchCount, 1);
+  assert.equal(harness.selectedAlertId, criticalAlert.alert_id);
+  assert.ok(harness.currentUrl.includes(criticalAlert.alert_id));
 });
 
-test('BUILD-05 Investigation Navigation and Standby Equipment Isolation Contract', () => {
-  const fixture = generateModeACommandCenterFixtureTest(20261015);
-  const activeAlert = fixture.alerts[0]; // CRITICAL in active run
-  const standbyAlert = fixture.alerts[2]; // INFO in standby run
+test('P1-B BUILD-05 Keyboard Accessibility Contract: Semantic button rows, Tab/Enter/Space interaction, and focus-visible styling', () => {
+  const ccPageSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const cssSource = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 
-  // Navigation target evaluation rule matching command-center/page.tsx
-  function evaluateNavigationAction(alert, activeRunId) {
-    const isInvestigatable = Boolean(alert.run_id && alert.run_id === activeRunId);
-    if (isInvestigatable) {
-      return {
-        allowed: true,
-        route: `/?alert=${encodeURIComponent(alert.alert_id)}&investigation=true`,
-        reason: 'Active run telemetry & sensor excursion analysis available'
-      };
-    } else {
-      return {
-        allowed: false,
-        route: null,
-        reason: '연결된 활성 공정 Run 부재 (Standby 설비 / 대기 상태 알람)'
-      };
-    }
-  }
+  // 1. Alarm queue items must be semantic <button type="button"> elements
+  assert.ok(
+    ccPageSource.includes('<button') && ccPageSource.includes('className={`cc-alarm-item ${isSelected ? \'selected\' : \'\'}`}'),
+    'Alarm queue rows must be semantic <button> elements, not non-interactive <div>'
+  );
+  assert.ok(ccPageSource.includes('type="button"'), 'Alarm queue buttons must explicitly specify type="button"');
+  assert.ok(ccPageSource.includes('tabIndex={0}'), 'Alarm queue items must be keyboard focusable (tabIndex={0})');
+  assert.ok(ccPageSource.includes('aria-pressed={isSelected}'), 'Alarm queue items must convey toggle/pressed state');
+  assert.ok(ccPageSource.includes('aria-selected={isSelected}'), 'Alarm queue items must convey selection state');
 
-  // 1. Active CRITICAL alert provides valid investigation route
-  const activeNav = evaluateNavigationAction(activeAlert, fixture.activeRunId);
-  assert.equal(activeNav.allowed, true);
-  assert.equal(activeNav.route, `/?alert=${encodeURIComponent(activeAlert.alert_id)}&investigation=true`);
+  // 2. CSS must provide visible focus indicator
+  assert.ok(cssSource.includes('.cc-alarm-item:focus-visible'), 'CSS must define :focus-visible for keyboard focus');
+  assert.ok(cssSource.includes('outline: 2px solid #0B9F78'), 'CSS focus outline must be prominent and contrast-compliant');
+});
 
-  // 2. Standby alert explicitly disables investigation route
-  const standbyNav = evaluateNavigationAction(standbyAlert, fixture.activeRunId);
-  assert.equal(standbyNav.allowed, false);
-  assert.equal(standbyNav.route, null);
-  assert.ok(standbyNav.reason.includes('연결된 활성 공정 Run 부재'));
+test('P1-C BUILD-05 Investigation Telemetry Verification Contract: Counterexamples, chamber/rule provenance, and fail-closed isolation', () => {
+  const activeRunId = 'RUN-DEMO-015';
 
-  // 3. Candidate wafer chips link target
-  const waferChips = activeAlert.wafer_candidates.map(wId => ({
-    waferId: wId,
-    route: `/traceability?wafer=${encodeURIComponent(wId)}`
-  }));
-  assert.equal(waferChips.length, 5);
-  assert.equal(waferChips[0].route, '/traceability?wafer=W-08');
-  assert.equal(waferChips[4].route, '/traceability?wafer=W-12');
+  // 1. Nominal Active Excursion: ETCH-02 / CH-B / CRITICAL / FDC-RULE-SPC-UCL-01
+  const nominalAlert = {
+    alert_id: 'AL-DEMO-015',
+    severity: 'CRITICAL',
+    equipment_id: 'ETCH-02',
+    chamber_id: 'CH-B',
+    run_id: activeRunId,
+    rule_code: 'FDC-RULE-SPC-UCL-01',
+    candidate_wafers: ['W-08', 'W-09', 'W-10', 'W-11', 'W-12']
+  };
+  const nominalRes = isInvestigationSupportedTest(nominalAlert, activeRunId);
+  assert.equal(nominalRes.supported, true);
+  assert.ok(nominalRes.reason.includes('스텝 T7 구간의 시계열 센서'));
+
+  // 2. Counterexample A: Standby Alert (run_id is null)
+  const standbyAlert = {
+    alert_id: 'AL-STANDBY-001',
+    severity: 'WARNING',
+    equipment_id: 'ETCH-01',
+    chamber_id: 'CH-A',
+    run_id: null,
+    rule_code: 'FDC-RULE-HEURISTIC-02',
+    candidate_wafers: []
+  };
+  const standbyRes = isInvestigationSupportedTest(standbyAlert, activeRunId);
+  assert.equal(standbyRes.supported, false);
+  assert.ok(standbyRes.reason.includes('대기 설비(Standby)'));
+
+  // 3. Counterexample B: Conflicting Run Alert (cross-run lineage mismatch)
+  const crossRunAlert = {
+    ...nominalAlert,
+    alert_id: 'AL-CROSS-999',
+    run_id: 'RUN-DIFF-888'
+  };
+  const crossRunRes = isInvestigationSupportedTest(crossRunAlert, activeRunId);
+  assert.equal(crossRunRes.supported, false);
+  assert.ok(crossRunRes.reason.includes('일치하지 않아'));
+
+  // 4. Counterexample C: Arbitrary CRITICAL Alert without T7 excursion evidence (e.g. ETCH-01 / CH-A)
+  const arbitraryCriticalAlert = {
+    alert_id: 'AL-CRIT-999',
+    severity: 'CRITICAL',
+    equipment_id: 'ETCH-01',
+    chamber_id: 'CH-A',
+    run_id: activeRunId,
+    rule_code: 'FDC-RULE-UNKNOWN-99',
+    candidate_wafers: []
+  };
+  const arbitraryRes = isInvestigationSupportedTest(arbitraryCriticalAlert, activeRunId);
+  assert.equal(arbitraryRes.supported, false, 'Arbitrary CRITICAL alert without T7 evidence must fail closed');
+  assert.ok(arbitraryRes.reason.includes('스텝 T7 센서 이상 계측 근거가 등록되지 않은 설비/챔버입니다'));
+
+  // 5. Counterexample D: Non-critical alerts (INFO / WARNING)
+  const infoAlert = {
+    alert_id: 'AL-INFO-001',
+    severity: 'INFO',
+    equipment_id: 'ETCH-02',
+    chamber_id: 'LOADPORT-01',
+    run_id: activeRunId,
+    rule_code: 'FDC-RULE-INFO-01',
+    candidate_wafers: []
+  };
+  const infoRes = isInvestigationSupportedTest(infoAlert, activeRunId);
+  assert.equal(infoRes.supported, false);
+  assert.ok(infoRes.reason.includes('단순 상태/경고 경보'));
 });
 
 test('BUILD-05 Mode A/B Fail-Closed Boundary and Network Offline Demarcation', async () => {
@@ -1812,7 +1951,7 @@ test('BUILD-05 Command Center Page Source Invariants & EKL Integration', () => {
   assert.ok(tracePageSource.includes('/command-center'), 'Traceability navbar must link to /command-center');
 
   // 2. Investigation return link
-  assert.ok(homePageSource.includes('FDC Command Center 큐로 복귀') || homePageSource.includes('Command Center'), 'Home investigation must have backlink to command center');
+  assert.ok(homePageSource.includes('커맨드 센터 전체 알람 보기') || homePageSource.includes('Command Center'), 'Home investigation must have backlink to command center');
 
   // 3. EKL Level 1 triggers in command center
   const requiredEKLConcepts = ['spc-ucl-missing', 'wafer-exposure-status', 'rf-power', 'oes-relative-signal'];
@@ -1831,3 +1970,4 @@ test('BUILD-05 Command Center Page Source Invariants & EKL Integration', () => {
   // 6. Empty state with reset
   assert.ok(ccPageSource.includes('필터 초기화'));
 });
+

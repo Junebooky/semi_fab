@@ -1396,15 +1396,30 @@ button:focus-visible, input:focus-visible {
 }
 
 .cc-alarm-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #FFFFFF;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
   padding: 12px 14px;
   border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
   position: relative;
+  outline: none;
 }
 
 .cc-alarm-item:hover {
   background: #F8FAFC;
+}
+
+.cc-alarm-item:focus-visible {
+  outline: 2px solid #0B9F78;
+  outline-offset: -2px;
+  z-index: 2;
 }
 
 .cc-alarm-item.selected {
