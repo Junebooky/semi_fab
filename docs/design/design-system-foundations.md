@@ -3,6 +3,9 @@
 > **Status:** REVIEW / proposed design contract, not implemented; [Issue #4](https://github.com/Junebooky/semi_fab/issues/4). 2026-10-15.
 > Inspiration from [Toss official public UX research](toss-research.md), but **every value below is FAB ONE original and NOT an official Toss rule**. Domain workflow, SPC rules, calculation assumptions, data retention and architecture are subject to A01/A02/A04 review.
 
+
+> **Owner-approved visual override — Issue #9 (2026-10-15):** Application/canvas and default card surfaces are pure white `#FFFFFF`; restrained lines and ultra-light supplemental zones provide separation. The emerald palette is reserved **only for illustrative wafer/chamber placeholder objects**, never for measurement charts or machine-state badges. Final 3D assets are **owner-supplied later**; A03 delivers slots and fallback. The repository's machine token keys are the authoritative canonical names; `space.*`, `shadow.card`, and `border.focus` now match the JSON values.
+
 ## 1. Product design principles
 
 1. **Calm Precision:** warm, minimalist visual layer; high precision engineering measurement, never hiding unit, timestamp, source or uncertainty.
@@ -35,12 +38,14 @@ Canonical machine-readable token example: [tokens/fab-one.tokens.json](tokens/fa
 
 | Group | Token | Value | Guidance |
 | --- | --- | --- | --- |
-| Surface | `color.surface.canvas` | `#F6F8FC` | app canvas |
+| Surface | `color.surface.canvas` | `#FFFFFF` | pure white app canvas (owner-approved) |
 | Surface | `color.surface.card` | `#FFFFFF` | primary content |
 | Surface | `color.surface.subtle` | `#EDF2F8` | quiet secondary zones |
 | Ink | `color.text.primary` | `#17263B` | main headings/body |
 | Ink | `color.text.secondary` | `#48586D` | labels and metadata |
 | Border | `color.border.default` | `#DCE3ED` | separators and fields |
+| Clay art ONLY | `color.asset.clay.primary` | `#16B88A` | wafer/chamber illustration fill; not chart/normal |
+| Clay art ONLY | `color.asset.clay.dark` | `#076F5B` | illustrative shadow; not critical/normal |
 | Action | `color.action.primary` | `#155BC1` | primary action (not 'normal') |
 | Danger text | `color.severity.critical.text` | `#AD211A` | risk label; pair with icon/text |
 | Warning text | `color.severity.warning.text` | `#8B5400` | caution label |
@@ -53,6 +58,12 @@ Canonical machine-readable token example: [tokens/fab-one.tokens.json](tokens/fa
 | Focus | `border.focus` | `2px` | keyboard focus, visible on every surface |
 
 **Pre-release verification:** A04 must measure WCAG 2.2 AA contrast (normal text ≥4.5:1, large text ≥3:1, significant non-text indicators ≥3:1) on every actual foreground/background combination and at browser zoom. These hex values are proposals, not a completed color audit.
+
+### Surface composition policy
+
+- Canvas, navigation base and normal card backgrounds = `#FFFFFF`; use border `#DCE3ED`, spacing and subtle elevation to establish sections instead of a gray full-page wash.
+- `color.surface.subtle=#EDF2F8` may appear **inside auxiliary chips, captions or low-emphasis zones only**. It is **not** the app background.
+- Contrast and meaning of chart data remain independent of decorative greens; measurement graphs never inherit `color.asset.clay.*`.
 
 ### Typography
 
@@ -104,7 +115,7 @@ The A02 handoff order is **purpose → anatomy → variants → states → data 
 | `KnowledgeTrigger` | term + underlined affordance/help icon | linked `conceptId` + review version | real button; focus outline; touch opens L2 |
 | `KnowledgePopover` | term, 1–2 sentences, unit, '자세히' | L1 only; no essential exclusive info | hover/focus readable, dismissible Esc |
 | `KnowledgeCard` | statement, formula, variable table, worked example, assumptions | L2; computed value only from tested function, not MDX | click/tap; focus management; Esc |
-| `KnowledgePanel` | sections, linked references, related concepts, notes | L3; version, review state, saving/errors | dialog on desktop, full-screen on phone; labeled close button |
+| `KnowledgePanel` | sections, linked references, related concepts, notes | L3; version, review state, saving/errors | **Desktop nonmodal complementary `<aside>`** (no focus trap); **mobile full-screen modal `role=dialog`** (focus trap); labeled close and focus restore |
 
 All controls need `default / hover / focus-visible / pressed / disabled / loading / error` where applicable. The disabled state must explain why; a disabled real-FAB 'Hold' button should **not exist** in demo UI.
 
@@ -133,17 +144,17 @@ All controls need `default / hover / focus-visible / pressed / disabled / loadin
 - `Loading` = no fabricated prior success, `Empty` = explicit no matching records + clear filters, `Error` = what failed + last successful sample/retry, `Success` = affected entity and next step. Distinguish a real absence from failed acquisition.
 - RTL not targeted initially; mixed English process abbreviations and Korean labels need spacing and line wrap. Support variable text length and translations.
 
-## 8. 3D clay system (original assets only)
+## 8. Green clay illustrative placeholders (owner-replaceable slots)
 
 **Purpose:** explain concepts / attract users to knowledge content, not present measured geometry.
 
-- **Allowed surfaces:** brand/landing, contextual learning cards, equipment concept page, wafer/die onboarding, meaningful empty states.
+- **Allowed surfaces:** brand/landing, contextual learning cards, equipment concept page, wafer/die onboarding, meaningful empty states. **Actual slot contract:** [asset-slot-contract.md](asset-slot-contract.md) plus [asset-slots.json](tokens/asset-slots.json). All 3D placeholder greens are `color.asset.clay.*`, NOT statistical/normal severity colors.
 - **Disallowed:** quantitative charts, tables, alarm icons, Wafer Map heatmaps, active operator decision controls.
-- **Material:** matte soft-clay PBR, high roughness (`~0.72–0.88` conceptual target), very low metalness, no photographic manufacturer replication.
+- **Material for future owner asset reference only:** matte clay, understated shading, emerald palette `#076F5B / #0B9F78 / #16B88A / #A4E9C8 / #DDF8EC`. **No 3D source/model/render delivery is expected now.** Placeholder is editable simple geometry/CSS or a static image without scientific meaning.
 - **Lighting:** broad soft key upper-left + low-intensity fill; restrained ambient occlusion and contact shadow. No flashing emissive warning accents.
 - **Camera:** fixed orthographic or weak-perspective isometric (approx. 30–35° elevated, 30–45° azimuth) *for illustration only*. Not for wafer coordinate measurement.
 - **Composition:** center-of-mass stable, comfortable safe area, clear cutaway labels when teaching chamber/wafer; disclose '개념도 · 축척 아님'.
-- **Sizing:** 96–160px cards, 240–360px onboarding, responsive `aspect-ratio` and fixed placeholder; no asset on dense charts.
+- **Sizing:** use fixed aspect-ratio wrappers and CSS `object-fit:contain` (never stretch/crop) with 12% internal safe padding. Recommended slot-by-slot sizes/breakpoints in [asset-slot-contract.md](asset-slot-contract.md). No asset on dense charts.
 - **Rendering budget policy (proposal, requires profiling):** default static WebP/AVIF/SVG fallback, optional progressive canvas only if user explicitly engages; no WebGL requirement for core tasks; lazy-load offscreen asset; reduced motion disables object spin.
 - **Safety:** any 3D views must not imply real tool brands, verified physical cross-sections, or quantitative scale without A01-approved sources.
 
@@ -159,4 +170,4 @@ All controls need `default / hover / focus-visible / pressed / disabled / loadin
 | DS-06 | static 3D fallback, no loss to core workflow | low-performance/mobile fallback | A02+A04 |
 | DS-07 | notes local-only, explicit non-sync/export/import | quota/blocked/private mode, data-loss behavior | A01+A04 |
 
-**Outstanding approvals:** No public PRD v1.3 available in `main` at authoring; ADR-001 [#1 / PR #2](https://github.com/Junebooky/semi_fab/pull/2) remains PROPOSED. A01 decides alert criteria and real business terminology; A02 owns actual tech architecture; A04 reports measured accessibility/visual tests. Figma editable file and original 3D assets **not created in this submission**.
+**Outstanding approvals:** No public PRD v1.3 available in `main` at authoring; ADR-001 [#1 / PR #2](https://github.com/Junebooky/semi_fab/pull/2) remains PROPOSED. A01 decides alert criteria and real business terminology; A02 owns actual tech architecture; A04 reports measured accessibility/visual tests. Figma editable file and final 3D assets **not created in this Issue #4 specification**; owner supplies production 3D images later. A separate high-fidelity editable prototype is tracked under Issue #9.
