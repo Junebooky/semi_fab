@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
@@ -292,9 +292,15 @@ function FabOneDemoContent() {
   const [seed, setSeed] = useState<number>(20261015);
   const [noticeMessage, setNoticeMessage] = useState<string>("FAB ONE 식각 공정 시뮬레이터 준비 완료");
 
+  // [P1-A]: Request sequencing and race condition guards for async alert investigation loading
+  const activeInvestigationReqIdRef = useRef<number>(0);
+  const currentSelectedAlertIdRef = useRef<string | null>(DEFAULT_FIXTURE.alerts[0]?.alert_id ?? null);
+
   // Centralized fallback to Mode A
   const fallbackToModeA = useCallback((errorMsg: string) => {
+    activeInvestigationReqIdRef.current++;
     const fixture = generateModeAFixture(seed);
+    currentSelectedAlertIdRef.current = fixture.alerts[0]?.alert_id ?? null;
     setMode('A');
     setBackendAvailable(false);
     setConnectionError(errorMsg);
@@ -343,6 +349,7 @@ function FabOneDemoContent() {
       setInvestigationData(invData);
       if (alertData.length > 0) {
         setSelectedAlert(alertData[0]);
+        currentSelectedAlertIdRef.current = alertData[0].alert_id;
       }
       setMode('B');
       setBackendAvailable(true);
@@ -389,7 +396,11 @@ function FabOneDemoContent() {
             setIsPlaying(false);
             setIsAnomalyActive(true);
             setIsInvestigationOpen(true);
-            if (alerts.length > 0) setSelectedAlert(alerts[0]);
+            if (alerts.length > 0) {
+              const activeCritical = alerts.find(a => a.severity === 'CRITICAL' && a.run_id === summary.active_run_id) || alerts[0];
+              setSelectedAlert(activeCritical);
+              currentSelectedAlertIdRef.current = activeCritical.alert_id;
+            }
             return 7;
           }
           return prev + 1;
@@ -399,7 +410,7 @@ function FabOneDemoContent() {
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isPlaying, alerts]);
+  }, [isPlaying, alerts, summary.active_run_id]);
 
   // Filter current series
   const filteredSamples = useMemo(() => {
@@ -428,6 +439,7 @@ function FabOneDemoContent() {
 
   // Action handlers
   const handleStartDemo = async () => {
+    activeInvestigationReqIdRef.current++;
     setCurrentStep(0);
     setIsPlaying(true);
 
@@ -474,11 +486,15 @@ function FabOneDemoContent() {
   };
 
   const handleSeekAnomaly = async () => {
+    activeInvestigationReqIdRef.current++;
     setIsPlaying(false);
     setCurrentStep(7);
     setIsAnomalyActive(true);
     setIsInvestigationOpen(true);
-    if (alerts.length > 0) setSelectedAlert(alerts[0]);
+    if (alerts.length > 0) {
+      const activeCritical = alerts.find(a => a.severity === 'CRITICAL' && a.run_id === summary.active_run_id) || alerts[0];
+      handleSelectAlert(activeCritical);
+    }
     setNoticeMessage("이상 구간 탐색: T7 스파이크 시점으로 즉시 이동. 영향 가능 Lot/Wafer 후보군(W-08~W-12) 및 엔지니어링 조사 패널 활성화.");
 
     if (mode === 'B') {
@@ -495,6 +511,8 @@ function FabOneDemoContent() {
 
   const handleSelectAlert = async (alert: FdcAlert) => {
     setSelectedAlert(alert);
+    currentSelectedAlertIdRef.current = alert.alert_id;
+    const requestId = ++activeInvestigationReqIdRef.current;
     setIsInvestigationOpen(true);
 
     if (alert.run_id && alert.run_id === summary.active_run_id) {
@@ -504,6 +522,10 @@ function FabOneDemoContent() {
       if (mode === 'B') {
         try {
           const res = await fetch(`http://localhost:8000/api/v1/demo/investigation?alert_id=${alert.alert_id}`, { cache: "no-store" });
+          // [P1-A]: Discard response if another alert was selected or request was superseded
+          if (requestId !== activeInvestigationReqIdRef.current || currentSelectedAlertIdRef.current !== alert.alert_id) {
+            return;
+          }
           if (res.ok) {
             const data: InvestigationDetail = await res.json();
             setInvestigationData(data);
@@ -513,11 +535,17 @@ function FabOneDemoContent() {
             setNoticeMessage(`알림: [${alert.severity}] ${alert.alert_id}에 연결된 조사 근거를 불러올 수 없습니다 (HTTP ${res.status}).`);
           }
         } catch {
+          if (requestId !== activeInvestigationReqIdRef.current || currentSelectedAlertIdRef.current !== alert.alert_id) {
+            return;
+          }
           setInvestigationData(null);
           setNoticeMessage(`알림: 백엔드 통신 오류로 [${alert.alert_id}] 조사 근거 조회가 실패했습니다.`);
         }
       } else {
         // Mode A: synthesize fixture matching this run & alert
+        if (requestId !== activeInvestigationReqIdRef.current || currentSelectedAlertIdRef.current !== alert.alert_id) {
+          return;
+        }
         const fixture = generateModeAFixture(seed);
         fixture.investigation.alert_id = alert.alert_id;
         fixture.investigation.run_id = alert.run_id;
@@ -525,7 +553,8 @@ function FabOneDemoContent() {
         setNoticeMessage(`엔지니어링 조사: [${alert.severity}] ${alert.alert_id} (${alert.rule_code}) 세부 근거 및 영향 웨이퍼 분석 열림`);
       }
     } else {
-      // Standby alert or alert not linked to active process run (P1-02 fix)
+      // Standby alert or alert not linked to active process run (P1-02 & P1-A fix)
+      // Stale async responses are invalidated via requestId & currentSelectedAlertIdRef
       setIsAnomalyActive(false);
       setInvestigationData(null);
       setNoticeMessage(`알림: [${alert.severity}] ${alert.alert_id} (${alert.equipment_id} / ${alert.chamber_id}) 선택됨 - 연결된 공정 Run 및 웨이퍼 조사 근거 없음.`);
@@ -552,6 +581,7 @@ function FabOneDemoContent() {
   }, [alertParam, invParam, waferParam, alerts, wafers]);
 
   const handleChangeSeed = async () => {
+    activeInvestigationReqIdRef.current++;
     const seeds = [20261015, 9999, 42, 12345];
     const nextSeed = seeds[(seeds.indexOf(seed) + 1) % seeds.length];
     setSeed(nextSeed);
@@ -583,6 +613,7 @@ function FabOneDemoContent() {
       }
     } else {
       const fixture = generateModeAFixture(nextSeed);
+      currentSelectedAlertIdRef.current = fixture.alerts[0]?.alert_id ?? null;
       setSummary(fixture.summary);
       setSamples(fixture.samples);
       setAlerts(fixture.alerts);

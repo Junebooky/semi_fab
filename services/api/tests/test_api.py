@@ -373,7 +373,86 @@ class TestEtchDemoAPI(unittest.TestCase):
         self.assertEqual(rf_ev["measured_value"], t7_rf["measured_value"])
         self.assertEqual(rf_ev["quality_flag"], t7_rf["quality_flag"])
 
-    def test_13_wafer_traceability(self):
+    def test_13_investigation_source_lineage_and_cross_contamination_guard(self):
+        """
+        Regression test for P1-B:
+        Ensures that Investigation API strictly validates that alert, simulation_session,
+        process_run, equipment_id, and chamber_id all have the exact same lineage origin.
+        Any synthetic/corrupted counterexample with mismatched session, equipment, or chamber
+        MUST be rejected with HTTP 404 fail-closed, preventing leak of CH-B T7 excursion evidence.
+        """
+        summary = self.client.get("/api/v1/demo/summary").json()
+        active_run_id = summary["active_run_id"]
+        active_session_id = summary["active_session_id"]
+        active_equipment_id = summary["equipment_id"]
+        active_chamber_id = summary["chamber_id"]
+
+        with db_session(self.test_db_path) as conn:
+            # Create a historical inactive session (FK valid)
+            conn.execute(
+                """
+                INSERT INTO simulation_session (session_id, scenario_id, seed, is_active, integrity_status, started_at_utc)
+                VALUES ('SES-OLD-INACTIVE', 'ETH-SYN-01', 1111, 0, 'VALID', '2026-10-14T00:00:00.000Z');
+                """
+            )
+
+            # 1. Counterexample A: Session mismatch
+            # Alert points to active_run_id, but alert's session_id is from historical inactive session
+            conn.execute(
+                """
+                INSERT INTO fdc_alert (alert_id, session_id, run_id, equipment_id, chamber_id, severity, rule_code, message, status, event_time_utc)
+                VALUES ('AL-CORRUPT-SES', 'SES-OLD-INACTIVE', ?, ?, ?, 'CRITICAL', 'FDC-RULE-SPC-UCL-01', 'Cross-session corrupted alert', 'ACTIVE', '2026-10-15T00:00:35.000Z');
+                """,
+                (active_run_id, active_equipment_id, active_chamber_id)
+            )
+
+            # 2. Counterexample B: Equipment mismatch
+            # Alert claims ETCH-01, but run is on ETCH-02
+            conn.execute(
+                """
+                INSERT INTO fdc_alert (alert_id, session_id, run_id, equipment_id, chamber_id, severity, rule_code, message, status, event_time_utc)
+                VALUES ('AL-CORRUPT-EQ', ?, ?, 'ETCH-01', ?, 'CRITICAL', 'FDC-RULE-SPC-UCL-01', 'Cross-equipment corrupted alert', 'ACTIVE', '2026-10-15T00:00:35.000Z');
+                """,
+                (active_session_id, active_run_id, active_chamber_id)
+            )
+
+            # 3. Counterexample C: Chamber mismatch
+            # Alert claims CH-A, but run is on CH-B
+            conn.execute(
+                """
+                INSERT INTO fdc_alert (alert_id, session_id, run_id, equipment_id, chamber_id, severity, rule_code, message, status, event_time_utc)
+                VALUES ('AL-CORRUPT-CH', ?, ?, ?, 'CH-A', 'CRITICAL', 'FDC-RULE-SPC-UCL-01', 'Cross-chamber corrupted alert', 'ACTIVE', '2026-10-15T00:00:35.000Z');
+                """,
+                (active_session_id, active_run_id, active_equipment_id)
+            )
+
+            # Check that foreign keys are strictly valid (0 violations)
+            fk_violations = conn.execute("PRAGMA foreign_key_check;").fetchall()
+            self.assertEqual(len(fk_violations), 0, f"Foreign key violations: {fk_violations}")
+
+        # Verification 1: Session mismatch alert returns 404
+        res_ses = self.client.get("/api/v1/demo/investigation?alert_id=AL-CORRUPT-SES")
+        self.assertEqual(res_ses.status_code, 404)
+        self.assertIn("lineage mismatch", res_ses.json()["detail"].lower())
+
+        # Verification 2: Equipment mismatch alert returns 404
+        res_eq = self.client.get("/api/v1/demo/investigation?alert_id=AL-CORRUPT-EQ")
+        self.assertEqual(res_eq.status_code, 404)
+        self.assertIn("equipment mismatch", res_eq.json()["detail"].lower())
+
+        # Verification 3: Chamber mismatch alert returns 404
+        res_ch = self.client.get("/api/v1/demo/investigation?alert_id=AL-CORRUPT-CH")
+        self.assertEqual(res_ch.status_code, 404)
+        self.assertIn("chamber mismatch", res_ch.json()["detail"].lower())
+
+        # Verification 4: Normal active alert with consistent lineage succeeds (200)
+        res_normal = self.client.get("/api/v1/demo/investigation")
+        self.assertEqual(res_normal.status_code, 200)
+        self.assertEqual(res_normal.json()["equipment_id"], active_equipment_id)
+        self.assertEqual(res_normal.json()["chamber_id"], active_chamber_id)
+        self.assertEqual(len(res_normal.json()["evidence_sensors"]), 3)
+
+    def test_14_wafer_traceability(self):
         """
         Verification test for BUILD-03 Lot/Wafer Traceability:
         1. Confirmed exposed wafer (W-01) returns complete metadata, alert binding, and COMPLETED process event.
@@ -448,3 +527,4 @@ class TestEtchDemoAPI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

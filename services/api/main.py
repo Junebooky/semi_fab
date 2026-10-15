@@ -625,6 +625,25 @@ def get_demo_investigation(alert_id: Optional[str] = Query(default=None)):
             session = conn.execute("SELECT is_active FROM simulation_session WHERE session_id = ?;", (run["session_id"],)).fetchone()
             if not session or not session["is_active"]:
                 raise HTTPException(status_code=404, detail=f"Alert '{alert_id}' belongs to an inactive or previous simulation session")
+
+            # [P1-B Fix]: Strict multi-origin consistency checks between alert and run
+            if alert["session_id"] != run["session_id"]:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Lineage mismatch: Alert '{alert_id}' session '{alert['session_id']}' does not match process run session '{run['session_id']}'"
+                )
+
+            if alert["equipment_id"] != run["equipment_id"]:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Equipment mismatch: Alert '{alert_id}' equipment '{alert['equipment_id']}' does not match process run equipment '{run['equipment_id']}'"
+                )
+
+            if alert["chamber_id"] != run["chamber_id"]:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Chamber mismatch: Alert '{alert_id}' chamber '{alert['chamber_id']}' does not match process run chamber '{run['chamber_id']}'"
+                )
         else:
             # Default to latest active session's active run
             run = conn.execute(
@@ -640,11 +659,15 @@ def get_demo_investigation(alert_id: Optional[str] = Query(default=None)):
                 raise HTTPException(status_code=404, detail="No active process run found in active simulation session")
 
             alert = conn.execute(
-                "SELECT * FROM fdc_alert WHERE run_id = ? ORDER BY event_time_utc DESC LIMIT 1;",
-                (run["run_id"],)
+                """
+                SELECT * FROM fdc_alert
+                WHERE run_id = ? AND session_id = ? AND equipment_id = ? AND chamber_id = ?
+                ORDER BY event_time_utc DESC LIMIT 1;
+                """,
+                (run["run_id"], run["session_id"], run["equipment_id"], run["chamber_id"])
             ).fetchone()
             if not alert:
-                raise HTTPException(status_code=404, detail=f"No FDC excursion alert found for active run {run['run_id']}")
+                raise HTTPException(status_code=404, detail=f"No matching FDC excursion alert found for active run {run['run_id']}")
 
         run_id = run["run_id"]
         target_alert_id = alert["alert_id"]
@@ -652,14 +675,14 @@ def get_demo_investigation(alert_id: Optional[str] = Query(default=None)):
         rule_code = alert["rule_code"]
         event_time = alert["event_time_utc"]
 
-        # Fetch step 7 measurements for this specific run
+        # Fetch step 7 measurements for this specific run and session
         sample_rows = conn.execute(
             """
             SELECT sensor_id, measured_value, unit, quality_flag
             FROM sensor_measurement
-            WHERE run_id = ? AND step_index = 7;
+            WHERE run_id = ? AND session_id = ? AND step_index = 7;
             """,
-            (run_id,)
+            (run_id, run["session_id"])
         ).fetchall()
         
         if not sample_rows:
@@ -694,15 +717,15 @@ def get_demo_investigation(alert_id: Optional[str] = Query(default=None)):
         if not evidence:
             raise HTTPException(status_code=404, detail=f"No valid sensor evidence found at step 7 for run {run_id}")
 
-        # Fetch actual wafers for this run
+        # Fetch actual wafers for this run and session
         wafer_rows = conn.execute(
             """
             SELECT wafer_id, exposure_status
             FROM process_run_wafer
-            WHERE run_id = ?
+            WHERE run_id = ? AND session_id = ?
             ORDER BY slot_number ASC;
             """,
-            (run_id,)
+            (run_id, run["session_id"])
         ).fetchall()
 
         if not wafer_rows:

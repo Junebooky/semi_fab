@@ -382,6 +382,77 @@ test('P1-02 Alert-Investigation Binding and Standby Isolation: Selecting standby
   assert.equal(currentInvestigation.chamber_id, 'CH-B');
 });
 
+test('P1-A Async Alert Switching Race Condition Defense: Delayed inflight investigation response cannot overwrite standby state or newer alert', async () => {
+  const fixture = generateModeAFixtureTest(20261015);
+  const criticalAlert = fixture.alerts[0]; // Active run alert
+  const standbyAlert = fixture.alerts[1];  // Standby alert
+
+  // Simulated component state & refs matching page.tsx
+  let investigationData = null;
+  let selectedAlert = null;
+  let noticeMessage = "";
+  let activeReqId = 0;
+  let currentSelectedAlertId = null;
+
+  // Mock fetch that can simulate delayed resolution
+  let delayedResolve = null;
+  const delayedFetchPromise = new Promise(resolve => {
+    delayedResolve = resolve;
+  });
+
+  async function handleSelectAlertTest(alert, isDelayed = false) {
+    selectedAlert = alert;
+    currentSelectedAlertId = alert.alert_id;
+    const reqId = ++activeReqId;
+
+    if (alert.run_id) {
+      // Simulate async fetch
+      try {
+        const data = isDelayed ? await delayedFetchPromise : fixture.investigation;
+        // Invalidate stale response guard (P1-A)
+        if (reqId !== activeReqId || currentSelectedAlertId !== alert.alert_id) {
+          return; // DISCARDED!
+        }
+        investigationData = data;
+        noticeMessage = `엔지니어링 조사: [${alert.severity}] ${alert.alert_id}`;
+      } catch {
+        if (reqId !== activeReqId || currentSelectedAlertId !== alert.alert_id) return;
+        investigationData = null;
+      }
+    } else {
+      // Standby alert immediately clears investigation data and notice
+      investigationData = null;
+      noticeMessage = `알림: [${alert.severity}] ${alert.alert_id} 선택됨 - 연결된 공정 Run 없음`;
+    }
+  }
+
+  // 1. User selects critical alert, but network request is delayed in flight
+  const criticalPromise = handleSelectAlertTest(criticalAlert, true);
+  assert.equal(selectedAlert.alert_id, criticalAlert.alert_id);
+  assert.equal(investigationData, null); // Not yet resolved
+
+  // 2. While critical alert fetch is in flight, user selects standby alert!
+  await handleSelectAlertTest(standbyAlert, false);
+  assert.equal(selectedAlert.alert_id, standbyAlert.alert_id);
+  assert.equal(investigationData, null);
+  assert.ok(noticeMessage.includes('연결된 공정 Run 없음'));
+
+  // 3. Now the delayed critical request finally resolves with HTTP 200 data!
+  delayedResolve(fixture.investigation);
+  await criticalPromise;
+
+  // 4. Invariant: investigationData MUST REMAIN NULL, and noticeMessage MUST NOT be overwritten!
+  assert.equal(selectedAlert.alert_id, standbyAlert.alert_id);
+  assert.equal(investigationData, null, "Stale async response must NOT overwrite standby investigation state");
+  assert.ok(noticeMessage.includes('연결된 공정 Run 없음'), "Stale notice must NOT overwrite standby notice");
+
+  // 5. User clicks critical alert again -> immediately loads and sets investigation data
+  await handleSelectAlertTest(criticalAlert, false);
+  assert.equal(selectedAlert.alert_id, criticalAlert.alert_id);
+  assert.notEqual(investigationData, null);
+  assert.equal(investigationData.alert_id, criticalAlert.alert_id);
+});
+
 // Helper matching generateModeAWaferTrace in traceability/page.tsx
 function generateModeAWaferTraceTest(waferId, seed = 20261015) {
   const lotNum = 800 + (seed % 50);
@@ -498,4 +569,5 @@ test('BUILD-03 Wafer Traceability Contract: W-15 (NOT_EXPOSED) skipped timeline 
   assert.equal(trace.timeline[4].event_type, 'HOLD');
   assert.equal(trace.timeline[4].status, 'PENDING');
 });
+
 
