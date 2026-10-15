@@ -242,6 +242,47 @@ class TestEtchDemoAPI(unittest.TestCase):
         self.assertIsNotNone(t7_rel["measured_value"])
         self.assertEqual(t7_rel["quality_flag"], "SUSPECT")
 
+    def test_10_engineering_investigation_detail(self):
+        """
+        Verification test for BUILD-02 Engineering Investigation:
+        Correlates FDC excursion alert with step T7 sensor evidence, candidate wafers,
+        and domain disclaimer stating that sensor excursion is not confirmed wafer defect.
+        """
+        res = self.client.get("/api/v1/demo/investigation")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+
+        self.assertIn("INV-", data["investigation_id"])
+        self.assertEqual(data["equipment_id"], "ETCH-02")
+        self.assertEqual(data["chamber_id"], "CH-B")
+        self.assertEqual(data["anomaly_step"], 7)
+        self.assertEqual(data["severity"], "CRITICAL")
+        self.assertEqual(data["status"], "UNDER_INVESTIGATION")
+
+        # 3 Evidence sensors at T7
+        evidence = data["evidence_sensors"]
+        self.assertEqual(len(evidence), 3)
+        sensors = {e["sensor_id"]: e for e in evidence}
+        self.assertIn("RELATIVE_SIGNAL", sensors)
+        self.assertIn("CHAMBER_PRESSURE", sensors)
+        self.assertIn("RF_POWER", sensors)
+
+        self.assertEqual(sensors["RELATIVE_SIGNAL"]["quality_flag"], "SUSPECT")
+        self.assertGreater(sensors["RELATIVE_SIGNAL"]["measured_value"], 65.0)
+
+        self.assertEqual(sensors["CHAMBER_PRESSURE"]["quality_flag"], "SUSPECT")
+        self.assertGreater(sensors["CHAMBER_PRESSURE"]["measured_value"], 140.0)
+
+        # Wafer breakdown
+        self.assertEqual(len(data["confirmed_exposed_wafers"]), 7)
+        self.assertEqual(len(data["candidate_exposed_wafers"]), 5)
+        self.assertEqual(data["candidate_exposed_wafers"], ["W-08", "W-09", "W-10", "W-11", "W-12"])
+        self.assertEqual(data["unexposed_wafers_count"], 13)
+
+        # Domain disclaimer
+        self.assertIn("물리적 결함(Defect) 확정 원인이 아닙니다", data["disclaimer"])
+        self.assertGreaterEqual(len(data["recommended_dispositions"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

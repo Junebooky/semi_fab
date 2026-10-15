@@ -53,128 +53,254 @@ interface DemoSummary {
   data_origin: string;
 }
 
-// Built-in Mode A Synthetic Fixture Data (Ensures demo is fully operable even without backend)
-const FIXTURE_SAMPLES: SensorSample[] = [
-  { step_index: 0, time_label: "T0", sim_time_utc: "2026-10-15T00:00:00.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: 48.2, unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 1, time_label: "T1", sim_time_utc: "2026-10-15T00:00:05.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: 50.1, unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 2, time_label: "T2", sim_time_utc: "2026-10-15T00:00:10.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: 51.4, unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 3, time_label: "T3", sim_time_utc: "2026-10-15T00:00:15.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: 49.8, unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 4, time_label: "T4", sim_time_utc: "2026-10-15T00:00:20.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: null, unit: "a.u.", quality_flag: "MISSING", data_origin: "synthetic" },
-  { step_index: 5, time_label: "T5", sim_time_utc: "2026-10-15T00:00:25.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: null, unit: "a.u.", quality_flag: "MISSING", data_origin: "synthetic" },
-  { step_index: 6, time_label: "T6", sim_time_utc: "2026-10-15T00:00:30.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: 52.0, unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 7, time_label: "T7", sim_time_utc: "2026-10-15T00:00:35.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: 80.0, unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
-  
-  // Pressure
-  { step_index: 0, time_label: "T0", sim_time_utc: "2026-10-15T00:00:00.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: 120.1, unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 1, time_label: "T1", sim_time_utc: "2026-10-15T00:00:05.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: 120.4, unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 2, time_label: "T2", sim_time_utc: "2026-10-15T00:00:10.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: 119.8, unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 3, time_label: "T3", sim_time_utc: "2026-10-15T00:00:15.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: 120.5, unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 4, time_label: "T4", sim_time_utc: "2026-10-15T00:00:20.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: 120.2, unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 5, time_label: "T5", sim_time_utc: "2026-10-15T00:00:25.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: 120.0, unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 6, time_label: "T6", sim_time_utc: "2026-10-15T00:00:30.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: 121.3, unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
-  { step_index: 7, time_label: "T7", sim_time_utc: "2026-10-15T00:00:35.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: 168.5, unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
-];
+interface SensorEvidence {
+  sensor_id: string;
+  sensor_name: string;
+  measured_value: number;
+  unit: string;
+  quality_flag: string;
+  ucl_threshold: number;
+  target_value: number;
+  deviation_percent: number;
+}
 
-const FIXTURE_ALERTS: FdcAlert[] = [
-  {
-    alert_id: "AL-DEMO-001",
-    severity: "CRITICAL",
+interface InvestigationDetail {
+  investigation_id: string;
+  alert_id: string;
+  equipment_id: string;
+  chamber_id: string;
+  run_id: string;
+  lot_id: string;
+  recipe_id: string;
+  event_time_utc: string;
+  anomaly_step: number;
+  severity: string;
+  rule_code: string;
+  status: string;
+  evidence_sensors: SensorEvidence[];
+  total_wafers: number;
+  confirmed_exposed_wafers: string[];
+  candidate_exposed_wafers: string[];
+  unexposed_wafers_count: number;
+  disclaimer: string;
+  recommended_dispositions: string[];
+}
+
+// Built-in Mode A Synthetic Fixture Generator (Deterministic pseudo-random synthesis by seed)
+function generateModeAFixture(seed: number) {
+  let s = Math.abs(seed);
+  const nextRand = () => {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    return s / 4294967296;
+  };
+
+  const relNoise = (nextRand() - 0.5) * 2.0;
+  const prsNoise = (nextRand() - 0.5) * 1.5;
+  const rfNoise = (nextRand() - 0.5) * 20.0;
+
+  const t7Rel = +(80.0 + (nextRand() - 0.5) * 4.0).toFixed(1);
+  const t7Prs = +(168.5 + (nextRand() - 0.5) * 5.0).toFixed(2);
+  const t7Rf = +(1820.0 + rfNoise).toFixed(1);
+
+  const samples: SensorSample[] = [
+    // RELATIVE_SIGNAL (Optical sensor: T4 and T5 missing due to optical shutter)
+    { step_index: 0, time_label: "T0", sim_time_utc: "2026-10-15T00:00:00.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: +(48.2 + relNoise).toFixed(1), unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 1, time_label: "T1", sim_time_utc: "2026-10-15T00:00:05.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: +(50.1 + relNoise * 0.8).toFixed(1), unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 2, time_label: "T2", sim_time_utc: "2026-10-15T00:00:10.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: +(51.4 + relNoise * 0.5).toFixed(1), unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 3, time_label: "T3", sim_time_utc: "2026-10-15T00:00:15.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: +(49.8 + relNoise * 0.7).toFixed(1), unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 4, time_label: "T4", sim_time_utc: "2026-10-15T00:00:20.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: null, unit: "a.u.", quality_flag: "MISSING", data_origin: "synthetic" },
+    { step_index: 5, time_label: "T5", sim_time_utc: "2026-10-15T00:00:25.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: null, unit: "a.u.", quality_flag: "MISSING", data_origin: "synthetic" },
+    { step_index: 6, time_label: "T6", sim_time_utc: "2026-10-15T00:00:30.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: +(52.0 + relNoise * 0.9).toFixed(1), unit: "a.u.", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 7, time_label: "T7", sim_time_utc: "2026-10-15T00:00:35.000Z", sensor_id: "RELATIVE_SIGNAL", measured_value: t7Rel, unit: "a.u.", quality_flag: "SUSPECT", data_origin: "synthetic" },
+
+    // CHAMBER_PRESSURE (Continuous measurement, strictly valid & GOOD at T4/T5)
+    { step_index: 0, time_label: "T0", sim_time_utc: "2026-10-15T00:00:00.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.1 + prsNoise).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 1, time_label: "T1", sim_time_utc: "2026-10-15T00:00:05.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.4 + prsNoise * 0.7).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 2, time_label: "T2", sim_time_utc: "2026-10-15T00:00:10.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(119.8 + prsNoise * 0.6).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 3, time_label: "T3", sim_time_utc: "2026-10-15T00:00:15.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.5 + prsNoise * 0.8).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 4, time_label: "T4", sim_time_utc: "2026-10-15T00:00:20.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.2 + (nextRand() - 0.5) * 0.4).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 5, time_label: "T5", sim_time_utc: "2026-10-15T00:00:25.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.0 + (nextRand() - 0.5) * 0.4).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 6, time_label: "T6", sim_time_utc: "2026-10-15T00:00:30.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: +(121.3 + prsNoise * 0.5).toFixed(2), unit: "mTorr", quality_flag: "GOOD", data_origin: "synthetic" },
+    { step_index: 7, time_label: "T7", sim_time_utc: "2026-10-15T00:00:35.000Z", sensor_id: "CHAMBER_PRESSURE", measured_value: t7Prs, unit: "mTorr", quality_flag: "SUSPECT", data_origin: "synthetic" },
+  ];
+
+  const lotNum = 800 + (seed % 50);
+  const lotId = `LOT-DEMO-${lotNum}`;
+  const runId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+  const alertId = `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+
+  const alerts: FdcAlert[] = [
+    {
+      alert_id: alertId,
+      severity: "CRITICAL",
+      equipment_id: "ETCH-02",
+      chamber_id: "CH-B",
+      run_id: runId,
+      rule_code: "FDC-RULE-SPC-UCL-01",
+      message: `Chamber Pressure and Signal Spike Detected at step T7 (> UCL 65.0 a.u., measured ${t7Rel} a.u., ${t7Prs} mTorr)`,
+      status: "ACTIVE",
+      event_time_utc: "2026-10-15T00:00:35.000Z",
+      candidate_lot: lotId,
+      candidate_wafers: ["W-08", "W-09", "W-10", "W-11", "W-12"]
+    }
+  ];
+
+  const wafers: WaferItem[] = Array.from({ length: 25 }, (_, i) => {
+    const slot = i + 1;
+    const wafer_id = `W-${slot < 10 ? '0' + slot : slot}`;
+    let status: WaferItem['exposure_status'] = 'NOT_EXPOSED';
+    if (slot <= 7) status = 'CONFIRMED_EXPOSED';
+    else if (slot >= 8 && slot <= 12) status = 'CANDIDATE_EXPOSED';
+    return {
+      wafer_id,
+      lot_id: lotId,
+      slot_number: slot,
+      sequence: slot,
+      exposure_status: status
+    };
+  });
+
+  const summary: DemoSummary = {
     equipment_id: "ETCH-02",
     chamber_id: "CH-B",
-    run_id: "RUN-DEMO-044",
-    rule_code: "FDC-SPC-001",
-    message: "Chamber Pressure and Signal Spike Detected at step T7 (> UCL 65.0 a.u.)",
-    status: "ACTIVE",
-    event_time_utc: "2026-10-15T00:00:35.000Z",
-    candidate_lot: "LOT-DEMO-801",
-    candidate_wafers: ["W-08", "W-09", "W-10", "W-11", "W-12"]
-  }
-];
-
-const FIXTURE_WAFERS: WaferItem[] = Array.from({ length: 25 }, (_, i) => {
-  const slot = i + 1;
-  const wafer_id = `W-${slot < 10 ? '0' + slot : slot}`;
-  let status: WaferItem['exposure_status'] = 'NOT_EXPOSED';
-  if (slot <= 7) status = 'CONFIRMED_EXPOSED';
-  else if (slot >= 8 && slot <= 12) status = 'CANDIDATE_EXPOSED';
-  return {
-    wafer_id,
-    lot_id: "LOT-DEMO-801",
-    slot_number: slot,
-    sequence: slot,
-    exposure_status: status
+    active_session_id: `SES-DEMO-${seed}`,
+    active_run_id: runId,
+    lot_id: lotId,
+    recipe_id: "RCP-ETCH-POLY-04",
+    total_wafers: 25,
+    exposed_wafers: 7,
+    active_alerts_count: 1,
+    latest_pressure_mtorr: t7Prs,
+    latest_rf_power_w: t7Rf,
+    latest_relative_signal: t7Rel,
+    mode: "A",
+    data_origin: "synthetic"
   };
-});
 
-const DEFAULT_SUMMARY: DemoSummary = {
-  equipment_id: "ETCH-02",
-  chamber_id: "CH-B",
-  active_session_id: "SES-DEMO-20261015-01",
-  active_run_id: "RUN-DEMO-044",
-  lot_id: "LOT-DEMO-801",
-  recipe_id: "RCP-ETCH-POLY-04",
-  total_wafers: 25,
-  exposed_wafers: 7,
-  active_alerts_count: 1,
-  latest_pressure_mtorr: 168.5,
-  latest_rf_power_w: 895.0,
-  latest_relative_signal: 80.0,
-  mode: "A",
-  data_origin: "synthetic"
-};
+  const investigation: InvestigationDetail = {
+    investigation_id: `INV-${alertId}`,
+    alert_id: alertId,
+    equipment_id: "ETCH-02",
+    chamber_id: "CH-B",
+    run_id: runId,
+    lot_id: lotId,
+    recipe_id: "RCP-ETCH-POLY-04",
+    event_time_utc: "2026-10-15T00:00:35.000Z",
+    anomaly_step: 7,
+    severity: "CRITICAL",
+    rule_code: "FDC-RULE-SPC-UCL-01",
+    status: "UNDER_INVESTIGATION",
+    evidence_sensors: [
+      {
+        sensor_id: "RELATIVE_SIGNAL",
+        sensor_name: "광학 발광 상대 신호 (OES Relative Signal)",
+        measured_value: t7Rel,
+        unit: "a.u.",
+        quality_flag: "SUSPECT",
+        ucl_threshold: 65.0,
+        target_value: 50.0,
+        deviation_percent: +(((t7Rel - 65.0) / 65.0) * 100.0).toFixed(1)
+      },
+      {
+        sensor_id: "CHAMBER_PRESSURE",
+        sensor_name: "챔버 공정 진공 압력 (Capacitance Manometer)",
+        measured_value: t7Prs,
+        unit: "mTorr",
+        quality_flag: "SUSPECT",
+        ucl_threshold: 140.0,
+        target_value: 120.0,
+        deviation_percent: +(((t7Prs - 140.0) / 140.0) * 100.0).toFixed(1)
+      },
+      {
+        sensor_id: "RF_POWER",
+        sensor_name: "RF 플라즈마 전원 출력 (RF Generator Forward Power)",
+        measured_value: t7Rf,
+        unit: "W",
+        quality_flag: "SUSPECT",
+        ucl_threshold: 1650.0,
+        target_value: 1500.0,
+        deviation_percent: +(((t7Rf - 1650.0) / 1650.0) * 100.0).toFixed(1)
+      }
+    ],
+    total_wafers: 25,
+    confirmed_exposed_wafers: ["W-01", "W-02", "W-03", "W-04", "W-05", "W-06", "W-07"],
+    candidate_exposed_wafers: ["W-08", "W-09", "W-10", "W-11", "W-12"],
+    unexposed_wafers_count: 13,
+    disclaimer: "※ [품질 분석 가이드라인] 센서 이상 계측(FDC Spike)은 식각 챔버 내 공정 조건 일탈(Excursion) 감지이며, 웨이퍼의 물리적 결함(Defect) 확정 원인이 아닙니다. 결함 확정은 후속 계측(Defect Review / EDS)을 통한 교차 분석이 필수적입니다.",
+    recommended_dispositions: [
+      "[장비 조치] CH-B 챔버 일시 공정 인터록 및 쿼츠 링/RF 정합 회로 점검",
+      "[품질 조치] 잠재 영향군(W-08~W-12) 결함 검측(Defect Inspection) 우선 배정",
+      "[공정 승인] 로트 처리 보류(Hold) 등록 및 수석 엔지니어 검토 대기"
+    ]
+  };
+
+  return { summary, samples, alerts, wafers, investigation };
+}
+
+const DEFAULT_FIXTURE = generateModeAFixture(20261015);
 
 export default function FabOneDemoPage() {
   const [mode, setMode] = useState<'A' | 'B'>('A');
   const [backendAvailable, setBackendAvailable] = useState<boolean>(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState<boolean>(false);
-  const [summary, setSummary] = useState<DemoSummary>(DEFAULT_SUMMARY);
-  const [samples, setSamples] = useState<SensorSample[]>(FIXTURE_SAMPLES);
-  const [alerts, setAlerts] = useState<FdcAlert[]>(FIXTURE_ALERTS);
-  const [wafers, setWafers] = useState<WaferItem[]>(FIXTURE_WAFERS);
+  const [summary, setSummary] = useState<DemoSummary>(DEFAULT_FIXTURE.summary);
+  const [samples, setSamples] = useState<SensorSample[]>(DEFAULT_FIXTURE.samples);
+  const [alerts, setAlerts] = useState<FdcAlert[]>(DEFAULT_FIXTURE.alerts);
+  const [wafers, setWafers] = useState<WaferItem[]>(DEFAULT_FIXTURE.wafers);
+  const [investigationData, setInvestigationData] = useState<InvestigationDetail | null>(DEFAULT_FIXTURE.investigation);
+  const [selectedAlert, setSelectedAlert] = useState<FdcAlert | null>(DEFAULT_FIXTURE.alerts[0]);
+  const [isInvestigationOpen, setIsInvestigationOpen] = useState<boolean>(true);
 
   // Playback timeline state
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [selectedSensor, setSelectedSensor] = useState<'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE'>('RELATIVE_SIGNAL');
-  const [selectedWafer, setSelectedWafer] = useState<WaferItem | null>(FIXTURE_WAFERS[7]); // W-08 default candidate
+  const [selectedWafer, setSelectedWafer] = useState<WaferItem | null>(DEFAULT_FIXTURE.wafers[7]); // W-08 default candidate
   const [isAnomalyActive, setIsAnomalyActive] = useState<boolean>(false);
   const [seed, setSeed] = useState<number>(20261015);
   const [noticeMessage, setNoticeMessage] = useState<string>("FAB ONE 식각 공정 시뮬레이터 준비 완료");
 
   // Centralized fallback to Mode A
   const fallbackToModeA = useCallback((errorMsg: string) => {
+    const fixture = generateModeAFixture(seed);
     setMode('A');
     setBackendAvailable(false);
     setConnectionError(errorMsg);
-    setSummary(DEFAULT_SUMMARY);
-    setSamples(FIXTURE_SAMPLES);
-    setAlerts(FIXTURE_ALERTS);
-    setWafers(FIXTURE_WAFERS);
+    setSummary(fixture.summary);
+    setSamples(fixture.samples);
+    setAlerts(fixture.alerts);
+    setWafers(fixture.wafers);
+    setInvestigationData(fixture.investigation);
     setNoticeMessage(`⚠️ ${errorMsg} - Mode A 로컬 합성 픽스처로 안전하게 전환되었습니다.`);
-  }, []);
+  }, [seed]);
 
-  const loadBackendData = useCallback(async () => {
+  const loadBackendData = useCallback(async (): Promise<boolean> => {
     try {
-      const [sumRes, alertRes, waferRes] = await Promise.all([
+      const [sumRes, alertRes, waferRes, invRes] = await Promise.all([
         fetch("http://localhost:8000/api/v1/demo/summary", { cache: "no-store" }),
         fetch("http://localhost:8000/api/v1/demo/alerts", { cache: "no-store" }),
         fetch("http://localhost:8000/api/v1/demo/wafers", { cache: "no-store" }),
+        fetch("http://localhost:8000/api/v1/demo/investigation", { cache: "no-store" }),
       ]);
 
       if (!sumRes.ok || !alertRes.ok || !waferRes.ok) {
         fallbackToModeA(`서버 응답 오류 (HTTP summary:${sumRes.status}, alerts:${alertRes.status}, wafers:${waferRes.status})`);
-        return;
+        return false;
       }
 
       const sumData: DemoSummary = await sumRes.json();
       const alertData: FdcAlert[] = await alertRes.json();
       const waferData: WaferItem[] = await waferRes.json();
+      let invData: InvestigationDetail | null = null;
+      if (invRes.ok) {
+        invData = await invRes.json();
+      }
 
       const sampleRes = await fetch(`http://localhost:8000/api/v1/demo/runs/${sumData.active_run_id}/samples`, { cache: "no-store" });
       if (!sampleRes.ok) {
         fallbackToModeA(`시계열 센서 로드 실패 (HTTP ${sampleRes.status})`);
-        return;
+        return false;
       }
       const sampleData: SensorSample[] = await sampleRes.json();
 
@@ -182,11 +308,14 @@ export default function FabOneDemoPage() {
       setAlerts(alertData);
       setWafers(waferData);
       setSamples(sampleData);
+      if (invData) setInvestigationData(invData);
       setMode('B');
       setBackendAvailable(true);
       setConnectionError(null);
+      return true;
     } catch {
       fallbackToModeA("백엔드 통신 실패 (네트워크 단절)");
+      return false;
     }
   }, [fallbackToModeA]);
 
@@ -223,6 +352,9 @@ export default function FabOneDemoPage() {
         setCurrentStep(prev => {
           if (prev >= 7) {
             setIsPlaying(false);
+            setIsAnomalyActive(true);
+            setIsInvestigationOpen(true);
+            if (alerts.length > 0) setSelectedAlert(alerts[0]);
             return 7;
           }
           return prev + 1;
@@ -232,7 +364,7 @@ export default function FabOneDemoPage() {
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isPlaying]);
+  }, [isPlaying, alerts]);
 
   // Filter current series
   const filteredSamples = useMemo(() => {
@@ -249,7 +381,7 @@ export default function FabOneDemoPage() {
     const currentSampleForSelected = filteredSamples.find(s => s.step_index === currentStep);
     if (currentStep === 7) {
       setIsAnomalyActive(true);
-      setNoticeMessage(`경고: T7 시점 센서 급증 이상 발생! FDC-SPC-001 알람 트리거됨 (${selectedSensor}: ${currentSampleForSelected?.measured_value ?? '-'} ${currentSampleForSelected?.unit || ''}).`);
+      setNoticeMessage(`경고: T7 시점 센서 급증 이상 발생! FDC-RULE-SPC-UCL-01 알람 트리거됨 (${selectedSensor}: ${currentSampleForSelected?.measured_value ?? '-'} ${currentSampleForSelected?.unit || ''}).`);
     } else if (currentSampleForSelected?.quality_flag === 'MISSING' || currentSampleForSelected?.measured_value === null) {
       setIsAnomalyActive(false);
       setNoticeMessage(`시점 T${currentStep}: ${selectedSensor} 데이터 결측(MISSING). 0으로 보간하지 않고 단절 처리.`);
@@ -277,8 +409,10 @@ export default function FabOneDemoPage() {
           })
         });
         if (res.ok) {
-          await loadBackendData();
-          setNoticeMessage(`Mode B: 실시간 시뮬레이션 시작 (Seed: ${seed}, T0 ~ T7 재생)`);
+          const loaded = await loadBackendData();
+          if (loaded) {
+            setNoticeMessage(`Mode B: 실시간 시뮬레이션 시작 (Seed: ${seed}, T0 ~ T7 재생)`);
+          }
         } else {
           fallbackToModeA(`새 데모 Run 생성 실패 (HTTP ${res.status})`);
         }
@@ -308,7 +442,9 @@ export default function FabOneDemoPage() {
     setIsPlaying(false);
     setCurrentStep(7);
     setIsAnomalyActive(true);
-    setNoticeMessage("이상 구간 탐색: T7 스파이크 시점으로 즉시 이동. 영향 가능 Lot/Wafer 후보군(W-08~W-12) 집중 표시.");
+    setIsInvestigationOpen(true);
+    if (alerts.length > 0) setSelectedAlert(alerts[0]);
+    setNoticeMessage("이상 구간 탐색: T7 스파이크 시점으로 즉시 이동. 영향 가능 Lot/Wafer 후보군(W-08~W-12) 및 엔지니어링 조사 패널 활성화.");
 
     if (mode === 'B') {
       try {
@@ -320,6 +456,14 @@ export default function FabOneDemoPage() {
         fallbackToModeA("이상 탐색 API 요청 중 서버 응답 없음");
       }
     }
+  };
+
+  const handleSelectAlert = (alert: FdcAlert) => {
+    setSelectedAlert(alert);
+    setIsInvestigationOpen(true);
+    setCurrentStep(7);
+    setIsAnomalyActive(true);
+    setNoticeMessage(`엔지니어링 조사: [${alert.severity}] ${alert.alert_id} (${alert.rule_code}) 세부 근거 및 영향 웨이퍼 분석 열림`);
   };
 
   const handleChangeSeed = async () => {
@@ -342,8 +486,10 @@ export default function FabOneDemoPage() {
           })
         });
         if (res.ok) {
-          await loadBackendData();
-          setNoticeMessage(`Mode B: 새 난수 시드(Seed: ${nextSeed}) 적용 및 백엔드 재합성 완료.`);
+          const loaded = await loadBackendData();
+          if (loaded) {
+            setNoticeMessage(`Mode B: 새 난수 시드(Seed: ${nextSeed}) 적용 및 백엔드 재합성 완료.`);
+          }
         } else {
           fallbackToModeA(`시드 변경 실패 (HTTP ${res.status})`);
         }
@@ -351,7 +497,15 @@ export default function FabOneDemoPage() {
         fallbackToModeA("시드 변경 중 서버 응답 없음");
       }
     } else {
-      setNoticeMessage(`Mode A: 시드(Seed: ${nextSeed}) 설정됨.`);
+      const fixture = generateModeAFixture(nextSeed);
+      setSummary(fixture.summary);
+      setSamples(fixture.samples);
+      setAlerts(fixture.alerts);
+      setWafers(fixture.wafers);
+      setInvestigationData(fixture.investigation);
+      setSelectedAlert(fixture.alerts[0] || null);
+      setSelectedWafer(fixture.wafers[7]);
+      setNoticeMessage(`Mode A: 난수 시드(Seed: ${nextSeed}) 기반 로컬 합성 데이터 동적 재합성 완료 (계측값·Lot ${fixture.summary.lot_id} 갱신).`);
     }
   };
 
@@ -919,63 +1073,247 @@ export default function FabOneDemoPage() {
               <div className="card-header-row">
                 <div>
                   <h2 className="card-title">FDC 이상 감지 알람 (Alerts)</h2>
-                  <p className="card-subtitle">발생한 이상 징후 및 잠재 영향 웨이퍼 추적 목록</p>
+                  <p className="card-subtitle">발생한 이상 징후 및 잠재 영향 웨이퍼 추적 목록 (클릭하여 엔지니어링 조사 연동)</p>
                 </div>
-                <span className="pill pill-danger">
-                  활성 알람 {alerts.length}건
-                </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span className="pill pill-danger">
+                    활성 알람 {alerts.length}건
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ fontSize: '11px', padding: '3px 8px' }}
+                    onClick={() => setIsInvestigationOpen(!isInvestigationOpen)}
+                  >
+                    {isInvestigationOpen ? "조사 패널 접기 ▲" : "조사 패널 열기 ▼"}
+                  </button>
+                </div>
               </div>
 
-              {alerts.map(alert => (
-                <div key={alert.alert_id} className="alert-card-item">
-                  <div className="alert-header">
-                    <span className="alert-title">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                      </svg>
-                      [{alert.severity}] {alert.alert_id} · {alert.rule_code}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn-danger-outline"
-                      style={{ padding: '3px 10px', fontSize: '11px' }}
-                      onClick={handleSeekAnomaly}
-                    >
-                      이상 구간으로 이동 →
-                    </button>
-                  </div>
-                  <div className="alert-desc">{alert.message}</div>
-                  <div className="alert-meta">
-                    <span>장비: <strong>{alert.equipment_id} / {alert.chamber_id}</strong></span>
-                    <span>시각: {alert.event_time_utc}</span>
-                    <span>영향 Lot: <strong>{alert.candidate_lot || 'N/A'}</strong></span>
-                  </div>
-                  {alert.candidate_wafers && alert.candidate_wafers.length > 0 && (
-                    <div style={{ marginTop: '8px' }}>
-                      <span style={{ fontSize: '11px', color: '#6B7280', marginRight: '6px' }}>
-                        잠재 노출 후보 웨이퍼 ({alert.candidate_wafers.length}매):
+              {alerts.map(alert => {
+                const isSelected = selectedAlert?.alert_id === alert.alert_id;
+                return (
+                  <div
+                    key={alert.alert_id}
+                    id={`alert-card-${alert.alert_id}`}
+                    className={`alert-card-item ${isSelected ? 'selected' : ''}`}
+                    onClick={() => handleSelectAlert(alert)}
+                    style={{ cursor: 'pointer' }}
+                    title="클릭 시 해당 알람을 기반으로 엔지니어링 조사를 시작하고 T7 이상 시점으로 이동합니다"
+                  >
+                    <div className="alert-header">
+                      <span className="alert-title">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="12" y1="8" x2="12" y2="12"></line>
+                          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        [{alert.severity}] {alert.alert_id} · {alert.rule_code}
                       </span>
-                      <div className="affected-tag-list">
-                        {alert.candidate_wafers.map(wId => (
-                          <span
-                            key={wId}
-                            className="affected-tag"
-                            style={{ cursor: 'pointer' }}
-                            onClick={() => {
-                              const found = wafers.find(w => w.wafer_id === wId);
-                              if (found) setSelectedWafer(found);
-                            }}
-                          >
-                            {wId}
-                          </span>
-                        ))}
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          className="btn-danger-outline"
+                          style={{ padding: '3px 10px', fontSize: '11px' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSeekAnomaly();
+                          }}
+                        >
+                          T7 시점으로 이동 →
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ padding: '3px 10px', fontSize: '11px' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectAlert(alert);
+                          }}
+                        >
+                          조사 상세 {isSelected && isInvestigationOpen ? "닫기" : "보기"} ↓
+                        </button>
                       </div>
                     </div>
-                  )}
+                    <div className="alert-desc">{alert.message}</div>
+                    <div className="alert-meta">
+                      <span>장비: <strong>{alert.equipment_id} / {alert.chamber_id}</strong></span>
+                      <span>시각: {alert.event_time_utc}</span>
+                      <span>영향 Lot: <strong>{alert.candidate_lot || 'N/A'}</strong></span>
+                    </div>
+                    {alert.candidate_wafers && alert.candidate_wafers.length > 0 && (
+                      <div style={{ marginTop: '8px' }}>
+                        <span style={{ fontSize: '11px', color: '#6B7280', marginRight: '6px' }}>
+                          잠재 노출 후보 웨이퍼 ({alert.candidate_wafers.length}매):
+                        </span>
+                        <div className="affected-tag-list">
+                          {alert.candidate_wafers.map(wId => (
+                            <span
+                              key={wId}
+                              className="affected-tag"
+                              style={{ cursor: 'pointer' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const found = wafers.find(w => w.wafer_id === wId);
+                                if (found) setSelectedWafer(found);
+                              }}
+                            >
+                              {wId}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Engineering Investigation Panel (BUILD-02) */}
+              {isInvestigationOpen && investigationData && (
+                <div id="engineering-investigation-panel" className="investigation-panel">
+                  <div className="investigation-header-row">
+                    <div className="investigation-title-wrap">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B9F78" strokeWidth="2.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                      </svg>
+                      <div>
+                        <h3 className="investigation-title">엔지니어링 공정 이상 조사 (Engineering Investigation)</h3>
+                        <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                          대상 알람: <strong>{investigationData.alert_id}</strong> ({investigationData.rule_code}) · 관리 시점 T{investigationData.anomaly_step}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="pill" style={{ background: '#FEF3C7', color: '#B45309', borderColor: '#FCD34D' }}>
+                        {investigationData.status === 'UNDER_INVESTIGATION' ? '조사 진행 중 (Under Investigation)' : investigationData.status}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ padding: '3px 8px', fontSize: '11px' }}
+                        onClick={() => setIsInvestigationOpen(false)}
+                      >
+                        닫기 ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Domain Disclaimer Banner (Explicit requirement: Do not describe sensor anomaly as confirmed defect) */}
+                  <div className="investigation-disclaimer">
+                    <strong>품질 분석 가이드라인:</strong> {investigationData.disclaimer}
+                  </div>
+
+                  {/* Context Meta Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', padding: '10px 12px', background: '#F8FAFC', borderRadius: '8px', fontSize: '11px' }}>
+                    <div>장비/챔버: <strong>{investigationData.equipment_id} / {investigationData.chamber_id}</strong></div>
+                    <div>공정 Run: <strong>{investigationData.run_id}</strong></div>
+                    <div>소속 Lot: <strong>{investigationData.lot_id}</strong></div>
+                    <div>적용 Recipe: <strong>{investigationData.recipe_id}</strong></div>
+                  </div>
+
+                  {/* 3 Metric Evidence Cards */}
+                  <div style={{ marginTop: '14px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                      이상 시점(T{investigationData.anomaly_step}) 센서 계측 근거 (클릭 시 차트 연동 전환):
+                    </div>
+                    <div className="metric-evidence-grid">
+                      {investigationData.evidence_sensors.map(ev => {
+                        const isSensorSelected = selectedSensor === ev.sensor_id;
+                        return (
+                          <div
+                            key={ev.sensor_id}
+                            className="evidence-card"
+                            style={{
+                              borderColor: isSensorSelected ? '#0B9F78' : '#E2E8F0',
+                              borderWidth: isSensorSelected ? '2px' : '1px',
+                              cursor: (ev.sensor_id === 'RELATIVE_SIGNAL' || ev.sensor_id === 'CHAMBER_PRESSURE') ? 'pointer' : 'default',
+                              background: isSensorSelected ? '#F0FDF4' : '#F8FAFC'
+                            }}
+                            onClick={() => {
+                              if (ev.sensor_id === 'RELATIVE_SIGNAL' || ev.sensor_id === 'CHAMBER_PRESSURE') {
+                                setSelectedSensor(ev.sensor_id);
+                                setCurrentStep(7);
+                              }
+                            }}
+                            title="클릭 시 좌측 시계열 트렌드 차트에 해당 센서를 표시합니다"
+                          >
+                            <div className="evidence-label">{ev.sensor_name}</div>
+                            <div className="evidence-val-row">
+                              <span className="evidence-val">{ev.measured_value} {ev.unit}</span>
+                              <span className="evidence-delta-pill">+{ev.deviation_percent}%</span>
+                            </div>
+                            <div className="evidence-sub">
+                              UCL 한계: {ev.ucl_threshold} {ev.unit} · Target: {ev.target_value} {ev.unit}
+                            </div>
+                            <div style={{ fontSize: '10px', color: '#64748B', display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                              <span>품질 플래그: <strong>{ev.quality_flag}</strong></span>
+                              {isSensorSelected && <span style={{ color: '#0B9F78', fontWeight: 700 }}>✓ 차트 표시 중</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Impact Wafer Breakdown */}
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
+                        카세트 웨이퍼 영향 구간 구분 (총 {investigationData.total_wafers}매):
+                      </div>
+                      <span style={{ fontSize: '11px', color: '#64748B' }}>
+                        노출 확정 {investigationData.confirmed_exposed_wafers.length}매 · 잠재 후보 {investigationData.candidate_exposed_wafers.length}매 · 미노출 {investigationData.unexposed_wafers_count}매
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: '8px' }}>
+                      <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>
+                        잠재 영향 후보군 (Candidate Exposed - 클릭 시 우측 카세트 슬롯 상세 확인):
+                      </div>
+                      <div className="candidate-wafers-strip">
+                        {investigationData.candidate_exposed_wafers.map(wId => {
+                          const isWaferActive = selectedWafer?.wafer_id === wId;
+                          return (
+                            <button
+                              key={wId}
+                              type="button"
+                              id={`investigation-wafer-btn-${wId}`}
+                              className={`candidate-wafer-btn ${isWaferActive ? 'active' : ''}`}
+                              onClick={() => {
+                                const found = wafers.find(w => w.wafer_id === wId);
+                                if (found) setSelectedWafer(found);
+                              }}
+                            >
+                              <span>{wId}</span>
+                              <span style={{ fontSize: '9px', opacity: 0.8 }}>
+                                #{wafers.find(w => w.wafer_id === wId)?.slot_number}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Recommended Dispositions */}
+                  <div style={{ marginTop: '16px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                      엔지니어 권고 조치 (Recommended Engineering Dispositions):
+                    </div>
+                    <div className="disposition-list">
+                      {investigationData.recommended_dispositions.map((disp, idx) => (
+                        <div key={idx} className="disposition-item">
+                          <span>{disp}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              ))}
+              )}
             </section>
           </div>
 

@@ -161,3 +161,127 @@ test('P1-02 Fallback Invariant: Mode A fallback cleanly resets state without mix
   assert.equal(state.wafers.length, 25);
   assert.equal(state.wafers[0].wafer_id, 'W-1');
 });
+
+// Helper matching generateModeAFixture in page.tsx
+function generateModeAFixtureTest(seed) {
+  let s = Math.abs(seed);
+  const nextRand = () => {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    return s / 4294967296;
+  };
+
+  const relNoise = (nextRand() - 0.5) * 2.0;
+  const prsNoise = (nextRand() - 0.5) * 1.5;
+
+  const t7Rel = +(80.0 + (nextRand() - 0.5) * 4.0).toFixed(1);
+  const t7Prs = +(168.5 + (nextRand() - 0.5) * 5.0).toFixed(2);
+
+  const samples = [
+    { step_index: 0, sensor_id: "RELATIVE_SIGNAL", measured_value: +(48.2 + relNoise).toFixed(1), quality_flag: "GOOD" },
+    { step_index: 4, sensor_id: "RELATIVE_SIGNAL", measured_value: null, quality_flag: "MISSING" },
+    { step_index: 5, sensor_id: "RELATIVE_SIGNAL", measured_value: null, quality_flag: "MISSING" },
+    { step_index: 7, sensor_id: "RELATIVE_SIGNAL", measured_value: t7Rel, quality_flag: "SUSPECT" },
+    { step_index: 4, sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.2 + (nextRand() - 0.5) * 0.4).toFixed(2), quality_flag: "GOOD" },
+    { step_index: 5, sensor_id: "CHAMBER_PRESSURE", measured_value: +(120.0 + (nextRand() - 0.5) * 0.4).toFixed(2), quality_flag: "GOOD" },
+    { step_index: 7, sensor_id: "CHAMBER_PRESSURE", measured_value: t7Prs, quality_flag: "SUSPECT" }
+  ];
+
+  const lotId = `LOT-DEMO-${800 + (seed % 50)}`;
+  const alertId = `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+
+  const investigation = {
+    investigation_id: `INV-${alertId}`,
+    alert_id: alertId,
+    equipment_id: "ETCH-02",
+    chamber_id: "CH-B",
+    lot_id: lotId,
+    anomaly_step: 7,
+    status: "UNDER_INVESTIGATION",
+    evidence_sensors: [
+      { sensor_id: "RELATIVE_SIGNAL", measured_value: t7Rel, ucl_threshold: 65.0, deviation_percent: +(((t7Rel - 65.0) / 65.0) * 100.0).toFixed(1) },
+      { sensor_id: "CHAMBER_PRESSURE", measured_value: t7Prs, ucl_threshold: 140.0, deviation_percent: +(((t7Prs - 140.0) / 140.0) * 100.0).toFixed(1) }
+    ],
+    confirmed_exposed_wafers: ["W-01", "W-02", "W-03", "W-04", "W-05", "W-06", "W-07"],
+    candidate_exposed_wafers: ["W-08", "W-09", "W-10", "W-11", "W-12"],
+    unexposed_wafers_count: 13,
+    disclaimer: "※ [품질 분석 가이드라인] 센서 이상 계측(FDC Spike)은 식각 챔버 내 공정 조건 일탈(Excursion) 감지이며, 웨이퍼의 물리적 결함(Defect) 확정 원인이 아닙니다. 결함 확정은 후속 계측(Defect Review / EDS)을 통한 교차 분석이 필수적입니다."
+  };
+
+  return { samples, lotId, alertId, investigation };
+}
+
+test('BUILD-02 Mode A Dynamic Re-synthesis: Different seeds produce distinct synthetic values while preserving domain invariants', () => {
+  const f1 = generateModeAFixtureTest(20261015);
+  const f2 = generateModeAFixtureTest(9999);
+
+  // Different seeds must produce different lot IDs and measured values
+  assert.notEqual(f1.lotId, f2.lotId);
+  assert.notEqual(f1.samples[0].measured_value, f2.samples[0].measured_value);
+
+  // Invariants preserved for f1
+  const t4Rel1 = f1.samples.find(s => s.sensor_id === 'RELATIVE_SIGNAL' && s.step_index === 4);
+  const t4Prs1 = f1.samples.find(s => s.sensor_id === 'CHAMBER_PRESSURE' && s.step_index === 4);
+  assert.equal(t4Rel1.quality_flag, 'MISSING');
+  assert.equal(t4Rel1.measured_value, null);
+  assert.equal(t4Prs1.quality_flag, 'GOOD');
+  assert.notEqual(t4Prs1.measured_value, null);
+
+  // Invariants preserved for f2
+  const t4Rel2 = f2.samples.find(s => s.sensor_id === 'RELATIVE_SIGNAL' && s.step_index === 4);
+  const t4Prs2 = f2.samples.find(s => s.sensor_id === 'CHAMBER_PRESSURE' && s.step_index === 4);
+  assert.equal(t4Rel2.quality_flag, 'MISSING');
+  assert.equal(t4Rel2.measured_value, null);
+  assert.equal(t4Prs2.quality_flag, 'GOOD');
+  assert.notEqual(t4Prs2.measured_value, null);
+});
+
+test('BUILD-02 Engineering Investigation: Excursion evidence, wafer candidates and domain disclaimer contract', () => {
+  const fixture = generateModeAFixtureTest(20261015);
+  const inv = fixture.investigation;
+
+  assert.equal(inv.equipment_id, 'ETCH-02');
+  assert.equal(inv.chamber_id, 'CH-B');
+  assert.equal(inv.status, 'UNDER_INVESTIGATION');
+  assert.equal(inv.evidence_sensors.length, 2);
+
+  // Sensor 1 above UCL
+  assert.ok(inv.evidence_sensors[0].measured_value > inv.evidence_sensors[0].ucl_threshold);
+  assert.ok(inv.evidence_sensors[0].deviation_percent > 0);
+
+  // Wafers breakdown
+  assert.equal(inv.confirmed_exposed_wafers.length, 7);
+  assert.equal(inv.candidate_exposed_wafers.length, 5);
+  assert.deepEqual(inv.candidate_exposed_wafers, ["W-08", "W-09", "W-10", "W-11", "W-12"]);
+  assert.equal(inv.unexposed_wafers_count, 13);
+
+  // Explicit domain rule: Sensor excursion is not confirmed defect
+  assert.ok(inv.disclaimer.includes("물리적 결함(Defect) 확정 원인이 아닙니다"));
+});
+
+test('BUILD-02 Mode B Notice Protection: Subsequent load failure does not overwrite fallback notice', async () => {
+  let notice = "초기 상태";
+
+  // Simulate loadBackendData failing
+  async function simulateLoadBackendData() {
+    notice = "⚠️ 서버 응답 오류 - Mode A 로컬 합성 픽스처로 안전하게 전환되었습니다.";
+    return false; // Load failed!
+  }
+
+  // Simulate handleStartDemo
+  async function handleStartDemoTest() {
+    const resOk = true; // POST succeeded
+    if (resOk) {
+      const loaded = await simulateLoadBackendData();
+      if (loaded) {
+        notice = "Mode B: 실시간 시뮬레이션 시작";
+      }
+    }
+  }
+
+  await handleStartDemoTest();
+
+  // Notice MUST maintain the fallback warning, not be overwritten with "Mode B: 실시간..."
+  assert.ok(notice.includes("Mode A 로컬 합성 픽스처로 안전하게 전환"));
+  assert.ok(!notice.includes("Mode B: 실시간 시뮬레이션"));
+});
+

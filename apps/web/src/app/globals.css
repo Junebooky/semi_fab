@@ -493,6 +493,18 @@ button:focus-visible, input:focus-visible {
   border-radius: var(--radius-sm);
   padding: 14px 16px;
   margin-bottom: 12px;
+  transition: all 0.2s ease;
+}
+
+.alert-card-item:hover {
+  border-color: #F87171;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.08);
+}
+
+.alert-card-item.selected {
+  border-color: #DC2626;
+  background: #FEF2F2;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
 }
 
 .alert-header {
@@ -541,6 +553,152 @@ button:focus-visible, input:focus-visible {
   font-weight: 700;
   padding: 2px 7px;
   border-radius: 4px;
+}
+
+/* Engineering Investigation Panel (BUILD-02) */
+.investigation-panel {
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin-top: 16px;
+  box-shadow: var(--shadow-md);
+  border-left: 4px solid #0B9F78;
+}
+
+.investigation-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+
+.investigation-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.investigation-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0F172A;
+  margin: 0;
+}
+
+.metric-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.evidence-card {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.evidence-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748B;
+}
+
+.evidence-val-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.evidence-val {
+  font-size: 17px;
+  font-weight: 800;
+  color: #DC2626;
+}
+
+.evidence-delta-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #FEE2E2;
+  color: #991B1B;
+}
+
+.evidence-sub {
+  font-size: 10px;
+  color: #94A3B8;
+}
+
+.investigation-disclaimer {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #92400E;
+  margin: 14px 0;
+}
+
+.candidate-wafers-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.candidate-wafer-btn {
+  background: #FFFFFF;
+  border: 1px solid #FECACA;
+  color: #991B1B;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.candidate-wafer-btn:hover {
+  background: #FEE2E2;
+  border-color: #F87171;
+}
+
+.candidate-wafer-btn.active {
+  background: #DC2626;
+  border-color: #DC2626;
+  color: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.25);
+}
+
+.disposition-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.disposition-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #334155;
+  background: #F8FAFC;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid #0B9F78;
 }
 
 /* Right Side Illustration & Chamber Details */

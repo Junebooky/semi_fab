@@ -59,3 +59,35 @@ class SummaryResponse(BaseModel):
     latest_relative_signal: Optional[float]
     mode: str = "B"
     data_origin: str = "synthetic"
+
+class SensorEvidence(BaseModel):
+    sensor_id: str
+    sensor_name: str
+    measured_value: float
+    unit: str
+    quality_flag: str
+    ucl_threshold: float
+    target_value: float
+    deviation_percent: float
+
+class InvestigationDetail(BaseModel):
+    investigation_id: str
+    alert_id: str
+    equipment_id: str
+    chamber_id: str
+    run_id: str
+    lot_id: str
+    recipe_id: str
+    event_time_utc: str
+    anomaly_step: int
+    severity: str
+    rule_code: str
+    status: str
+    evidence_sensors: List[SensorEvidence]
+    total_wafers: int
+    confirmed_exposed_wafers: List[str]
+    candidate_exposed_wafers: List[str]
+    unexposed_wafers_count: int
+    disclaimer: str
+    recommended_dispositions: List[str]
+
