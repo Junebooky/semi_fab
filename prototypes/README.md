@@ -175,41 +175,41 @@ The four groups validate: (a) CH-A missing fixture does not become CH-B evidence
 
 ## 9. A04 B08 confirmed contrast defect — A03 corrective handoff (2026-10-15)
 
-**Source:** [A04 Issue #12 QA result #6184534567](https://github.com/Junebooky/semi_fab/issues/12#issuecomment-6184534567), [A01 CHANGES_REQUESTED #6184556541](https://github.com/Junebooky/semi_fab/pull/11#issuecomment-6184556541). Original verified QA head was \`338a6f895093c0d5ebb93beedf38733238740d49\`. This correction changes PR #11 head; previous A04 browser PASS statuses **do not transfer** to the new commit.
+**Source:** [A04 Issue #12 QA result #6184534567](https://github.com/Junebooky/semi_fab/issues/12#issuecomment-6184534567), [A01 CHANGES_REQUESTED #6184556541](https://github.com/Junebooky/semi_fab/pull/11#issuecomment-6184556541). Original verified QA head was `338a6f895093c0d5ebb93beedf38733238740d49`. This correction changes PR #11 head; previous A04 browser PASS statuses **do not transfer** to the new commit.
 
 ### Precisely scoped correction
 
 Only the shared table header foreground value in [fab-one-issue-9.html](fab-one-issue-9.html) was changed:
 
-\`\`\`diff
+```diff
 -th{font-size:11px;font-weight:750;color:#718095;text-align:left;padding:13px 12px;border-bottom:1px solid var(--line-soft);background:#FCFDFE}
 +th{font-size:11px;font-weight:750;color:#59697F;text-align:left;padding:13px 12px;border-bottom:1px solid var(--line-soft);background:#FCFDFE}
-\`\`\`
+```
 
-**No** changes to heading font size, backgrounds, table density, responsive breakpoints, \`zoom\`, scroll width, focus colors, chart colors, simulation status, pure white \`#FFFFFF\` app/card background, or the illustration-only emerald asset palette/fallback slots.
+**No** changes to heading font size, backgrounds, table density, responsive breakpoints, `zoom`, scroll width, focus colors, chart colors, simulation status, pure white `#FFFFFF` app/card background, or the illustration-only emerald asset palette/fallback slots.
 
 ### Scope — tables and backgrounds
 
 | Surface | CSS selector/source | Text foreground | Background | Calculated contrast | 4.5:1 AA normal-text threshold |
 | --- | --- | --- | --- | ---: | --- |
-| Before fix, any table header | \`th\` | \`#718095\` | \`#FCFDFE\` | **3.9474:1 ≈ 3.95:1** | FAIL on prior head |
-| Alert queue header (Command Center) | shared \`th\` | \`#59697F\` | \`#FCFDFE\` | **5.4960:1 ≈ 5.50:1** | meets formula threshold; browser recheck pending |
-| Evidence sensor table header (Equipment) | shared \`th\` | \`#59697F\` | \`#FCFDFE\` | **5.4960:1 ≈ 5.50:1** | meets formula threshold; browser recheck pending |
-| Lot candidate table header (Traceability) | shared \`th\` | \`#59697F\` | \`#FCFDFE\` | **5.4960:1 ≈ 5.50:1** | meets formula threshold; browser recheck pending |
-| EKL formula variable table header (component stylesheet, **not currently rendered in prototype**) | \`th\` inherited under \`.var-table th\` | \`#59697F\` | \`#FCFDFE\` | **5.4960:1 ≈ 5.50:1** | source-level coverage; runtime NOT_RUN |
-| Same shared header foreground if rendered on pure white | shared color value | \`#59697F\` | \`#FFFFFF\` | **5.5972:1 ≈ 5.60:1** | meets formula threshold; browser recheck pending |
+| Before fix, any table header | `th` | `#718095` | `#FCFDFE` | **3.9474:1 ≈ 3.95:1** | FAIL on prior head |
+| Alert queue header (Command Center) | shared `th` | `#59697F` | `#FCFDFE` | **5.4960:1 ≈ 5.50:1** | meets formula threshold; browser recheck pending |
+| Evidence sensor table header (Equipment) | shared `th` | `#59697F` | `#FCFDFE` | **5.4960:1 ≈ 5.50:1** | meets formula threshold; browser recheck pending |
+| Lot candidate table header (Traceability) | shared `th` | `#59697F` | `#FCFDFE` | **5.4960:1 ≈ 5.50:1** | meets formula threshold; browser recheck pending |
+| EKL formula variable table header (component stylesheet, **not currently rendered in prototype**) | `th` inherited under `.var-table th` | `#59697F` | `#FCFDFE` | **5.4960:1 ≈ 5.50:1** | source-level coverage; runtime NOT_RUN |
+| Same shared header foreground if rendered on pure white | shared color value | `#59697F` | `#FFFFFF` | **5.5972:1 ≈ 5.60:1** | meets formula threshold; browser recheck pending |
 
-Audit: source HTML contains **three actual \`<table>\`/\`<thead>\` elements** (alert, sensor, Lot), all inherit \`th\` foreground/background; \`.var-table th,.var-table td\` sets alignment/padding only and does **not** override color/background. A future EKL variable table will inherit the same base \`th\` rule unless implementation adds an override requiring its own audit. Transparent/illustrative emerald assets do not affect these tables.
+Audit: source HTML contains **three actual `<table>`/`<thead>` elements** (alert, sensor, Lot), all inherit `th` foreground/background; `.var-table th,.var-table td` sets alignment/padding only and does **not** override color/background. A future EKL variable table will inherit the same base `th` rule unless implementation adds an override requiring its own audit. Transparent/illustrative emerald assets do not affect these tables.
 
-**Algorithm:** WCAG relative sRGB luminance converts channel \`c\` (0–255) to normalized \`s=c/255\`, then \`l=s/12.92\` for \`s<=0.04045\` else \`((s+0.055)/1.055)^2.4\`. Relative luminance is \`L=.2126R+.7152G+.0722B\`; contrast \`(max(L1,L2)+.05)/(min(L1,L2)+.05)\`. This is a **calculated source-pair result**, not proof of full rendered/browser WCAG compliance.
+**Algorithm:** WCAG relative sRGB luminance converts channel `c` (0–255) to normalized `s=c/255`, then `l=s/12.92` for `s<=0.04045` else `((s+0.055)/1.055)^2.4`. Relative luminance is `L=.2126R+.7152G+.0722B`; contrast `(max(L1,L2)+.05)/(min(L1,L2)+.05)`. This is a **calculated source-pair result**, not proof of full rendered/browser WCAG compliance.
 
 ### Reproduction and re-verification checklist
 
-1. Check out the **new PR #11 HEAD SHA** reported in the latest handoff comment. Compare the CSS shared \`th\` rule in \`prototypes/fab-one-issue-9.html\` to the diff above. Verify that all three actual tables and \`.var-table th\` are covered and there are no later color overrides.
-2. From the repository root, execute \`node --test prototypes/prototype-contract.test.mjs\`. The **fifth** test parses the actual shared CSS rule, computes sRGB contrast on \`#FCFDFE\` and \`#FFFFFF\`, checks original 3.95:1 and new 5.50:1/5.60:1, and asserts the three actual tables plus the EKL variable table style. Other four tests preserve alarm/fixture, missing values, EKL and owner asset invariants.
-3. In an **actual browser** (separate A04 QA gate): inspect \`th\` in Command Center alert table, Equipment sensor table, and Traceability Lot table. Verify DevTools **computed** \`color:rgb(89,105,127)\` and \`background-color:rgb(252,253,254)\`, then measure computed contrast by the WCAG formula. Verify any later \`th\` variants and disabled/hover state overrides rather than inheriting assumed values.
+1. Check out the **new PR #11 HEAD SHA** reported in the latest handoff comment. Compare the CSS shared `th` rule in `prototypes/fab-one-issue-9.html` to the diff above. Verify that all three actual tables and `.var-table th` are covered and there are no later color overrides.
+2. From the repository root, execute `node --test prototypes/prototype-contract.test.mjs`. The **fifth** test parses the actual shared CSS rule, computes sRGB contrast on `#FCFDFE` and `#FFFFFF`, checks original 3.95:1 and new 5.50:1/5.60:1, and asserts the three actual tables plus the EKL variable table style. Other four tests preserve alarm/fixture, missing values, EKL and owner asset invariants.
+3. In an **actual browser** (separate A04 QA gate): inspect `th` in Command Center alert table, Equipment sensor table, and Traceability Lot table. Verify DevTools **computed** `color:rgb(89,105,127)` and `background-color:rgb(252,253,254)`, then measure computed contrast by the WCAG formula. Verify any later `th` variants and disabled/hover state overrides rather than inheriting assumed values.
 4. For EKL formula variable table, no such table is currently rendered in this editable prototype: record **NOT_RUN** as a runtime component. The shared CSS is covered in the source-level contract test.
-5. Do **not** treat CSS \`body.style.zoom=4\` as native browser 400% zoom. A04's previous CSS zoom observation is **non-equivalent diagnostic**, NOT a confirmed defect; native browser 400% remains **NOT_RUN**. No layout changes made to address it.
-6. Preserve owner direction \`#FFFFFF\` backgrounds, emerald-only placeholder art \`illustration.wafer.v1\` and \`illustration.etch-chamber.v1\`, missing-image fallbacks and image swap geometry.
+5. Do **not** treat CSS `body.style.zoom=4` as native browser 400% zoom. A04's previous CSS zoom observation is **non-equivalent diagnostic**, NOT a confirmed defect; native browser 400% remains **NOT_RUN**. No layout changes made to address it.
+6. Preserve owner direction `#FFFFFF` backgrounds, emerald-only placeholder art `illustration.wafer.v1` and `illustration.etch-chamber.v1`, missing-image fallbacks and image swap geometry.
 
-**Execution scope recorded by A03:** five source/logic tests PASS in an isolated JS runner with mocked DOM (not a Node CLI run); independent local Node.js v22.16.0 **contrast math only** PASS for the three old/new color combinations. **NOT_RUN on this new HEAD:** repository \`node --test\` full CLI, Chromium computed styles, native 400% browser zoom, real screen reader/axe/Firefox/WebKit/owner final image CLS. Prior A04 results were for the old HEAD only; A01 alone may issue a **new \`[A01][QA_READY]\`** with the new full SHA. Never report browser tests from another commit as PASS on this one.
+**Execution scope recorded by A03:** five source/logic tests PASS in an isolated JS runner with mocked DOM (not a Node CLI run); independent local Node.js v22.16.0 **contrast math only** PASS for the three old/new color combinations. **NOT_RUN on this new HEAD:** repository `node --test` full CLI, Chromium computed styles, native 400% browser zoom, real screen reader/axe/Firefox/WebKit/owner final image CLS. Prior A04 results were for the old HEAD only; A01 alone may issue a **new `[A01][QA_READY]`** with the new full SHA. Never report browser tests from another commit as PASS on this one.
