@@ -3,6 +3,7 @@
 > **상태:** REVIEW · 2026-10-15 · 담당 A05 · [Issue #5](https://github.com/Junebooky/semi_fab/issues/5)  
 > **Baseline:** `main` commit [`57b4dd4405fb01a2154c1ad19437c049c6aae38d`](https://github.com/Junebooky/semi_fab/commit/57b4dd4405fb01a2154c1ad19437c049c6aae38d) / 별도 **미병합** PR #2(설계), PR #3(QA 계획).  
 > **현재 판정:** 앱 구현/실행·성능·실제 FAB 결과에 대한 검증 가능한 증거 **없음**. 이는 소스 검토 범위의 증거 부족 판정이지 미래 구현 불가능 판정이 아님.
+> **외부 링크 확인 기준일:** 2026-10-15 (KST). SK하이닉스의 기존 인터뷰 `/9`는 이번 웹 조회에서 오류 페이지로 이동했으며, 내용을 확인한 공식 인터뷰 [`/53`](https://talent.skhynix.com/hub/en/job/interview/53)으로 교체했다. 공식 [직무 소개 `id=902`](https://talent.skhynix.com/hub/en/job/introduce?id=902)도 조회했다. 이 확인은 직무 참고 **링크와 출처 접근성** 점검이지 채용 성과·기술 기능 검증이 아니다.
 
 ## 1. 읽는 법과 주장 상태 규칙
 
@@ -47,10 +48,16 @@ E0 문서가 여러 건 존재해도 E1~E4로 자동 승격하지 않는다. 계
 | CL-16 | “A04가 요구사항·검증 공백 QA-F01~F06을 제기했다” | **문서 확인(리뷰 사실만)** · E0 | [PR #3](https://github.com/Junebooky/semi_fab/pull/3), [A04 리뷰 댓글](https://github.com/Junebooky/semi_fab/pull/2#issuecomment-6183753727) | A01·A02 수정·답변 기록 | “버그 6건 해결 / 품질 승인” |
 | CL-17 | “AI 에이전트 역할을 분리해 GitHub 협업 계획을 수립했다” | **규칙 문서 제출 확인** · E0 | [AGENTS.md, PR #2](https://github.com/Junebooky/semi_fab/blob/docs/issue-1-local-first-governance/AGENTS.md), [Issue #5](https://github.com/Junebooky/semi_fab/issues/5) | 각 개인 기여의 Issue/PR/commit, 사용자 리뷰 결정 | “소유자가 코드를 100% 단독 작성했다” |
 | CL-18 | “실제 생산 장비 제어, 실 FAB 연동, 수율·가동률 향상” | **증거 없음 / 현재 범위 밖** | [README 명시적 제한](https://github.com/Junebooky/semi_fab/blob/57b4dd4405fb01a2154c1ad19437c049c6aae38d/README.md) | 합법적인 현장 데이터·검증 계약·측정 방법 등 별도 필수 | 모든 “현장 적용”, “수율 X%↑”, “다운타임 Y%↓” 주장 |
-| CL-19 | “삼성전자·SK하이닉스 기술/공정 직무와 연관된 학습 주제” | **직무 관련성 비교(취업 성과 아님)** · E0 | [SK하이닉스 양산기술 직무](https://talent.skhynix.com/hub/en/job/interview/9), [직무소개](https://talent.skhynix.com/hub/en/job/introduce?id=902) | 지원 시점 실제 공고와 A01 검수, 본인 기여 증빙 | “해당 회사 요구역량 완전 충족/채용 검증됨/공식 협업” |
+| CL-19 | “삼성전자·SK하이닉스 기술/공정 직무와 연관된 학습 주제” | **직무 관련성 비교(취업 성과 아님)** · E0 | [SK하이닉스 양산기술 직무](https://talent.skhynix.com/hub/en/job/interview/53), [직무소개](https://talent.skhynix.com/hub/en/job/introduce?id=902) | 지원 시점 실제 공고와 A01 검수, 본인 기여 증빙 | “해당 회사 요구역량 완전 충족/채용 검증됨/공식 협업” |
 | CL-20 | “README가 프로젝트를 기획·초기 구축이라 표시한다” | **문서 확인** · E0 | [README@main SHA](https://github.com/Junebooky/semi_fab/blob/57b4dd4405fb01a2154c1ad19437c049c6aae38d/README.md) | 이후 커밋 기준일 갱신 | “main README에 완제품 증거 있음” |
 
 **정리:** CL-01·15·16·17·20의 **문서 존재**는 확인되지만 **제품 동작 검증됨(E3 이상) 항목은 0개**다. 수치 성능·실 FAB 적용·공식 제휴는 확인된 근거가 없다.
+
+### 2026-10-15 보충: 신규 제출된 PR #10·#11 (승인/QA와 구분)
+
+- [PR #10 — A02 Local-first 아키텍처·데이터/재현성 계약 문서](https://github.com/Junebooky/semi_fab/pull/10): **열린 미병합 PR에 설계 문서가 제출됨**을 확인했다. 아키텍처·수식 계약의 제안은 실제 제품 코드 실행, 구현 완료, QA PASS 또는 A01·소유자의 최종 승인과 **다르다**.
+- [PR #11 — A03 화이트·에메랄드 hi-fi HTML 프로토타입](https://github.com/Junebooky/semi_fab/pull/11): **열린 미병합 PR에 편집 가능한 프로토타입 소스가 제출됨**을 확인했다. 이는 기획·시각 시안 수준의 결과물이며 제품 애플리케이션 동작, 실제 3D 자산 완성, A04 브라우저·접근성 검증 PASS가 **아니다**.
+- **증거 갱신 원칙:** 이 매트릭스의 `main` SHA와 E0 상태는 위에 적힌 **검토 기준 스냅샷**이다. 새 PR 존재만으로 CL-04~CL-14를 ‘검증됨’으로 승격하지 않는다. A02 실제 기능 SHA·실행 가이드와 A04 독립 PASS·A01 도메인 검수가 확보되면 해당 CL 행과 README 상태를 함께 재검토한다. **현재 확인된 A04 제품 QA PASS는 0건**이다.
 
 ## 3. A04 QA 결과 표기 (계획과 실행 분리)
 
