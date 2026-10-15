@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 // Types
 interface SensorSample {
@@ -263,7 +265,12 @@ function generateModeAFixture(seed: number) {
 
 const DEFAULT_FIXTURE = generateModeAFixture(20261015);
 
-export default function FabOneDemoPage() {
+function FabOneDemoContent() {
+  const searchParams = useSearchParams();
+  const alertParam = searchParams.get('alert');
+  const invParam = searchParams.get('investigation');
+  const waferParam = searchParams.get('wafer');
+
   const [mode, setMode] = useState<'A' | 'B'>('A');
   const [backendAvailable, setBackendAvailable] = useState<boolean>(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -525,6 +532,25 @@ export default function FabOneDemoPage() {
     }
   };
 
+  // Handle URL deep link query parameters (?alert=...&investigation=true&wafer=...)
+  useEffect(() => {
+    if (alertParam && alerts.length > 0) {
+      const foundAlert = alerts.find(a => a.alert_id === alertParam);
+      if (foundAlert) {
+        handleSelectAlert(foundAlert);
+      }
+    }
+    if (invParam === 'true') {
+      setIsInvestigationOpen(true);
+    }
+    if (waferParam && wafers.length > 0) {
+      const foundWafer = wafers.find(w => w.wafer_id === waferParam);
+      if (foundWafer) {
+        setSelectedWafer(foundWafer);
+      }
+    }
+  }, [alertParam, invParam, waferParam, alerts, wafers]);
+
   const handleChangeSeed = async () => {
     const seeds = [20261015, 9999, 42, 12345];
     const nextSeed = seeds[(seeds.indexOf(seed) + 1) % seeds.length];
@@ -652,6 +678,26 @@ export default function FabOneDemoPage() {
             <span className="brand-subtitle">· Semiconductor Etch Intelligence Demo</span>
           </div>
         </div>
+
+        {/* Navigation Tabs */}
+        <nav style={{ display: 'flex', gap: '8px' }} aria-label="화면 탭">
+          <Link href="/" className="nav-tab-link active">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            식각 챔버 시뮬레이터 (Home)
+          </Link>
+          <Link href="/traceability" className="nav-tab-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            웨이퍼 이력 추적성 (Traceability)
+          </Link>
+        </nav>
 
         <div className="top-status-pills">
           {mode === 'B' ? (
@@ -1592,6 +1638,17 @@ export default function FabOneDemoPage() {
                     <div>노출 상태: <strong style={{ color: selectedWafer.exposure_status === 'CANDIDATE_EXPOSED' ? '#DC2626' : (selectedWafer.exposure_status === 'CONFIRMED_EXPOSED' ? '#047857' : '#64748B') }}>{selectedWafer.exposure_status}</strong></div>
                     <div>판정 근거: {selectedWafer.exposure_status === 'CANDIDATE_EXPOSED' ? 'T7 알람 전후 노출 후보군' : (selectedWafer.exposure_status === 'CONFIRMED_EXPOSED' ? '정상 식각 완료' : '미착수 대기')}</div>
                   </div>
+
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end' }}>
+                    <Link
+                      id="link-wafer-traceability"
+                      href={`/traceability?wafer=${selectedWafer.wafer_id}`}
+                      className="btn-secondary"
+                      style={{ textDecoration: 'none', padding: '5px 12px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      🔍 웨이퍼 {selectedWafer.wafer_id} 전체 추적성 상세 조회 →
+                    </Link>
+                  </div>
                 </div>
               )}
             </section>
@@ -1599,5 +1656,13 @@ export default function FabOneDemoPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function FabOneDemoPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: '40px', textAlign: 'center', color: '#64748B' }}>로딩 중...</div>}>
+      <FabOneDemoContent />
+    </Suspense>
   );
 }

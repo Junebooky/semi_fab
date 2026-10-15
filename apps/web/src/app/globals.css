@@ -828,3 +828,326 @@ button:focus-visible, input:focus-visible {
     gap: 4px;
   }
 }
+
+/* ========================================================
+   BUILD-03 Lot/Wafer Traceability Styles (White & Emerald)
+   ======================================================== */
+.nav-tab-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--muted);
+  border: 1px solid transparent;
+  transition: all 0.15s ease-in-out;
+}
+
+.nav-tab-link:hover {
+  background: #F1F5F9;
+  color: var(--ink);
+}
+
+.nav-tab-link.active {
+  background: #ECFDF5;
+  color: #047857;
+  border-color: #A7F3D0;
+}
+
+.trace-layout-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 24px;
+  margin-top: 20px;
+}
+
+.trace-cassette-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+}
+
+.trace-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.trace-filter-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: #FFFFFF;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.trace-filter-chip:hover {
+  background: #F8FAFC;
+  color: var(--ink);
+}
+
+.trace-filter-chip.active {
+  background: #17263B;
+  color: #FFFFFF;
+  border-color: #17263B;
+}
+
+.trace-filter-chip.active.confirmed {
+  background: #047857;
+  color: #FFFFFF;
+  border-color: #047857;
+}
+
+.trace-filter-chip.active.candidate {
+  background: #DC2626;
+  color: #FFFFFF;
+  border-color: #DC2626;
+}
+
+.trace-filter-chip.active.unexposed {
+  background: #64748B;
+  color: #FFFFFF;
+  border-color: #64748B;
+}
+
+.trace-wafer-list-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: #FFFFFF;
+}
+
+.trace-wafer-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.trace-wafer-list-item:hover {
+  background: #F8FAFC;
+}
+
+.trace-wafer-list-item.selected {
+  background: #F0FDF4;
+  border-left: 4px solid #0B9F78;
+}
+
+.trace-detail-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.trace-header-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.trace-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 18px 0;
+  padding: 14px 18px;
+  background: #F8FAFC;
+  border-radius: var(--radius-sm);
+  border: 1px solid #EDF1F5;
+}
+
+.trace-meta-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.trace-meta-label {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.trace-meta-value {
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--ink);
+}
+
+.badge-synthetic {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FCD34D;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Vertical Timeline */
+.timeline-section-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 24px 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-v-container {
+  position: relative;
+  padding-left: 28px;
+}
+
+.timeline-v-container::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 11px;
+  width: 2px;
+  background: #E2E8F0;
+}
+
+.timeline-v-item {
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.timeline-v-item:last-child {
+  margin-bottom: 0;
+}
+
+.timeline-v-node {
+  position: absolute;
+  left: -28px;
+  top: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 2px solid #94A3B8;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #64748B;
+  z-index: 2;
+  transition: all 0.2s ease;
+}
+
+.timeline-v-node.completed {
+  border-color: #0B9F78;
+  color: #0B9F78;
+  background: #ECFDF5;
+}
+
+.timeline-v-node.interrupted {
+  border-color: #DC2626;
+  color: #DC2626;
+  background: #FEF2F2;
+}
+
+.timeline-v-node.held {
+  border-color: #D97706;
+  color: #D97706;
+  background: #FFFBEB;
+}
+
+.timeline-v-node.skipped {
+  border-color: #94A3B8;
+  color: #94A3B8;
+  background: #F1F5F9;
+}
+
+.timeline-v-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  transition: all 0.15s ease;
+}
+
+.timeline-v-card:hover {
+  border-color: #CBD5E1;
+  box-shadow: var(--shadow-sm);
+}
+
+.timeline-v-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.timeline-v-title {
+  font-size: 13px;
+  font-weight: 750;
+  color: var(--ink);
+}
+
+.timeline-v-time-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #155BC1;
+  background: #EFF6FF;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+.timeline-v-sub {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.timeline-v-desc {
+  font-size: 12px;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.trace-alert-link-card {
+  margin-top: 20px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+@media (max-width: 1024px) {
+  .trace-layout-grid {
+    grid-template-columns: 1fr;
+  }
+  .trace-meta-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+

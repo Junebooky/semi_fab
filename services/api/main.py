@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import CORS_ORIGINS, SQLITE_DB_PATH
 from .database import init_db, db_session
+from datetime import datetime, timedelta, timezone
 from .models import (
     HealthResponse,
     StartRunRequest,
@@ -15,6 +16,8 @@ from .models import (
     WaferItem,
     SensorEvidence,
     InvestigationDetail,
+    WaferTimelineEvent,
+    WaferTraceDetail,
 )
 from .generator import generate_etch_demo_dataset
 
@@ -329,6 +332,234 @@ def get_demo_wafers(run_id: Optional[str] = None):
         ).fetchall()
 
         return [WaferItem(**dict(row)) for row in rows]
+
+@app.get("/api/v1/demo/wafers/{wafer_id}/trace", response_model=WaferTraceDetail)
+def get_wafer_trace(wafer_id: str, run_id: Optional[str] = Query(default=None)):
+    """
+    Returns full Lot/Wafer Traceability detail and chronological process timeline for a specific wafer.
+    Guarantees strict binding with run, equipment, chamber, recipe, and related FDC excursion alert.
+    All data is clearly tagged with data_origin: 'synthetic'.
+    """
+    with db_session() as conn:
+        if run_id:
+            run = conn.execute(
+                "SELECT run_id, session_id, equipment_id, chamber_id, recipe_id, lot_id, data_origin, start_time_utc FROM process_run WHERE run_id = ?;",
+                (run_id,)
+            ).fetchone()
+            if not run:
+                raise HTTPException(status_code=404, detail=f"Process run '{run_id}' not found")
+        else:
+            run = conn.execute(
+                """
+                SELECT r.run_id, r.session_id, r.equipment_id, r.chamber_id, r.recipe_id, r.lot_id, r.data_origin, r.start_time_utc
+                FROM process_run r
+                JOIN simulation_session s ON r.session_id = s.session_id
+                WHERE s.is_active = 1
+                ORDER BY r.start_time_utc DESC LIMIT 1;
+                """
+            ).fetchone()
+            if not run:
+                run = conn.execute("SELECT run_id, session_id, equipment_id, chamber_id, recipe_id, lot_id, data_origin, start_time_utc FROM process_run ORDER BY start_time_utc DESC LIMIT 1;").fetchone()
+            if not run:
+                raise HTTPException(status_code=404, detail="No active process run found")
+            run_id = run["run_id"]
+
+        wafer = conn.execute(
+            """
+            SELECT wafer_id, lot_id, slot_number, wafer_sequence_in_run as sequence, exposure_status
+            FROM process_run_wafer
+            WHERE run_id = ? AND wafer_id = ?;
+            """,
+            (run_id, wafer_id)
+        ).fetchone()
+
+        if not wafer:
+            raise HTTPException(status_code=404, detail=f"Wafer '{wafer_id}' not found in run '{run_id}'")
+
+        # Related FDC alert for this run
+        alert = conn.execute(
+            """
+            SELECT alert_id, severity, rule_code, message, event_time_utc
+            FROM fdc_alert
+            WHERE run_id = ? AND severity = 'CRITICAL'
+            ORDER BY event_time_utc DESC LIMIT 1;
+            """,
+            (run_id,)
+        ).fetchone()
+
+        exposure_status = wafer["exposure_status"]
+        slot_number = wafer["slot_number"]
+
+        related_alert_id = None
+        related_alert_rule = None
+        related_alert_severity = None
+        investigation_id = None
+
+        if exposure_status in ("CONFIRMED_EXPOSED", "CANDIDATE_EXPOSED") and alert:
+            related_alert_id = alert["alert_id"]
+            related_alert_rule = alert["rule_code"]
+            related_alert_severity = alert["severity"]
+            investigation_id = f"INV-{alert['alert_id']}"
+
+        # Parse start_time_utc
+        try:
+            base_dt = datetime.fromisoformat(run["start_time_utc"].replace("Z", "+00:00"))
+        except Exception:
+            base_dt = datetime.now(timezone.utc)
+
+        t_m60 = (base_dt - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        t_m20 = (base_dt - timedelta(seconds=20)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        t_0 = base_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        t_p35 = (base_dt + timedelta(seconds=35)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        t_p60 = (base_dt + timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        timeline: List[WaferTimelineEvent] = [
+            WaferTimelineEvent(
+                step_index=1,
+                step_name="FOUP 카세트 로드 및 RFID 슬롯 매핑",
+                time_label="T-60s",
+                timestamp_utc=t_m60,
+                equipment_id=run["equipment_id"],
+                chamber_id="LOADPORT-01",
+                event_type="LOAD",
+                status="COMPLETED",
+                description=f"25매 FOUP 로트({run['lot_id']}) 로드포트 01 안착, RFID 태그 판독 및 슬롯 #{slot_number} 위치 매핑 완료."
+            ),
+            WaferTimelineEvent(
+                step_index=2,
+                step_name="웨이퍼 반송 및 사전 정렬 (Pre-Align)",
+                time_label="T-20s",
+                timestamp_utc=t_m20,
+                equipment_id=run["equipment_id"],
+                chamber_id="ALIGNER-01",
+                event_type="ALIGN",
+                status="COMPLETED",
+                description=f"대기 반송 로봇(EFEM)에 의해 노치(Notch) 정렬 및 레시피({run['recipe_id']}) 공정 파라미터 사전 매핑 완료."
+            ),
+        ]
+
+        # Step 3: Process or Queue or Stored
+        if exposure_status == "CONFIRMED_EXPOSED":
+            timeline.append(WaferTimelineEvent(
+                step_index=3,
+                step_name=f"식각 공정 진행 완료 ({run['chamber_id']} Main Etch)",
+                time_label="T0 ~ T6",
+                timestamp_utc=t_0,
+                equipment_id=run["equipment_id"],
+                chamber_id=run["chamber_id"],
+                event_type="PROCESS",
+                status="COMPLETED",
+                description=f"식각 챔버({run['chamber_id']}) 정전척(ESC) 안착 및 고주파 플라즈마 방전 식각 공정 완료."
+            ))
+        elif exposure_status == "CANDIDATE_EXPOSED":
+            timeline.append(WaferTimelineEvent(
+                step_index=3,
+                step_name="챔버 진입 대기 큐 (Loadlock Buffer Queue)",
+                time_label="T6 ~ T7",
+                timestamp_utc=t_0,
+                equipment_id=run["equipment_id"],
+                chamber_id="LOADLOCK-B",
+                event_type="PROCESS",
+                status="INTERRUPTED",
+                description=f"진공 로드락 버퍼에서 {run['chamber_id']} 진입 준비 중 T7 센서 일탈 스파이크 감지로 이송 인터록(Interrupted) 발동."
+            ))
+        else:
+            timeline.append(WaferTimelineEvent(
+                step_index=3,
+                step_name="FOUP 카세트 내 미노출 대기 (Cassette Stored)",
+                time_label="T0 ~ T7",
+                timestamp_utc=t_0,
+                equipment_id=run["equipment_id"],
+                chamber_id="LOADPORT-01",
+                event_type="PROCESS",
+                status="SKIPPED",
+                description="선행 웨이퍼 가공 중 챔버 일탈 발생으로 공정 시퀀스가 정지되어 FOUP 카세트 내 미가공(Not Exposed) 상태 유지."
+            ))
+
+        # Step 4: Interlock / Anomaly
+        if exposure_status in ("CONFIRMED_EXPOSED", "CANDIDATE_EXPOSED"):
+            timeline.append(WaferTimelineEvent(
+                step_index=4,
+                step_name="FDC 센서 공정 이상 감지 (SPC UCL Excursion)",
+                time_label="T7",
+                timestamp_utc=t_p35,
+                equipment_id=run["equipment_id"],
+                chamber_id=run["chamber_id"],
+                event_type="INTERLOCK",
+                status="HELD",
+                description=f"식각 챔버({run['chamber_id']}) 압력/RF Power 급증으로 FDC 이상 알람({related_alert_id or 'AL-DEMO-001'}) 트리거 및 설비 인터록."
+            ))
+        else:
+            timeline.append(WaferTimelineEvent(
+                step_index=4,
+                step_name="설비 안전 인터록 정지 (Safety Interlock)",
+                time_label="T7",
+                timestamp_utc=t_p35,
+                equipment_id=run["equipment_id"],
+                chamber_id=run["equipment_id"],
+                event_type="INTERLOCK",
+                status="COMPLETED",
+                description="설비 전역 비상 인터록 정지 작동으로 추가 웨이퍼 반송 차단."
+            ))
+
+        # Step 5: Disposition / Quality Hold
+        if exposure_status == "CANDIDATE_EXPOSED":
+            timeline.append(WaferTimelineEvent(
+                step_index=5,
+                step_name="품질 보류 판정 및 결함 검측 배정 (Quality Hold)",
+                time_label="T8+",
+                timestamp_utc=t_p60,
+                equipment_id=run["equipment_id"],
+                chamber_id="QA-DISPOSITION",
+                event_type="HOLD",
+                status="HELD",
+                description=f"엔지니어링 조사({investigation_id or 'INV-AL-DEMO-001'}) 연계: 잠재 노출 후보군으로 분류되어 결함 검측(Defect Review) 및 EDS 우선 검사군으로 배정됨."
+            ))
+        elif exposure_status == "CONFIRMED_EXPOSED":
+            timeline.append(WaferTimelineEvent(
+                step_index=5,
+                step_name="노출 완료군 품질 일치성 검증 대기 (Lot Hold)",
+                time_label="T8+",
+                timestamp_utc=t_p60,
+                equipment_id=run["equipment_id"],
+                chamber_id="QA-DISPOSITION",
+                event_type="HOLD",
+                status="HELD",
+                description="노출 완료군 품질 일치성 검증 및 박막 두께 측정 대기를 위해 로트 단위 품질 보류(Hold) 등록."
+            ))
+        else:
+            timeline.append(WaferTimelineEvent(
+                step_index=5,
+                step_name="미노출 웨이퍼 재투입 대기 (Unexposed Disposition)",
+                time_label="T8+",
+                timestamp_utc=t_p60,
+                equipment_id=run["equipment_id"],
+                chamber_id="LOADPORT-01",
+                event_type="HOLD",
+                status="PENDING",
+                description="미노출 안전 웨이퍼로 확인되어 설비 점검 완료 후 다음 생산 배치로 재투입 대기."
+            ))
+
+        return WaferTraceDetail(
+            wafer_id=wafer["wafer_id"],
+            lot_id=run["lot_id"],
+            slot_number=slot_number,
+            sequence=wafer["sequence"],
+            exposure_status=exposure_status,
+            equipment_id=run["equipment_id"],
+            chamber_id=run["chamber_id"],
+            run_id=run_id,
+            recipe_id=run["recipe_id"],
+            start_time_utc=run["start_time_utc"],
+            data_origin="synthetic",
+            is_synthetic=True,
+            related_alert_id=related_alert_id,
+            related_alert_rule=related_alert_rule,
+            related_alert_severity=related_alert_severity,
+            investigation_id=investigation_id,
+            timeline=timeline
+        )
+
 
 @app.post("/api/v1/demo/seek-anomaly")
 def seek_anomaly():

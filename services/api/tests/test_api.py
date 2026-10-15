@@ -373,6 +373,78 @@ class TestEtchDemoAPI(unittest.TestCase):
         self.assertEqual(rf_ev["measured_value"], t7_rf["measured_value"])
         self.assertEqual(rf_ev["quality_flag"], t7_rf["quality_flag"])
 
+    def test_13_wafer_traceability(self):
+        """
+        Verification test for BUILD-03 Lot/Wafer Traceability:
+        1. Confirmed exposed wafer (W-01) returns complete metadata, alert binding, and COMPLETED process event.
+        2. Candidate exposed wafer (W-08) returns INTERRUPTED queue event and HELD disposition with investigation binding.
+        3. Not exposed wafer (W-15) returns SKIPPED process event, PENDING disposition, and no alert binding.
+        4. Non-existent wafer returns HTTP 404.
+        5. All records have data_origin == 'synthetic' and is_synthetic == True.
+        """
+        # 1. Confirmed Exposed: W-01
+        res_w01 = self.client.get("/api/v1/demo/wafers/W-01/trace")
+        self.assertEqual(res_w01.status_code, 200)
+        w01 = res_w01.json()
+        self.assertEqual(w01["wafer_id"], "W-01")
+        self.assertEqual(w01["slot_number"], 1)
+        self.assertEqual(w01["exposure_status"], "CONFIRMED_EXPOSED")
+        self.assertEqual(w01["equipment_id"], "ETCH-02")
+        self.assertEqual(w01["chamber_id"], "CH-B")
+        self.assertEqual(w01["data_origin"], "synthetic")
+        self.assertTrue(w01["is_synthetic"])
+        self.assertIn("AL-DEMO-", w01["related_alert_id"])
+        self.assertIn("INV-AL-DEMO-", w01["investigation_id"])
+        self.assertEqual(len(w01["timeline"]), 5)
+        # Event 3 is process completed
+        self.assertEqual(w01["timeline"][2]["event_type"], "PROCESS")
+        self.assertEqual(w01["timeline"][2]["status"], "COMPLETED")
+
+        # 2. Candidate Exposed: W-08
+        res_w08 = self.client.get("/api/v1/demo/wafers/W-08/trace")
+        self.assertEqual(res_w08.status_code, 200)
+        w08 = res_w08.json()
+        self.assertEqual(w08["wafer_id"], "W-08")
+        self.assertEqual(w08["slot_number"], 8)
+        self.assertEqual(w08["exposure_status"], "CANDIDATE_EXPOSED")
+        self.assertEqual(w08["data_origin"], "synthetic")
+        self.assertIn("AL-DEMO-", w08["related_alert_id"])
+        self.assertIn("INV-AL-DEMO-", w08["investigation_id"])
+        self.assertEqual(len(w08["timeline"]), 5)
+        # Event 3 is loadlock queue interrupted
+        self.assertEqual(w08["timeline"][2]["event_type"], "PROCESS")
+        self.assertEqual(w08["timeline"][2]["status"], "INTERRUPTED")
+        # Event 5 is quality hold with defect review disposition
+        self.assertEqual(w08["timeline"][4]["event_type"], "HOLD")
+        self.assertEqual(w08["timeline"][4]["status"], "HELD")
+        self.assertIn("결함 검측", w08["timeline"][4]["description"])
+
+        # 3. Not Exposed: W-15
+        res_w15 = self.client.get("/api/v1/demo/wafers/W-15/trace")
+        self.assertEqual(res_w15.status_code, 200)
+        w15 = res_w15.json()
+        self.assertEqual(w15["wafer_id"], "W-15")
+        self.assertEqual(w15["slot_number"], 15)
+        self.assertEqual(w15["exposure_status"], "NOT_EXPOSED")
+        self.assertIsNone(w15["related_alert_id"])
+        self.assertIsNone(w15["investigation_id"])
+        self.assertEqual(len(w15["timeline"]), 5)
+        # Event 3 is cassette stored skipped
+        self.assertEqual(w15["timeline"][2]["event_type"], "PROCESS")
+        self.assertEqual(w15["timeline"][2]["status"], "SKIPPED")
+        # Event 5 is pending disposition
+        self.assertEqual(w15["timeline"][4]["event_type"], "HOLD")
+        self.assertEqual(w15["timeline"][4]["status"], "PENDING")
+
+        # 4. Non-existent wafer
+        res_invalid = self.client.get("/api/v1/demo/wafers/W-99/trace")
+        self.assertEqual(res_invalid.status_code, 404)
+        self.assertIn("not found", res_invalid.json()["detail"].lower())
+
+        # 5. Non-existent run
+        res_invalid_run = self.client.get("/api/v1/demo/wafers/W-01/trace?run_id=RUN-NONEXISTENT")
+        self.assertEqual(res_invalid_run.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

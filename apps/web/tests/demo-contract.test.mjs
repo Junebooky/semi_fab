@@ -382,3 +382,120 @@ test('P1-02 Alert-Investigation Binding and Standby Isolation: Selecting standby
   assert.equal(currentInvestigation.chamber_id, 'CH-B');
 });
 
+// Helper matching generateModeAWaferTrace in traceability/page.tsx
+function generateModeAWaferTraceTest(waferId, seed = 20261015) {
+  const lotNum = 800 + (seed % 50);
+  const lotId = `LOT-DEMO-${lotNum}`;
+  const runId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+  const alertId = `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+
+  const slotMatch = waferId.match(/\d+/);
+  const slotNumber = slotMatch ? parseInt(slotMatch[0], 10) : 1;
+
+  let exposure_status = 'NOT_EXPOSED';
+  if (slotNumber <= 7) exposure_status = 'CONFIRMED_EXPOSED';
+  else if (slotNumber >= 8 && slotNumber <= 12) exposure_status = 'CANDIDATE_EXPOSED';
+
+  const isAffected = exposure_status === 'CONFIRMED_EXPOSED' || exposure_status === 'CANDIDATE_EXPOSED';
+  const related_alert_id = isAffected ? alertId : null;
+  const investigation_id = isAffected ? `INV-${alertId}` : null;
+
+  const timeline = [
+    { step_index: 1, step_name: "FOUP 카세트 로드", event_type: "LOAD", status: "COMPLETED" },
+    { step_index: 2, step_name: "사전 정렬", event_type: "ALIGN", status: "COMPLETED" },
+    {
+      step_index: 3,
+      step_name: "가공/대기",
+      event_type: "PROCESS",
+      status: exposure_status === 'CONFIRMED_EXPOSED' ? 'COMPLETED' : (exposure_status === 'CANDIDATE_EXPOSED' ? 'INTERRUPTED' : 'SKIPPED')
+    },
+    {
+      step_index: 4,
+      step_name: "인터록",
+      event_type: "INTERLOCK",
+      status: isAffected ? 'HELD' : 'COMPLETED'
+    },
+    {
+      step_index: 5,
+      step_name: "품질 판정",
+      event_type: "HOLD",
+      status: exposure_status === 'CANDIDATE_EXPOSED' ? 'HELD' : (exposure_status === 'CONFIRMED_EXPOSED' ? 'HELD' : 'PENDING'),
+      description: exposure_status === 'CANDIDATE_EXPOSED' ? '결함 검측(Defect Review) 배정' : '보류 또는 재투입 대기'
+    }
+  ];
+
+  return {
+    wafer_id: waferId,
+    lot_id: lotId,
+    slot_number: slotNumber,
+    sequence: slotNumber,
+    exposure_status,
+    equipment_id: "ETCH-02",
+    chamber_id: "CH-B",
+    run_id: runId,
+    recipe_id: "RCP-ETCH-POLY-04",
+    data_origin: "synthetic",
+    is_synthetic: true,
+    related_alert_id,
+    investigation_id,
+    timeline
+  };
+}
+
+test('BUILD-03 Wafer Traceability Contract: W-01 (CONFIRMED_EXPOSED) timeline, metadata, and alert binding', () => {
+  const trace = generateModeAWaferTraceTest('W-01');
+
+  assert.equal(trace.wafer_id, 'W-01');
+  assert.equal(trace.slot_number, 1);
+  assert.equal(trace.exposure_status, 'CONFIRMED_EXPOSED');
+  assert.equal(trace.equipment_id, 'ETCH-02');
+  assert.equal(trace.chamber_id, 'CH-B');
+  assert.equal(trace.data_origin, 'synthetic');
+  assert.equal(trace.is_synthetic, true);
+  assert.notEqual(trace.related_alert_id, null);
+  assert.notEqual(trace.investigation_id, null);
+
+  assert.equal(trace.timeline.length, 5);
+  assert.equal(trace.timeline[2].event_type, 'PROCESS');
+  assert.equal(trace.timeline[2].status, 'COMPLETED');
+});
+
+test('BUILD-03 Wafer Traceability Contract: W-08 (CANDIDATE_EXPOSED) timeline interruption and defect review hold', () => {
+  const trace = generateModeAWaferTraceTest('W-08');
+
+  assert.equal(trace.wafer_id, 'W-08');
+  assert.equal(trace.slot_number, 8);
+  assert.equal(trace.exposure_status, 'CANDIDATE_EXPOSED');
+  assert.notEqual(trace.related_alert_id, null);
+  assert.notEqual(trace.investigation_id, null);
+
+  assert.equal(trace.timeline.length, 5);
+  // Stage 3: Loadlock buffer interrupted
+  assert.equal(trace.timeline[2].event_type, 'PROCESS');
+  assert.equal(trace.timeline[2].status, 'INTERRUPTED');
+
+  // Stage 5: Quality hold with defect review
+  assert.equal(trace.timeline[4].event_type, 'HOLD');
+  assert.equal(trace.timeline[4].status, 'HELD');
+  assert.ok(trace.timeline[4].description.includes('결함 검측'));
+});
+
+test('BUILD-03 Wafer Traceability Contract: W-15 (NOT_EXPOSED) skipped timeline and no alert binding', () => {
+  const trace = generateModeAWaferTraceTest('W-15');
+
+  assert.equal(trace.wafer_id, 'W-15');
+  assert.equal(trace.slot_number, 15);
+  assert.equal(trace.exposure_status, 'NOT_EXPOSED');
+  assert.equal(trace.related_alert_id, null);
+  assert.equal(trace.investigation_id, null);
+
+  assert.equal(trace.timeline.length, 5);
+  // Stage 3: Cassette stored skipped
+  assert.equal(trace.timeline[2].event_type, 'PROCESS');
+  assert.equal(trace.timeline[2].status, 'SKIPPED');
+
+  // Stage 5: Pending next batch
+  assert.equal(trace.timeline[4].event_type, 'HOLD');
+  assert.equal(trace.timeline[4].status, 'PENDING');
+});
+
