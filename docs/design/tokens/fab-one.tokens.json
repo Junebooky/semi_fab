@@ -1,0 +1,319 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "_meta": {
+    "product": "FAB ONE",
+    "owner": "A03",
+    "version": "0.1.0-review",
+    "issue": "https://github.com/Junebooky/semi_fab/issues/4",
+    "originalDesign": true,
+    "notOfficialToss": true,
+    "architecture": "ADR-001 pending approval"
+  },
+  "color": {
+    "surface": {
+      "canvas": {
+        "$type": "color",
+        "$value": "#F6F8FC",
+        "$description": "App canvas"
+      },
+      "card": {
+        "$type": "color",
+        "$value": "#FFFFFF",
+        "$description": "Analysis and card surface"
+      },
+      "subtle": {
+        "$type": "color",
+        "$value": "#EDF2F8",
+        "$description": "Subtle secondary canvas"
+      }
+    },
+    "text": {
+      "primary": {
+        "$type": "color",
+        "$value": "#17263B",
+        "$description": "Main text"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "#48586D",
+        "$description": "Supporting text"
+      },
+      "inverse": {
+        "$type": "color",
+        "$value": "#FFFFFF",
+        "$description": "Text on dark action surfaces"
+      }
+    },
+    "border": {
+      "default": {
+        "$type": "color",
+        "$value": "#DCE3ED",
+        "$description": "Default border"
+      }
+    },
+    "action": {
+      "primary": {
+        "$type": "color",
+        "$value": "#155BC1",
+        "$description": "Action, not severity"
+      },
+      "hover": {
+        "$type": "color",
+        "$value": "#114C9F",
+        "$description": "Hovered action"
+      }
+    },
+    "severity": {
+      "normal": {
+        "text": {
+          "$type": "color",
+          "$value": "#087254",
+          "$description": "Normal machine evidence - separate from data quality"
+        }
+      },
+      "warning": {
+        "text": {
+          "$type": "color",
+          "$value": "#8B5400",
+          "$description": "Warning / investigate"
+        }
+      },
+      "critical": {
+        "text": {
+          "$type": "color",
+          "$value": "#AD211A",
+          "$description": "Critical investigation attention"
+        }
+      },
+      "unknown": {
+        "text": {
+          "$type": "color",
+          "$value": "#505E71",
+          "$description": "Status not yet determined"
+        }
+      }
+    },
+    "data": {
+      "missing": {
+        "text": {
+          "$type": "color",
+          "$value": "#505E71",
+          "$description": "Measurement absent; never show as zero"
+        }
+      },
+      "delayed": {
+        "text": {
+          "$type": "color",
+          "$value": "#8B5400",
+          "$description": "Last known value outdated"
+        }
+      },
+      "failed": {
+        "text": {
+          "$type": "color",
+          "$value": "#AD211A",
+          "$description": "Acquisition failed"
+        }
+      }
+    },
+    "focus": {
+      "ring": {
+        "$type": "color",
+        "$value": "#155BC1",
+        "$description": "Focus ring pair with 2px outline"
+      }
+    }
+  },
+  "spacing": {
+    "1": {
+      "$type": "dimension",
+      "$value": "4px",
+      "$description": "XS"
+    },
+    "2": {
+      "$type": "dimension",
+      "$value": "8px",
+      "$description": "S"
+    },
+    "3": {
+      "$type": "dimension",
+      "$value": "12px",
+      "$description": "M"
+    },
+    "4": {
+      "$type": "dimension",
+      "$value": "16px",
+      "$description": "regular"
+    },
+    "6": {
+      "$type": "dimension",
+      "$value": "24px",
+      "$description": "L"
+    },
+    "8": {
+      "$type": "dimension",
+      "$value": "32px",
+      "$description": "XL"
+    },
+    "10": {
+      "$type": "dimension",
+      "$value": "40px",
+      "$description": "2XL"
+    },
+    "12": {
+      "$type": "dimension",
+      "$value": "48px",
+      "$description": "3XL"
+    }
+  },
+  "radius": {
+    "sm": {
+      "$type": "dimension",
+      "$value": "8px",
+      "$description": "Small"
+    },
+    "md": {
+      "$type": "dimension",
+      "$value": "12px",
+      "$description": "Medium"
+    },
+    "lg": {
+      "$type": "dimension",
+      "$value": "16px",
+      "$description": "Card"
+    },
+    "xl": {
+      "$type": "dimension",
+      "$value": "24px",
+      "$description": "Panel"
+    }
+  },
+  "typography": {
+    "display": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "system-ui",
+        "fontSize": "32px",
+        "fontWeight": 700,
+        "lineHeight": "40px"
+      },
+      "$description": "Desktop display"
+    },
+    "page": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "system-ui",
+        "fontSize": "28px",
+        "fontWeight": 700,
+        "lineHeight": "36px"
+      },
+      "$description": "Page heading"
+    },
+    "section": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "system-ui",
+        "fontSize": "20px",
+        "fontWeight": 650,
+        "lineHeight": "28px"
+      },
+      "$description": "Section heading"
+    },
+    "card": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "system-ui",
+        "fontSize": "16px",
+        "fontWeight": 650,
+        "lineHeight": "24px"
+      },
+      "$description": "Card heading"
+    },
+    "body": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "system-ui",
+        "fontSize": "16px",
+        "fontWeight": 400,
+        "lineHeight": "24px"
+      },
+      "$description": "Body"
+    },
+    "table": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "system-ui",
+        "fontSize": "14px",
+        "fontWeight": 400,
+        "lineHeight": "20px"
+      },
+      "$description": "Compact table"
+    },
+    "label": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "system-ui",
+        "fontSize": "13px",
+        "fontWeight": 500,
+        "lineHeight": "18px"
+      },
+      "$description": "Secondary labels only"
+    }
+  },
+  "duration": {
+    "fast": {
+      "$type": "duration",
+      "$value": "120ms",
+      "$description": "Short appearance"
+    },
+    "standard": {
+      "$type": "duration",
+      "$value": "180ms",
+      "$description": "Regular panel"
+    },
+    "panel": {
+      "$type": "duration",
+      "$value": "220ms",
+      "$description": "Large panel (reduces to zero transform under prefers-reduced-motion)"
+    }
+  },
+  "breakpoint": {
+    "tablet": {
+      "$type": "dimension",
+      "$value": "768px",
+      "$description": "Phone-to-tablet"
+    },
+    "desktop": {
+      "$type": "dimension",
+      "$value": "1200px",
+      "$description": "Tablet-to-desktop"
+    }
+  },
+  "sizing": {
+    "navigationWidth": {
+      "$type": "dimension",
+      "$value": "240px",
+      "$description": "Expanded sidebar"
+    },
+    "knowledgePanel": {
+      "$type": "dimension",
+      "$value": "400px",
+      "$description": "Desktop L3 side panel"
+    },
+    "tableComfortable": {
+      "$type": "dimension",
+      "$value": "48px",
+      "$description": "Table row min height"
+    },
+    "tableCompact": {
+      "$type": "dimension",
+      "$value": "40px",
+      "$description": "Compact table row min height"
+    },
+    "touchTarget": {
+      "$type": "dimension",
+      "$value": "44px",
+      "$description": "Minimum primary interactive touch target"
+    }
+  }
+}
