@@ -1,4 +1,4 @@
-# FAB ONE — MVP 운영 모드 및 데이터 저장소 아키텍처 기술 검토 v0.4
+# FAB ONE — MVP 운영 모드 및 데이터 저장소 아키텍처 기술 검토 v0.5
 
 - **문서 ID:** ARCH-DOC-001
 - **상태:** PROPOSED (A01 기획자 및 프로젝트 오너 승인 대기)
@@ -12,6 +12,12 @@
   - v0.4 (2026-10-15): A04 2차 독립 검증 결과 수용 및 A01 통합 수정 지시 반영
     - [F04] 공장 초기화(Factory Wipe) 범위 선택지 제시: 마스터 데이터 보존형(옵션 1: 실행/사건 이력 리셋, A02 권고) vs 전체 마스터 삭제형(옵션 2: 완전 공장 와이프), IndexedDB 비동기/비원자적 삭제 오류 복구(Self-healing cleanup) 메커니즘 반영
     - [F05] SQLite 동시성 락 메커니즘 정밀화: 무조건적 "SQLITE_LOCKED 방지" 단정 표현 삭제, 파일/WAL 쓰기 락 경합인 `SQLITE_BUSY`와 동일 연결 내 커서/공유 캐시 충돌인 `SQLITE_LOCKED`의 명확한 구별 및 예방 가이드라인 수립
+  - v0.5 (2026-10-15): A04 3차 독립 검증 결과(4 PASS, 3 FAIL, 2 NEEDS_CLARIFICATION) 및 A01 수정 지시 반영
+    - [F02] 센서 계측치 `(measured_value=NULL, quality_flag='GOOD')` 불일치 차단 DDL CHECK 제약조건 보완 매핑
+    - [F04] 공장 초기화(Factory Wipe) Pre-Intent Logging Protocol(파괴적 서버 요청 전 `localStorage`에 `INTENT_RECORDED` 사전 기록 및 6종 복구 테스트 벡터 수립), 옵션 1(실행·사건 이력 초기화)을 MVP 공식 권고안으로 확정하고 옵션 2(완전 공장 와이프)를 오너 승인 전 미확정(UNCONFIRMED)으로 명시, 0바이트 빈 DB 오류 문구 정정
+    - [F06] 부분군 표본 크기 $k \ge 5$ 및 $N \ge 20$ 경계 분리, 평가 상태 우선순위 계층(`EVALUATION_INVALID` > `ASSUMPTION_WARNING` > `ONE_SIDED_SPEC_EVALUATED` > `OK`) 및 경고 배열(`warnings: []`) 도입 매핑
+    - [F07] `event_id` 생성 해시 입력에 `entity_type` 추가, 동일 `event_id` 상이한 페이로드 유입 시 `EVENT_PAYLOAD_CONFLICT` 명시적 거부, 시간축 매핑 테이블 정립 매핑
+    - [F09] `PROCESS_RUN` ERD-TypeScript 필드 완전 일치(`runStatus` 5대 표준 상태, `startTimeUtc` 필수, `endTimeUtc` 선택), `fixtures/manifest.json` 스키마 및 검증 규칙 정립 매핑
 - **작성자:** A02 (수석 소프트웨어 개발 에이전트)
 - **관련 Issue / PR:** Issue [#1](https://github.com/Junebooky/semi_fab/issues/1), Issue [#8](https://github.com/Junebooky/semi_fab/issues/8), Issue [#12](https://github.com/Junebooky/semi_fab/issues/12), Draft PR [#2](https://github.com/Junebooky/semi_fab/pull/2), QA PR [#3](https://github.com/Junebooky/semi_fab/pull/3), Design PR [#7](https://github.com/Junebooky/semi_fab/pull/7), PR [#10](https://github.com/Junebooky/semi_fab/pull/10)
 - **일자:** 2026-10-15
@@ -161,16 +167,44 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
   2. 시뮬레이터 리셋 시 기존 세션은 `is_active = 0`으로 비활성화하여 아카이빙하고, 새로운 세션을 발급하여 가상 클록 $t=0$부터 시작한다.
   3. 대시보드는 최신 활성 세션(`is_active = 1`) 데이터만 표시하며, 기존 조사 케이스는 과거 세션의 레코드를 안전하게 참조하여 외래키 무결성을 관계형 스키마 제약조건으로 안정적으로 보존한다. (미검증 '100% 보존' 단정 지양).
   4. 사용자의 IndexedDB 개인 학습 메모는 시뮬레이터 세션 리셋과 완전히 격리되어 안전하게 유지된다.
-- **공장 전체 초기화 (Factory Wipe, 파괴적 관리자 작업) ([F04] 선택지 및 복구 명세):**
+- **공장 전체 초기화 (Factory Wipe, 파괴적 관리자 작업) ([F04] v0.5 선택지 및 복구 상태 계약):**
   1. 소프트 리셋과 엄격히 분리된 별도 파괴적 작업으로 정의한다.
-  2. **초기화 범위 선택지:**
-     - **옵션 1 (실행·사건 이력 초기화, A02 권고안):** 설비 마스터(`EQUIPMENT`, `CHAMBER`), 레시피(`RECIPE`), 로트(`LOT`), 웨이퍼(`WAFER`)의 기준 정보는 온전히 보존하고 동적 실행 데이터만 역순 삭제(`CASE_ACTION_LOG` $\to$ `INVESTIGATION_CASE` $\to$ `FDC_ALERT` $\to$ `SENSOR_MEASUREMENT` $\to$ `PROCESS_RUN_WAFER` $\to$ `WAFER_DEFECT_MAP` $\to$ `PROCESS_RUN` $\to$ `SIMULATION_SESSION`).
-     - **옵션 2 (완전 공장 및 마스터 데이터 와이프):** 동적 데이터뿐 아니라 전체 설비/레시피/로트 마스터까지 완전히 초기화하여 0바이트 빈 DB 생성 (시드 JSON 재적재 필수).
-  3. **단일 트랜잭션 원자성:** 역순 삭제는 단일 `BEGIN IMMEDIATE ... COMMIT` 내에서 수행하며 오류 시 즉시 `ROLLBACK`한다.
-  4. **2단계 확인:** 경고 모달 + `"FACTORY-WIPE-CONFIRM"` 텍스트 입력을 강제한다.
-  5. **IndexedDB 비동기 삭제 및 오류 복구 가드레일:**
-     - IndexedDB 사용자 학습 메모는 기본 보존하되, 사용자가 모달 내 `[선택] 브라우저 내 개인 학습 메모 및 환경설정도 함께 삭제`를 명시 체크한 경우에 한해 클라이언트 측에서 2단계 비동기 삭제를 수행한다.
-     - 삭제 도중 브라우저 비정상 종료 등으로 실패 시 `localStorage.setItem('fab_idb_cleanup_pending', 'true')`를 기록하고 다음 기동 시 자가 복구(Self-healing) 재정리를 수행한다.
+  2. **초기화 범위 선택지 및 상태 규정:**
+     - **옵션 1 (실행·사건 이력 초기화 — A02 MVP 공식 권고안):** 설비 마스터(`EQUIPMENT`, `CHAMBER`), 레시피(`RECIPE`), 로트(`LOT`), 웨이퍼(`WAFER`)의 기준 정보는 온전히 보존하고, 동적 실행 데이터만 외래키 역순으로 안전하게 삭제한다 (`CASE_ACTION_LOG` $\to$ `INVESTIGATION_CASE` $\to$ `FDC_ALERT` $\to$ `SENSOR_MEASUREMENT` $\to$ `PROCESS_RUN_WAFER` $\to$ `WAFER_DEFECT_MAP` $\to$ `PROCESS_RUN` $\to$ `SIMULATION_SESSION`). 기준 데이터가 보존되므로 시뮬레이터를 즉시 재가동하여 지속적인 데모 및 테스트가 가능하다.
+     - **옵션 2 (완전 공장 및 마스터 데이터 와이프 — 프로젝트 오너 승인 전 미확정 / PENDING OWNER APPROVAL):** 동적 실행 데이터뿐 아니라 전체 설비/레시피/로트 마스터 데이터까지 전체 테이블을 삭제한다. 단, SQLite 파일 자체는 기본 페이지 할당(헤더 및 스키마 메타데이터 구조, 통상 4KB~8KB 이상)을 유지하며 "0바이트 파일"이 아님을 명확히 정의한다. 옵션 2 수행 시에는 외부 JSON 시드 픽스처 재적재가 필수이며, 프로젝트 오너의 명시적 승인 전까지는 UI에서 비활성화된 미확정 상태로 표시한다.
+  3. **단일 트랜잭션 원자성:** 역순 삭제는 단일 `BEGIN IMMEDIATE ... COMMIT` 내에서 수행하며 오류 발생 시 즉시 `ROLLBACK`하여 불완전한 삭제 상태를 방지한다.
+  4. **2단계 확인:** 파괴적 작업 확인을 위해 경고 모달 표시 및 `"FACTORY-WIPE-CONFIRM"` 텍스트 입력을 강제한다.
+  5. **사전 의도 기록 프로토콜 (Pre-Intent Logging Protocol):**
+     클라이언트 브라우저와 백엔드 간 비원자적 네트워크/스토리지 경계를 극복하기 위해 파괴적 작업 수행 전 영속 스토리지(`localStorage`)에 삭제 의도를 선제적으로 기록한다.
+     - **단계 1 (의도 기록):** 파괴적 서버 요청 전송 직전 클라이언트의 `localStorage`에 고유 작업 식별자(`operationId`), 타임스탬프, 의도 상태(`INTENT_RECORDED`), IndexedDB 삭제 동의 플래그를 원자적으로 기록한다:
+       ```javascript
+       localStorage.setItem('fab_factory_wipe_intent', JSON.stringify({
+         operationId: 'wipe-' + crypto.randomUUID(),
+         status: 'INTENT_RECORDED',
+         wipeOption: 'OPTION_1',
+         timestampUtc: new Date().toISOString(),
+         purgeIndexedDbRequested: true
+       }));
+       ```
+     - **단계 2 (서버 파괴적 실행):** 백엔드에 원자적 삭제 요청을 전송한다 (`POST /api/v1/admin/factory-wipe`). 백엔드는 단일 `BEGIN IMMEDIATE ... COMMIT` 내에서 SQLite 역순 삭제를 수행한다.
+     - **단계 3 (서버 커밋 확인):** 백엔드 응답(HTTP 200)을 수신하면 인텐트 상태를 갱신한다:
+       ```javascript
+       const intent = JSON.parse(localStorage.getItem('fab_factory_wipe_intent'));
+       intent.status = 'SERVER_WIPE_COMMITTED';
+       localStorage.setItem('fab_factory_wipe_intent', JSON.stringify(intent));
+       ```
+     - **단계 4 (IndexedDB 삭제):** 사용자가 IndexedDB 삭제를 선택한 경우 클라이언트 비동기 삭제를 실행한다 (`indexedDB.deleteDatabase('fab_one_user_notes')`).
+     - **단계 5 (정상 완료 및 의도 정리):** IndexedDB 삭제 완료 후 `localStorage.removeItem('fab_factory_wipe_intent')`를 호출하여 인텐트 레코드를 정리하고 대시보드를 초기화한다.
+
+  6. **6종 충돌/복구 시퀀스 테스트 매트릭스 (Crash & Recovery Sequence Vectors):**
+     | 시나리오 ID | 비정상 중단 시점 | 영속 상태 계약 | 재기동(Restart) 시 자가 복구(Self-healing) 절차 | 최종 기대 결과 |
+     |---|---|---|---|---|
+     | **WIPE-CRASH-01** | 단계 1 이전 브라우저 종료 | 인텐트 미기록, 서버 DB 보존, IndexedDB 보존 | 인텐트 없음 $\to$ 일반 부팅 수행. | 작업 미시작, 데이터 온전함 |
+     | **WIPE-CRASH-02** | 단계 1 기록 후 서버 호출 전 종료 | `status: INTENT_RECORDED`, 서버 DB 보존 | 앱 기동 시 인텐트 감지 $\to$ 서버 상태 확인 시 데이터 존재 $\to$ "중단된 초기화가 있습니다. 재개하시겠습니까?" 모달 노출 또는 사용자 취소 시 인텐트 삭제. | 안전한 사용자 선택 복구 |
+     | **WIPE-CRASH-03** | 단계 2 서버 처리 중 네트워크 끊김/타임아웃 | 서버 롤백, 클라이언트 `INTENT_RECORDED` | 앱 기동 시 서버 헬스체크 $\to$ 서버 롤백으로 데이터 존재 확인 $\to$ 인텐트 만료(타임아웃) 처리 후 알림 노출. | 트랜잭션 롤백, 데이터 무결성 보존 |
+     | **WIPE-CRASH-04** | 단계 2 서버 커밋 직후 응답 수신 전 브라우저 크래시 | 서버 커밋 완료, 클라이언트 `INTENT_RECORDED` | 앱 기동 시 인텐트 감지 $\to$ 서버 DB 조회 결과 비어있음 확인 $\to$ `SERVER_WIPE_COMMITTED`로 즉시 전환 후 단계 4(IndexedDB 정리) 자동 이행. | 고아 데이터 방지, 완전 일치 동기화 |
+     | **WIPE-CRASH-05** | 단계 4 IndexedDB 삭제 중 브라우저 탭 강제 종료 | 서버 커밋 완료, `SERVER_WIPE_COMMITTED`, 잔여 IndexedDB 존재 | 앱 기동 시 `SERVER_WIPE_COMMITTED` 감지 $\to$ 사용자 개입 없이 백그라운드에서 `indexedDB.deleteDatabase` 재호출 $\to$ 완료 후 인텐트 레코드 정리. | 자가 복구 완료, 클린 초기 상태 환원 |
+     | **WIPE-CRASH-06** | 단계 5 정상 완료 직후 | 인텐트 정리 완료, 서버 DB 초기화 완료, IndexedDB 삭제 완료 | 인텐트 레코드 없음 $\to$ 신규 시뮬레이션 세션 발급하여 클린 부팅. | 완벽한 공장 출하 초기화 |
 
 
 ---
@@ -297,19 +331,19 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
 
 ---
 
-## 10. A04 QA 2차 독립 검증 (F01 ~ F09) 해결 및 정합성 매핑 ([F01]~[F09] v0.4 총괄)
+## 10. A04 QA 3차 독립 검증 (F01 ~ F09) 해결 및 정합성 매핑 ([F01]~[F09] v0.5 총괄)
 
-| QA 항목 ID | 판정 상태 | A04 지적 요약 | A02 아키텍처 조치 및 문서 매핑 |
+| QA 항목 ID | 판정 상태 | A04 지적 요약 (3차 검증) | A02 아키텍처 조치 및 문서 매핑 (v0.5) |
 |---|---|---|---|
-| **F01** | **PASS (유지)** | 활성 세션 단일성 및 수명주기 불변식 | `domain-data-contract-v0.1.md` §3.1에 단일 활성 세션(`is_active=1`) 불변식 유지. |
-| **F02** | **PASS (보완)** | 복합 외래키 부모 UNIQUE 및 자식 NULL 우회 결함 | `domain-data-contract-v0.1.md` §3.2: `uq_run_session`, `uq_run_session_chamber` 부모 제약 완비 및 자식 계보 컬럼에 명시적 `NOT NULL`과 `CHECK` 강제. 4종 NULL 우회 거절 반례 및 수용 조건 명세화 완료. |
-| **F03** | **PASS (보완)** | Canonical CSV 직렬화 및 NaN/Inf 직렬화 오류 | `simulation-reproducibility-contract.md` §6.2, §8.1: `quantize_value`에 유한수(`math.isnan`, `math.isinf`, `is_finite()`) 가드레일 추가하여 NaN/Inf 유입 시 `ValueError` 발생, 결측치(`None`)만 RFC 4180 빈 문자열(`""`)로 직렬화. 테스트 벡터 명시. |
-| **F04** | **PASS (보완)** | Factory Wipe 범위 모호성 및 IndexedDB 비원자성 | 본 문서 §4.3 및 `simulation-reproducibility-contract.md` §7.2: 마스터 보존형(옵션 1, 권고) vs 전체 마스터 삭제형(옵션 2) 선택지 분리. IndexedDB 비동기 삭제 실패 시 `localStorage` 기반 자가 복구(Self-healing) 절차 수립. |
-| **F05** | **PASS (보완)** | SQLite 락 정책 현실화 및 무조건적 락 방지 주장 | 본 문서 §3.2, §3.3: 파일/WAL 쓰기 락 경합인 `SQLITE_BUSY`와 동일 커넥션 내 활성 커서/공유 캐시 충돌인 `SQLITE_LOCKED`의 메커니즘 구별 명문화. 무조건적 "SQLITE_LOCKED 방지" 단정 표현 삭제 및 커서 누수 방지 가이드라인 수립. |
-| **F06** | **PASS (보완)** | 부분군 계수 테이블 한계, $s_{\text{pooled}}/c_4$, 단측 상태 | `domain-data-contract-v0.1.md` §6.3: $d_2, c_4$ 테이블 $m=2\sim10$ 완비, $m>10$ 합동 분산 $s_{\text{pooled}}/c_4(\nu)$ 산식 및 최소 부분군 수 $k \ge 5$ 명시. 단측 규격에 대한 항목별 상태(`indexPStatus`, `indexPkStatus`, `status: ONE_SIDED_SPEC_EVALUATED`) 및 API JSON 스키마 예시 수록. |
-| **F07** | **PASS (보완)** | 정렬 키 `event_id` 산식 미정, 시간 컬럼 불일치 | `simulation-reproducibility-contract.md` §4, §5: Canonical CSV 헤더와 스케줄러 시간축을 `sim_timestamp_utc`로 단일화. 결정론적 `event_id` SHA-256 해시 생성 산식 및 멱등 중복 폐기(`DUPLICATE_EVENT_DROPPED`) 규칙 명시. |
-| **F08** | **PASS (유지)** | SPC 알람의 결함/인과관계 비인과성 원칙 | `domain-data-contract-v0.1.md` §3.5: SPC 경고는 조사의 근거일 뿐 인과관계나 결함을 확정하지 않는다는 공학 원칙 유지. |
-| **F09** | **PASS (보완)** | API/DDL 데이터 출처 필드 일관성 및 픽스처 참조 | `domain-data-contract-v0.1.md` §2, §7, §8: `PROCESS_RUN` ERD에 `data_origin` 추가, TypeScript `ProcessRun` 인터페이스 신설, `fixtures/manifest.json` 기반 상위 시나리오 메타데이터 조회 계약 완결. |
+| **F01** | **PASS (유지)** | 활성 세션 단일성 및 수명주기 불변식 | `domain-data-contract-v0.1.md` §3.1에 단일 활성 세션(`is_active=1`) 불변식 유지 (재작성 배제). |
+| **F02** | **PASS (v0.5 보완)** | `(measured_value=NULL, quality_flag='GOOD')` DDL 우회 결함 | `domain-data-contract-v0.1.md` §3.2: `chk_measured_value_quality` 제약조건 추가하여 `quality_flag='MISSING'`일 때만 NULL을 허용하고 `GOOD`/`SUSPECT`/`BAD`는 `measured_value NOT NULL` 강제. 10종 테스트 매트릭스 수립. |
+| **F03** | **PASS (유지)** | Canonical CSV 직렬화 및 NaN/Inf 가드레일 | `simulation-reproducibility-contract.md` §6.2, §8.1: RFC 4180 빈 문자열 직렬화 및 NaN/Inf `ValueError` 방어 유지 (재작성 배제). |
+| **F04** | **PASS (v0.5 보완)** | Factory Wipe 범위 확정 및 IndexedDB 안전 복구 계약 | 본 문서 §4.3 및 `simulation-reproducibility-contract.md` §7.2: 옵션 1(실행·사건 이력 초기화)을 MVP 공식 권고안으로 확정하고 옵션 2(완전 공장 와이프)는 오너 승인 전 미확정 상태로 규정, 0바이트 빈 DB 오류 문구 정정, 사전 의도 기록 프로토콜(Pre-Intent Logging) 및 6종 복구 테스트 벡터 명세. |
+| **F05** | **PASS (유지)** | SQLite 락 메커니즘 구별 및 재시도 정책 | 본 문서 §3.2, §3.3: `SQLITE_BUSY` vs `SQLITE_LOCKED` 분리 및 애플리케이션 지수 백오프/재시도 유지 (재작성 배제). |
+| **F06** | **PASS (v0.5 보완)** | 부분군 $k \ge 5$ 및 $N \ge 20$ 경계 혼재, 평가 상태 우선순위 | `domain-data-contract-v0.1.md` §6.3: $k \ge 5$와 $N \ge 20$ 판정 분리, 상태 우선순위 계층(`EVALUATION_INVALID` > `ASSUMPTION_WARNING` > `ONE_SIDED_SPEC_EVALUATED` > `OK`) 및 경고 배열(`warnings: []`) 도입. |
+| **F07** | **PASS (v0.5 보완)** | `event_id` 엔티티 타입 누락 및 동일 ID 상이한 페이로드 처리 | `simulation-reproducibility-contract.md` §4, §5: 해시 생성 입력에 `entity_type` 추가, 동일 `event_id` 상이 페이로드 유입 시 `EVENT_PAYLOAD_CONFLICT` 명시적 거부, Canonical CSV와 도메인/API 간 시간축 매핑 테이블 정립. |
+| **F08** | **PASS (유지)** | SPC 알람의 결함/인과관계 비인과성 원칙 | `domain-data-contract-v0.1.md` §3.5: SPC 경고의 비인과성 공학 원칙 유지 (재작성 배제). |
+| **F09** | **PASS (v0.5 보완)** | `PROCESS_RUN` ERD-TypeScript 불일치 및 픽스처 검증 규칙 | `domain-data-contract-v0.1.md` §2, §7, §8: ERD와 TypeScript 간 `runStatus` 5대 상태(`READY`, `IN_PROGRESS`, `COMPLETED`, `ABORTED`, `FAILED`), 필수 `startTimeUtc`, 선택 `endTimeUtc` 완전 일치, `fixtures/manifest.json` 스키마 및 검증 에러 규칙 명시. |
 
 ---
 
@@ -328,8 +362,8 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
 3. **[A01 결정 필요 1-3] Mode C (Supabase) 전환 마일스톤 기준 공식 승인:**
    - 실시간 다중 사용자 동시 편집, 엔터프라이즈 RBAC/RLS, 중앙 감사 로그 요구 발생 시점에 한하여 마이그레이션 착수.
 4. **[A01 결정 필요 1-4] 공장 초기화(Factory Wipe) 삭제 범위 확정 ([F04] 선택지):**
-   - [ ] 옵션 1 (A02 강력 권고안): 실행·사건 이력 초기화 (설비/레시피/로트/웨이퍼 마스터 기준 데이터는 보존하여 데모 연속성 보장)
-   - [ ] 옵션 2: 완전 공장 와이프 (마스터 데이터까지 전체 삭제하여 0바이트 빈 DB 생성 후 JSON 시드 재적재 필수)
+   - [ ] 옵션 1 (A02 MVP 공식 권고안): 실행·사건 이력 초기화 (설비/레시피/로트/웨이퍼 마스터 기준 데이터는 보존하여 데모 연속성 보장)
+   - [ ] 옵션 2 (미확정 / 프로젝트 오너 명시적 승인 대기): 완전 공장 및 마스터 데이터 와이프 (마스터 데이터까지 전체 테이블을 삭제하여 초기화, 외부 JSON 시드 재적재 필수)
 5. **[A01 결정 필요 2-1] 공정능력지수(Cp/Cpk) 및 공정성능지수(Pp/Ppk) 추정량 분리 규약 승인:**
    - [ ] 안 1 (A02 제안 / 승인 대기): 전체 변동 기반 Pp/Ppk(표본 표준편차 s)와 군내 변동 기반 Cp/Cpk(R-bar/d2 또는 s-bar/c4)를 분리하고 EKL·API·화면에 추정량을 명시하는 제안안 승인
    - [ ] 안 2: 단일 지표(s 기반 Pp/Ppk)만 산출하고 화면 명칭을 Ppk로 통일

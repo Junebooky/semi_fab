@@ -1,4 +1,4 @@
-# FAB ONE — 시뮬레이션 재현성 및 결정론적 실행 계약서 v0.4
+# FAB ONE — 시뮬레이션 재현성 및 결정론적 실행 계약서 v0.5
 
 - **문서 ID:** ARCH-DOC-003
 - **상태:** PROPOSED (A01 기획자 및 프로젝트 오너 승인 대기)
@@ -13,6 +13,9 @@
     - [F03] `quantize_value` 함수에 NaN 및 Infinity 부동소수점 검사 가드레일 추가: 비정상 부동소수점 유입 시 `ValueError` 예외 발생, 결측치(`None`)만 RFC 4180 빈 문자열(`""`)로 직렬화하도록 엄격화 및 입출력 테스트 벡터 명시
     - [F04] 공장 초기화(Factory Wipe) 삭제 범위 선택지 제시: 마스터 데이터 보존형(옵션 1: 실행/사건 이력 리셋, A02 권고) vs 전체 마스터 삭제형(옵션 2: 완전 공장 와이프), IndexedDB 비동기/비원자적 삭제 오류 복구 및 재시도 메커니즘 명시
     - [F07] Canonical CSV 및 스케줄러 시간축을 단일 컬럼 `sim_timestamp_utc`로 통일, 7차 정렬 키용 결정론적 `event_id` 해시 생성 산식 정의 및 멱등 중복 폐기 규약 완결
+  - v0.5 (2026-10-15): A04 3차 독립 검증 결과 수용 및 A01 잔여 5항목 통합 수정 지시 반영
+    - [F04] IndexedDB 삭제 사전 의도 영속화(Pre-Intent Logging: `fab_wipe_intent`, `status: INTENT_RECORDED/BACKEND_COMMITTED`), 6개 장애 시퀀스 복구 매트릭스 수립, 옵션 1(시뮬레이션 이력 초기화) MVP 공식 권고 및 옵션 2(완전 공장 와이프) 오너 미승인/미구현 상태 명시, 0바이트 표현 삭제
+    - [F07] `event_id` 생성 입력에 `entity_type` 추가, 동일 `event_id`에 상이한 페이로드 유입 시 `EVENT_PAYLOAD_CONFLICT`로 즉시 거부(Fail-closed)하는 결정론 불변식 수립, 64비트 절단 충돌 가드 및 시간 컬럼 매핑 표 추가
 - **작성자:** A02 (수석 소프트웨어 개발 에이전트)
 - **관련 Issue / PR:** Issue [#1](https://github.com/Junebooky/semi_fab/issues/1), Issue [#8](https://github.com/Junebooky/semi_fab/issues/8), Issue [#12](https://github.com/Junebooky/semi_fab/issues/12), Draft PR [#2](https://github.com/Junebooky/semi_fab/pull/2), QA PR [#3](https://github.com/Junebooky/semi_fab/pull/3), Design PR [#7](https://github.com/Junebooky/semi_fab/pull/7), PR [#10](https://github.com/Junebooky/semi_fab/pull/10)
 
@@ -132,10 +135,14 @@ semi_fab/ (저장소 루트, CWD)
         │                                             │
         └───────────────────(Reset)───────────────────┘
   ```
-- **단일 시간축 통일 및 해시 대상 스코프 ([F07] 해결):**
-  - **시뮬레이션 시간 컬럼 단일화 (`sim_timestamp_utc`):** 동기식 가상 시뮬레이션 엔진에서 물리 사건 발생 시점은 가상 틱과 완전히 일치하므로, Canonical CSV 및 이벤트 스케줄러의 기준 시각은 **`sim_timestamp_utc` 단일 컬럼으로 완전 통일**한다. (기존 본문의 `event_time_utc` 분리 표기로 인한 충돌 해소).
-  - **결정론적 해시 대상:** `sim_timestamp_utc`는 **Canonical CSV 직렬화 및 SHA-256 해시 검증 대상에 포함**된다.
-  - **비결정론적 호스트 영속화 시각 (`ingest_time_utc`):** 실제 호스트 DB에 레코드가 기록되는 시스템 시각은 머신 부하 및 I/O 스케줄링에 따라 달라지는 비결정론적 텔레메트리이므로, **Canonical CSV 및 SHA-256 체크섬 대상에서 엄격히 제외**된다.
+- **시간 컬럼 매핑 및 해시 스코프 대응표 ([F07] 해결):**
+  Canonical CSV 직렬화 컬럼과 도메인 스키마/API 간의 대응 관계는 다음과 같이 명확히 규정된다:
+
+| 컬럼명 | Canonical CSV | 도메인 DDL / ERD | TypeScript / API | 합성 시뮬레이션 (MVP Mode A/B) | 향후 라이브 연동 (Mode C) | 결정론적 해시 대상 |
+|---|---|---|---|---|---|---|
+| `sim_timestamp_utc` | **기준 헤더** | `sim_time_utc` | `simTimeUtc` | 가상 시뮬레이션 클록 틱 시각 ($t_{\text{sim}}$) | 시뮬레이터 재생 시각 | **포함 (SHA-256 검증)** |
+| `event_time_utc` | 매핑 (동일) | `event_time_utc` | `eventTimeUtc` | $t_{\text{event}} = t_{\text{sim}}$ (동기 시뮬레이션 일치) | 물리 장비 센서 챔버 계측 시각 | **포함 (동일값)** |
+| `ingest_time_utc` | **제외** | `ingest_time_utc` | `ingestTimeUtc` | 호스트 DB 저장 시점 시각 (비결정론) | 클라우드 수집 게이트웨이 시각 | **엄격 제외 (체크섬 배제)** |
 
 ---
 
@@ -156,13 +163,18 @@ $$\text{SortKey} = (\text{sim\_timestamp\_epoch\_ms}, \text{event\_phase}, \text
 6. **`logical_step_seq` (6차 기준):** 시나리오 레시피 스텝에 사전 할당된 정적 시퀀스 번호 (정수).
 7. **`event_id` (7차 기준, 최종 Tie-Breaker):** 결정론적 해시 파생 식별자 (아래 산식 준수, 사전식 순서 오름차순).
 
-### 5.2 결정론적 `event_id` 해시 생성 산식 및 멱등 중복 폐기 규칙 ([F07] 산식 명세)
-- **결정론적 `event_id` 생성 산식:**
-  비결정론적 UUID(예: `uuid4()`)나 런타임 메모리 주소를 절대 배제하고, 도메인 불변값들의 정규화 문자열을 SHA-256 해시하여 앞 16자리를 취한다:
-  $$\text{event\_id} = \text{SHA256}\Big(\text{f"{scenario\_id}:{seed}:{sim\_timestamp\_epoch\_ms}:{event\_phase}:{entity\_id}:{parameter\_id}:{logical\_step\_seq}"}\Big)[:16]$$
-- **중복 이벤트 충돌(Duplicate Collision) 및 멱등 폐기 규칙:**
-  - 동일한 `event_id`를 갖는 이벤트는 물리적으로 완벽히 동일한 사건을 의미한다.
-  - 네트워크 재시도나 큐 재진입으로 인해 동일한 `event_id`를 가진 이벤트가 중복 유입되는 경우, **멱등성(Idempotency)** 원칙에 따라 최초 수신 이벤트만 처리하고 후속 중복 이벤트는 DB나 큐 상태를 전혀 변경하지 않고 `DUPLICATE_EVENT_DROPPED`로 안전하게 폐기(Drop)한다.
+### 5.2 결정론적 `event_id` 생성 및 페이로드 충돌 방지 규약 ([F07] 해결)
+- **`entity_type`을 포함한 `event_id` 결정론적 해시 생성 산식:**
+  비결정론적 UUID나 런타임 메모리 주소를 일체 배제하고, 도메인 불변 식별자(정렬 키 1~6차 구성요소 전체)를 `:` 구분자로 결합하여 SHA-256 해시의 앞 16자리를 취한다:
+  $$\text{event\_id} = \text{SHA256}\Big(\text{f"{scenario\_id}:{seed}:{sim\_timestamp\_epoch\_ms}:{event\_phase}:{entity\_type}:{entity\_id}:{parameter\_id}:{logical\_step\_seq}"}\Big)[:16]$$
+- **페이로드 다이제스트(Payload Digest) 및 충돌 차단 (Fail-Closed 불변식):**
+  - 각 이벤트의 정규화된 데이터 페이로드는 `payload_digest = SHA256(canonical_json(payload))`로 계산한다.
+  - 이벤트 수신 시 동일한 `event_id`가 이미 등록되어 있는 경우:
+    1. **Case 1 (동일 ID + 동일 Payload Digest):** 네트워크 재전송 또는 큐 재진입으로 판정하여 **`DUPLICATE_EVENT_DROPPED`로 안전하게 멱등 무시**한다 (시스템 상태 변경 없음).
+    2. **Case 2 (동일 ID + 상이한 Payload Digest / 식별자 불일치):** 최초 도착 값을 임의로 채택하지 않고, **즉시 `EVENT_PAYLOAD_CONFLICT` 치명적 오류를 발생시키며 fail-closed로 거부 및 시스템 중단**한다.
+       - **결정론 보장 증명:** 이벤트 도착 순서가 `[A, B]`이든 `[B, A]`이든 상관없이 시스템은 동일한 `EVENT_PAYLOAD_CONFLICT` 예외로 거절되므로, 런타임 비동기 도착 순서에 따라 다른 데이터가 채택되는 비결정론이 원천 차단된다.
+- **64비트 절단 충돌(Truncation Collision) 방지 가드:**
+  내부 레지스트리는 16자리 `event_id` 외에 원본 256비트 전체 해시를 함께 보관하며, 16자리가 일치하더라도 전체 해시가 다를 경우 `EVENT_ID_COLLISION_DETECTED` 오류로 즉시 거부한다.
 
 ---
 
@@ -240,15 +252,15 @@ def quantize_value(val: float | str | None, precision: int) -> str:
 #### 모델 2: 공장 전체 초기화 (Factory Wipe, 명시적 파괴적 관리자 작업) ([F04] 선택지 및 복구 명세)
 사용자가 모든 시뮬레이션 데이터와 조사 기록을 비우고 공장을 초기 상태로 되돌리고자 할 때 사용한다:
 
-- **초기화 범위 선택지 (A01 기획 결정 필요):**
-  - **옵션 1 (실행·사건 이력 초기화, A02 강력 권고안):**
+- **초기화 범위 선택지 (A01 기획 결정 및 MVP 권고안):**
+  - **옵션 1 (시뮬레이션 및 사건 이력 초기화, A02 MVP 공식 강력 권고안):**
     - 설비 마스터(`EQUIPMENT`, `CHAMBER`), 레시피(`RECIPE`), 기본 로트(`LOT`), 기본 웨이퍼(`WAFER`)의 기준 정보(Baseline Master Data)는 **온전히 보존**한다.
     - 시뮬레이션 동적 실행 데이터 및 조사 케이스만 역순으로 삭제:
       `case_action_log` $\to$ `investigation_case` $\to$ `fdc_alert` $\to$ `sensor_measurement` $\to$ `process_run_wafer` $\to$ `wafer_defect_map` $\to$ `process_run` $\to$ `simulation_session`.
-    - **권고 사유:** 데모 및 학습 사용자가 매번 번거롭게 설비나 레시피를 재등록할 필요 없이 즉시 새로운 시뮬레이션을 재실행할 수 있어 UX 관점에서 가장 자연스럽고 안전함.
-  - **옵션 2 (완전 공장 및 마스터 데이터 와이프):**
-    - 동적 데이터뿐 아니라 `WAFER` $\to$ `LOT` $\to$ `RECIPE` $\to$ `CHAMBER` $\to$ `EQUIPMENT`까지 전체 데이터베이스를 0바이트 빈 DB로 초기화.
-    - 초기화 완료 후 `fixtures/baseline/` JSON 파일로부터 마스터 데이터를 다시 적재(Master Seed Ingestion)하는 절차가 필수적임.
+    - **권고 사유 및 UI 표기:** 데모 및 학습 사용자가 설비나 레시피를 매번 재등록할 필요 없이 즉시 새로운 시뮬레이션을 재실행할 수 있도록 최적화함. 사용자 대시보드 모달에는 '공장 전체 삭제'가 아닌 **'시뮬레이션 이력 초기화 (설비·레시피 마스터 보존)'**으로 명확히 표기함.
+  - **옵션 2 (완전 데이터베이스 삭제, 프로젝트 오너 미승인 / 미구현 제안):**
+    - 동적 데이터뿐 아니라 전체 마스터 테이블(`WAFER` $\to$ `LOT` $\to$ `RECIPE` $\to$ `CHAMBER` $\to$ `EQUIPMENT`)까지 모든 레코드를 삭제하는 방식.
+    - **주의 및 정정:** SQL `DELETE` 구문은 테이블 내 데이터 레코드만 삭제할 뿐 SQLite 데이터베이스 파일 자체를 0바이트로 만들지 않으며(유효한 빈 스키마 및 헤더 페이지 4KB/8KB 유지), 실행 후에는 `fixtures/baseline/` JSON 파일로부터 마스터 데이터를 다시 적재(Seed Ingestion)해야 하므로 프로젝트 오너의 명시적 승인 전까지는 비활성 상태로 유지함.
 
 - **외래키 종속성을 완벽히 반영한 역순 삭제 단일 트랜잭션 (옵션 1 기준):**
   ```sql
@@ -277,11 +289,28 @@ def quantize_value(val: float | str | None, precision: int) -> str:
   - 1단계: "모든 시뮬레이션 이력과 과거 사건 조사 기록이 영구히 삭제됩니다" 경고 모달 표시.
   - 2단계: 확인 입력 필드에 `"FACTORY-WIPE-CONFIRM"` 문자열을 사용자가 직접 입력해야만 실행 버튼이 활성화됨.
 
-- **브라우저 IndexedDB 비동기 삭제 및 비원자적 오류 복구 메커니즘 ([F04] 보완):**
-  - 브라우저 IndexedDB는 SQLite 트랜잭션의 ACID 범위에 포함될 수 없으므로(분리 저장소), **2단계 분리 정리 프로토콜(Two-phase Cleanup Protocol)**을 준수한다:
-    1. 백엔드 SQLite의 `BEGIN IMMEDIATE ... COMMIT` 삭제 트랜잭션이 성공적으로 완료된 후 클라이언트에 응답을 반환한다.
-    2. 사용자가 `[선택] 브라우저 내 개인 학습 메모 및 환경설정도 함께 삭제`를 체크한 경우, 프론트엔드가 비동기로 `indexedDB.deleteDatabase()` 또는 오브젝트 스토어 `clear()`를 수행한다.
-    3. **장애 복구 가드레일:** 브라우저 탭 강제 종료, 쿼터 잠금 등으로 IndexedDB 삭제가 실패할 경우, 프론트엔드는 `localStorage.setItem('fab_idb_cleanup_pending', 'true')` 플래그를 영속화하고, 다음 애플리케이션 기동 시 해당 플래그를 감지하여 IndexedDB를 즉시 재정리(Self-healing cleanup)함으로써 데이터 불일치 잔여물을 완전 소거한다.
+- **브라우저 IndexedDB 사전 의도 기록(Pre-Intent Logging) 및 비원자적 복구 계약 ([F04] 해결):**
+  SQLite 백엔드와 브라우저 IndexedDB는 서로 다른 물리 저장소이므로, **파괴적 서버 요청 전에 신뢰할 수 있는 삭제 의도를 먼저 영속화**하고, 실행 결과에 따라 복구를 수행하는 **3단계 내구적 복구 프로토콜(Pre-Intent Durable Cleanup Protocol)**을 강제한다:
+  1. **1단계 (선행 의도 영속화):** 사용자가 삭제에 동의하면 프론트엔드는 서버에 삭제 요청을 전송하기 전에 `localStorage`에 고유 작업 식별자와 의도를 기록한다:
+     ```json
+     {
+       "operationId": "wipe-op-550e8400",
+       "timestampUtc": "2026-10-15T05:00:00.000Z",
+       "consentScope": "SIMULATION_HISTORY_AND_INDEXEDDB_MEMOS",
+       "targetSessionId": "sess-active",
+       "status": "INTENT_RECORDED"
+     }
+     ```
+  2. **2단계 (백엔드 원자적 트랜잭션 수행):** `POST /api/v1/admin/reset` (`operationId` 전달). 백엔드는 단일 트랜잭션(`BEGIN IMMEDIATE ... COMMIT`)으로 역순 삭제를 실행하며, 성공 시 200 OK와 함께 `{ operationId, status: "BACKEND_COMMITTED" }`를 반환한다. 프론트엔드는 응답 수신 즉시 로컬 의도 상태를 `"BACKEND_COMMITTED"`로 승격한다.
+  3. **3단계 (클라이언트 비동기 삭제 및 의도 소거):** 프론트엔드가 비동기로 IndexedDB 삭제(`indexedDB.deleteDatabase()` 또는 `store.clear()`)를 실행하고, 실제 삭제 완료 콜백이 성공한 경우에 한해 `localStorage.removeItem('fab_wipe_intent')`로 의도를 제거한다.
+
+- **장애 시퀀스 및 복구 상태 전이 매트릭스 (Specification Test Vectors, [F04] 사양):**
+  1. **동의 직후, 서버 요청 전 탭 종료:** 로컬에 `INTENT_RECORDED` 잔여. 재기동 시 백엔드에 `operationId` 상태를 조회 $\to$ 서버 트랜잭션 미실행 확인 $\to$ 의도 레코드를 안전하게 폐기하고 **IndexedDB 메모를 온전히 보존** (사용자 메모 오삭제 원천 차단).
+  2. **서버 트랜잭션 도중(COMMIT 전) 탭 종료/네트워크 단절:** 백엔드 자동 `ROLLBACK` $\to$ 재기동 시 서버 미커밋 확인 $\to$ 의도 폐기 및 **IndexedDB 메모 보존**.
+  3. **서버 COMMIT 완료 직후, 클라이언트 응답 수신 전 탭 종료:** 서버는 커밋 완료, 클라이언트는 `INTENT_RECORDED` 유지. 재기동 시 서버 상태 조회 $\to$ 서버 "COMMITTED" 확인 $\to$ 클라이언트가 상태를 `BACKEND_COMMITTED`로 승격하고 즉시 IndexedDB 비동기 삭제를 재개 $\to$ 완료 후 의도 제거 (데이터 불일치 자가 복구 완료).
+  4. **IndexedDB clear 수행 중 탭 비정상 종료:** 클라이언트에 `BACKEND_COMMITTED` 잔여 $\to$ 재기동 시 즉시 IndexedDB 재정리 재개 $\to$ 완료 후 의도 제거.
+  5. **브라우저 스토리지 쓰기 실패 (스토리지 쿼터 초과, 개인정보 모드 차단 등):** 1단계 사전 의도 기록이 실패할 경우, 서버 파괴 요청을 일체 전송하지 않고 즉시 **Fail-Closed로 중단** ("로컬 스토리지 접근 불가로 초기화 중단")하여 비가역적 데이터 유실을 방지.
+  6. **사용자가 IndexedDB 메모 삭제에 미동의한 경우:** `consentScope = "SIMULATION_HISTORY_ONLY"` $\to$ 백엔드 SQLite만 초기화되고 클라이언트 IndexedDB는 일체 건드리지 않고 안전하게 보존.
 
 ---
 
