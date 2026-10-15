@@ -286,7 +286,7 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
 | QA 이슈 ID | 심각도 | A04 지적 요약 | A02 아키텍처 해결안 및 문서 매핑 |
 |---|---|---|---|
 | **QA-F01** | High | 시드만으로는 재현 불가 (RNG 알고리즘, 클록, 순서 미정) | `simulation-reproducibility-contract.md`에 PCG64 알고리즘, 가상 클록(UTC 고정, 1초 틱), 정적 7요소 결정론적 정렬 키, 사이드카 체크섬 파일(`fixtures/checksums.sha256`) 검증 명시. |
-| **QA-F02** | High | SQLite 외래키 미강제, 트랜잭션/동시성/복구 정책 부재 | 본 문서 제3절에 `PRAGMA foreign_keys=ON;`, WAL 저널 모드, `BEGIN IMMEDIATE`, `VACUUM INTO` 백업, `busy_timeout` 점진적 슬립 및 앱 계층 지수 백오프/재시도 정책, 서버리스 임시 파일 배치 금지 규약 명시. |
+| **QA-F02** | High | SQLite 외래키 미강제, 트랜잭션/동시성/복구 정책 부재 | 본 문서 제3절에 `PRAGMA foreign_keys=ON;`, WAL 저널 모드, `BEGIN IMMEDIATE`, `VACUUM INTO` 백업, `busy_timeout` 점진적 슬립 및 앱 계층 지수 백오프/재시도 정책, `domain-data-contract-v0.1.md` 제3.2절의 부모 복합 UNIQUE 및 자식 복합 FK 정합성 규약 명시. |
 | **QA-F03** | Medium | IndexedDB 데이터 손실 경고, 내보내기/가져오기 규격 부재 | 본 문서 제4절에 로컬 전용 한계 고지 UX, JSON 스키마(v1.0.0), XSS/수식 삽입 방지 살균 및 세션 기반 소프트 리셋 메모 보존, Factory Wipe 시 선택적 삭제 동의 명시. |
 | **QA-F04** | High | 역할 전환기(Role Switcher)가 실제 보안 RBAC/감사로 오인될 위험 | 본 문서 제5절에 `viewPreference` 명명, 권한 없는 시뮬레이션 컨텍스트 헤더 명시, Mode C 이전 엔터프라이즈 감사/인가 클레임 전면 차단. |
 | **QA-F05** | Medium | 이상 경고가 결함/인과관계를 확정하는 표현 사용 위험 | `domain-data-contract-v0.1.md` 제3.5절에 "SPC 경고는 조사의 근거일 뿐, 인과관계나 결함을 증명하지 않는다"는 비인과성 공학 원칙 신설 및 화면·조사 용어 통제 규약 명시. |

@@ -7,7 +7,7 @@
   - v0.2 (2026-10-15): A01 검토의견 반영 (Cpk/Ppk 분리, Wafer-Run 계보)
   - v0.3 (2026-10-15): A04 독립 검증 결과 수용 및 A01 수정 지시 반영
     - [F01] 활성 세션 수명주기 불변식(초기 0개 허용, 서비스 가동 중 정확히 1개, 원자적 인계) 명문화
-    - [F02] 복합 외래키(Composite FK)를 통한 교차 Lot(Cross-Lot) 삽입 원천 차단 및 세션·챔버 무결성 강화
+    - [F02] 복합 외래키(Composite FK) SQLite 무결성 보완: 부모 PROCESS_RUN에 UNIQUE(run_id, session_id) 추가하여 foreign key mismatch 해결, PROCESS_RUN_WAFER 세션 일치 FK 강제, 정상/잘못된 세션/교차 Lot 삽입 수용 조건 명시
     - [F06] 단측 규격(One-Sided Spec) 처리, 부분군 계수($d_2, c_4$) 참조표, Die Yield 분모 0 시 반환 타입 고정, 수치 벤치마크 수록
     - [F08] SPC 이상 경고의 비인과성 공학 원칙 독립 섹션(§3.5) 신설 및 인용 경로 확정
     - [F09] API/TypeScript 계약 필드명 통일(`capabilityType`, `sigmaEstimator`), Freshness 최초/역전 경계 정의, 전 엔티티 `dataOrigin` 명시
@@ -95,7 +95,7 @@ erDiagram
 
     PROCESS_RUN {
         string run_id PK "예: RUN-SYN-044"
-        string session_id FK
+        string session_id FK "UNIQUE(run_id, session_id)"
         string chamber_id FK
         string recipe_id FK
         string lot_id FK "UNIQUE(run_id, lot_id)"
@@ -106,10 +106,10 @@ erDiagram
 
     PROCESS_RUN_WAFER {
         string run_wafer_id PK "UUID"
-        string session_id FK
+        string session_id FK "Composite FK: (run_id, session_id)"
         string run_id FK
-        string wafer_id FK
-        string lot_id FK "Composite FK 검증용"
+        string wafer_id FK "Composite FK: (wafer_id, lot_id)"
+        string lot_id FK "Composite FK: (run_id, lot_id)"
         int slot_number "1~25"
         int wafer_sequence_in_run "1~25 (가공 순서)"
         string exposure_start_time_utc
@@ -168,22 +168,43 @@ erDiagram
 - 모든 기본 키(PK)는 고유하며 시스템 전역에서 유일하다.
 - 합성 데이터 식별자는 실제 FAB과의 혼동을 방지하기 위해 접두사 또는 접미사에 `SYN`을 포함할 수 있다. (예: `RUN-SYN-044`, `AL-SYN-001`)
 
-### 3.2 복합 외래키(Composite FK)를 통한 교차 데이터 삽입 차단 ([F02] 해결)
-단순 단일 컬럼 외래키만으로는 `LOT-A`에 속한 웨이퍼를 `LOT-B`가 할당된 공정 실행(`PROCESS_RUN`)에 잘못 매핑하는 논리적 모순을 차단할 수 없다. 이를 DB 스키마 레벨에서 원천 방지하기 위해 다음 **복합 외래키 및 복합 유니크 제약조건**을 강제한다:
+### 3.2 복합 외래키(Composite FK)를 통한 계보 정합성 및 교차 데이터 삽입 차단 ([F02] 보완)
+단순 단일 컬럼 외래키만으로는 (1) `LOT-A`에 속한 웨이퍼를 `LOT-B`가 할당된 공정 실행(`PROCESS_RUN`)에 매핑하거나, (2) `SESSION-1`에서 실행된 `PROCESS_RUN`에 속한 웨이퍼나 계측치에 `SESSION-2`의 세션 ID를 잘못 부여하는 논리적 모순을 차단할 수 없다. 또한 SQLite는 자식 복합 외래키가 참조하는 부모 컬럼에 정확히 일치하는 `UNIQUE` 제약조건(또는 PK)이 없으면 `OperationalError: foreign key mismatch`를 발생시킨다.
 
-1. **테이블 복합 제약조건 설정:**
+이를 DB 스키마 레벨에서 원천 방지하고 정합성을 강제하기 위해 다음 **복합 유니크 제약조건 및 복합 외래키**를 강제한다:
+
+1. **부모 테이블(`PROCESS_RUN`, `WAFER`) 복합 제약조건 설정:**
    - `WAFER`: `CONSTRAINT uq_wafer_lot UNIQUE (wafer_id, lot_id)`
-   - `PROCESS_RUN`: `CONSTRAINT uq_run_lot UNIQUE (run_id, lot_id)`
-   - `PROCESS_RUN`: `CONSTRAINT uq_run_session_chamber UNIQUE (run_id, session_id, chamber_id)`
-2. **`PROCESS_RUN_WAFER` 복합 외래키 강제:**
+   - `PROCESS_RUN`: `CONSTRAINT uq_run_session UNIQUE (run_id, session_id)` *(SENSOR_MEASUREMENT 및 PROCESS_RUN_WAFER의 2열 참조를 위한 필수 유니크 키 — foreign key mismatch 원천 방지)*
+   - `PROCESS_RUN`: `CONSTRAINT uq_run_lot UNIQUE (run_id, lot_id)` *(PROCESS_RUN_WAFER의 교차 Lot 차단용)*
+   - `PROCESS_RUN`: `CONSTRAINT uq_run_session_chamber UNIQUE (run_id, session_id, chamber_id)` *(FDC_ALERT의 3열 참조용)*
+
+2. **`PROCESS_RUN_WAFER` 복합 외래키 강제 (Lot 일치 및 Session 일치 동시 보장):**
    ```sql
    FOREIGN KEY (wafer_id, lot_id) REFERENCES wafer(wafer_id, lot_id) ON DELETE RESTRICT,
-   FOREIGN KEY (run_id, lot_id) REFERENCES process_run(run_id, lot_id) ON DELETE RESTRICT
+   FOREIGN KEY (run_id, lot_id) REFERENCES process_run(run_id, lot_id) ON DELETE RESTRICT,
+   FOREIGN KEY (run_id, session_id) REFERENCES process_run(run_id, session_id) ON DELETE RESTRICT
    ```
-   - **수용 검증 사례:** `run_id`의 `lot_id`와 `wafer_id`의 `lot_id`가 불일치하는 교차 삽입 시도 시, SQLite 엔진은 `FOREIGN KEY constraint failed` 에러를 발생시키며 트랜잭션을 즉시 차단한다.
+   - **Lot 일치 보장:** `wafer_id`의 `lot_id`와 `run_id`의 `lot_id`가 불일치하는 교차 삽입 시도 시, SQLite 엔진은 `FOREIGN KEY constraint failed` 에러를 발생시키며 즉시 차단한다.
+   - **Session 일치 보장:** `run_id`의 `session_id`와 `PROCESS_RUN_WAFER`의 `session_id`가 상이한 세션 불일치 삽입 시도 시, SQLite 엔진은 `FOREIGN KEY constraint failed` 에러를 발생시키며 즉시 차단한다.
+
 3. **`SENSOR_MEASUREMENT` 및 `FDC_ALERT` 세션·챔버 정합성 강제:**
-   - `SENSOR_MEASUREMENT`: `FOREIGN KEY (run_id, session_id) REFERENCES process_run(run_id, session_id) ON DELETE RESTRICT`
-   - `FDC_ALERT`: `FOREIGN KEY (run_id, session_id, chamber_id) REFERENCES process_run(run_id, session_id, chamber_id) ON DELETE RESTRICT`
+   - `SENSOR_MEASUREMENT`:
+     ```sql
+     FOREIGN KEY (run_id, session_id) REFERENCES process_run(run_id, session_id) ON DELETE RESTRICT
+     ```
+     - 부모 `process_run(run_id, session_id)`에 `CONSTRAINT uq_run_session UNIQUE`가 물리적으로 존재하므로 `foreign key mismatch` 없이 정상 INSERT가 통과하며, 잘못된 `session_id`가 입력되면 `FOREIGN KEY constraint failed`로 안전하게 거절된다.
+   - `FDC_ALERT`:
+     ```sql
+     FOREIGN KEY (run_id, session_id, chamber_id) REFERENCES process_run(run_id, session_id, chamber_id) ON DELETE RESTRICT
+     ```
+
+4. **독립 최소 반례 수용 조건 및 검증 기준 (A01/A04 기계적 수용 조건):**
+   - **전제 조건:** SQLite 연결마다 반드시 `PRAGMA foreign_keys = ON;`을 실행한다.
+   - **수용 조건 1 (정상 계보 INSERT 성공):** 일치하는 `session_id`, `run_id`, `lot_id`, `wafer_id`를 가진 정상 레코드 삽입 시 에러 없이 커밋 성공.
+   - **수용 조건 2 (잘못된 Session INSERT 거절):** `PROCESS_RUN`의 `session_id`와 다른 세션을 지정한 `SENSOR_MEASUREMENT` 또는 `PROCESS_RUN_WAFER` 삽입 시 `sqlite3.IntegrityError: FOREIGN KEY constraint failed` 발생 및 즉시 롤백.
+   - **수용 조건 3 (교차 Lot INSERT 거절):** `PROCESS_RUN`의 `lot_id`와 다른 Lot 소속의 웨이퍼를 `PROCESS_RUN_WAFER`에 매핑 시도 시 `sqlite3.IntegrityError: FOREIGN KEY constraint failed` 발생 및 즉시 롤백.
+   - **수용 조건 4 (무결성 검사):** 정상 데이터 적재 후 `PRAGMA foreign_key_check;` 실행 결과가 0건(빈 리스트 `[]`)을 반환.
 
 ### 3.3 Wafer $\to$ Run 노출 계보 및 Lot/Wafer 상태 구분
 - **도메인 특성:** 식각 챔버(Etch Chamber)는 단일 웨이퍼 가공(Single-wafer processing) 방식이므로, Lot 단위 할당과 챔버 내 실제 노출은 분리하여 추적한다.
