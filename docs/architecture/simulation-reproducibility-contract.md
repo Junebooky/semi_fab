@@ -13,9 +13,9 @@
     - [F03] `quantize_value` 함수에 NaN 및 Infinity 부동소수점 검사 가드레일 추가: 비정상 부동소수점 유입 시 `ValueError` 예외 발생, 결측치(`None`)만 RFC 4180 빈 문자열(`""`)로 직렬화하도록 엄격화 및 입출력 테스트 벡터 명시
     - [F04] 공장 초기화(Factory Wipe) 삭제 범위 선택지 제시: 마스터 데이터 보존형(옵션 1: 실행/사건 이력 리셋, A02 권고) vs 전체 마스터 삭제형(옵션 2: 완전 공장 와이프), IndexedDB 비동기/비원자적 삭제 오류 복구 및 재시도 메커니즘 명시
     - [F07] Canonical CSV 및 스케줄러 시간축을 단일 컬럼 `sim_timestamp_utc`로 통일, 7차 정렬 키용 결정론적 `event_id` 해시 생성 산식 정의 및 멱등 중복 폐기 규약 완결
-  - v0.5 (2026-10-15): A04 3차 독립 검증 결과 수용 및 A01 잔여 5항목 통합 수정 지시 반영
-    - [F04] IndexedDB 삭제 사전 의도 영속화(Pre-Intent Logging: `fab_wipe_intent`, `status: INTENT_RECORDED/BACKEND_COMMITTED`), 6개 장애 시퀀스 복구 매트릭스 수립, 옵션 1(시뮬레이션 이력 초기화) MVP 공식 권고 및 옵션 2(완전 공장 와이프) 오너 미승인/미구현 상태 명시, 0바이트 표현 삭제
-    - [F07] `event_id` 생성 입력에 `entity_type` 추가, 동일 `event_id`에 상이한 페이로드 유입 시 `EVENT_PAYLOAD_CONFLICT`로 즉시 거부(Fail-closed)하는 결정론 불변식 수립, 64비트 절단 충돌 가드 및 시간 컬럼 매핑 표 추가
+  - v0.5 (2026-10-15): A04 3차 독립 검증 결과 수용 및 A01 잔여 계약 수정 지시 반영
+    - [F04] 공장 초기화(Factory Wipe) 단일 표준 사전 의도 기록 계약(`fab_factory_wipe_intent`, `operationId`, `status: INTENT_RECORDED/SERVER_COMMITTED`, `POST /api/v1/admin/factory-wipe`, `GET /status`), 서버 내구적 저널(`system_operation_journal`) 및 멱등 커밋 보장, 네트워크 타임아웃 시 자동 롤백 속단 배제, 커밋 미확인 시 IndexedDB 삭제 절대 금지 가드레일, 7종 장애 복구 매트릭스 수립 (`mvp-mode-and-storage-assessment.md` §4.3과 100% 일치)
+    - [F07] `event_id` 생성 입력에 `entity_type` 추가, 동일 `event_id`에 상이한 페이로드 유입 시 `EVENT_PAYLOAD_CONFLICT`로 즉시 거부(Fail-closed) 및 단일 트랜잭션 전체 롤백 기반 부분 영속화 배제(Zero Partial Persistence) 계약 명문화, 64비트 절단 충돌 가드 및 시간 컬럼 매핑 표 추가
 - **작성자:** A02 (수석 소프트웨어 개발 에이전트)
 - **관련 Issue / PR:** Issue [#1](https://github.com/Junebooky/semi_fab/issues/1), Issue [#8](https://github.com/Junebooky/semi_fab/issues/8), Issue [#12](https://github.com/Junebooky/semi_fab/issues/12), Draft PR [#2](https://github.com/Junebooky/semi_fab/pull/2), QA PR [#3](https://github.com/Junebooky/semi_fab/pull/3), Design PR [#7](https://github.com/Junebooky/semi_fab/pull/7), PR [#10](https://github.com/Junebooky/semi_fab/pull/10)
 
@@ -175,6 +175,12 @@ $$\text{SortKey} = (\text{sim\_timestamp\_epoch\_ms}, \text{event\_phase}, \text
        - **결정론 보장 증명:** 이벤트 도착 순서가 `[A, B]`이든 `[B, A]`이든 상관없이 시스템은 동일한 `EVENT_PAYLOAD_CONFLICT` 예외로 거절되므로, 런타임 비동기 도착 순서에 따라 다른 데이터가 채택되는 비결정론이 원천 차단된다.
 - **64비트 절단 충돌(Truncation Collision) 방지 가드:**
   내부 레지스트리는 16자리 `event_id` 외에 원본 256비트 전체 해시를 함께 보관하며, 16자리가 일치하더라도 전체 해시가 다를 경우 `EVENT_ID_COLLISION_DETECTED` 오류로 즉시 거부한다.
+- **원자적 롤백 및 부분 영속화 배제 (Zero Partial Persistence 계약):**
+  - 센서 계측 및 공정 이벤트 수신/적재는 단일 데이터베이스 트랜잭션(`BEGIN IMMEDIATE ... COMMIT/ROLLBACK`) 단위로 실행된다.
+  - 동일 `event_id`에 서로 다른 페이로드가 감지되어 `EVENT_PAYLOAD_CONFLICT`가 발생하면:
+    1. 현재 진행 중인 트랜잭션은 즉시 `ROLLBACK`된다.
+    2. 충돌이 발생한 이벤트뿐 아니라 연관된 어떠한 계측치(`sensor_measurement`), 공정 실행(`process_run`), 알람(`fdc_alert`)도 데이터베이스나 스테이징 영역에 **부분적으로 저장(Partial Persistence)되거나 고아 레코드로 남지 않는다** (0 rows written).
+    3. 이미 이전 트랜잭션에서 영속화 완료된 선행 이벤트가 존재하는 상태에서 동일한 `event_id`에 다른 페이로드를 가진 후행 이벤트가 도착한 경우: 후행 이벤트 트랜잭션은 즉시 거부(0 rows)되고, 도메인 불변식 위반으로 간주하여 해당 시뮬레이션 세션은 `INTEGRITY_COMPROMISED`로 플래그되어 이후의 모든 쓰기 작업이 전면 차단된다. 이로써 이벤트 도착 순서가 뒤바뀌더라도 불완전한 상태 전이가 영속화되는 것을 방지한다.
 
 ---
 
@@ -289,28 +295,72 @@ def quantize_value(val: float | str | None, precision: int) -> str:
   - 1단계: "모든 시뮬레이션 이력과 과거 사건 조사 기록이 영구히 삭제됩니다" 경고 모달 표시.
   - 2단계: 확인 입력 필드에 `"FACTORY-WIPE-CONFIRM"` 문자열을 사용자가 직접 입력해야만 실행 버튼이 활성화됨.
 
-- **브라우저 IndexedDB 사전 의도 기록(Pre-Intent Logging) 및 비원자적 복구 계약 ([F04] 해결):**
-  SQLite 백엔드와 브라우저 IndexedDB는 서로 다른 물리 저장소이므로, **파괴적 서버 요청 전에 신뢰할 수 있는 삭제 의도를 먼저 영속화**하고, 실행 결과에 따라 복구를 수행하는 **3단계 내구적 복구 프로토콜(Pre-Intent Durable Cleanup Protocol)**을 강제한다:
-  1. **1단계 (선행 의도 영속화):** 사용자가 삭제에 동의하면 프론트엔드는 서버에 삭제 요청을 전송하기 전에 `localStorage`에 고유 작업 식별자와 의도를 기록한다:
+- **브라우저 IndexedDB 사전 의도 기록(Pre-Intent Logging) 및 내구적 복구 프로토콜 ([F04] 표준화 규약, `mvp-mode-and-storage-assessment.md` §4.3과 100% 일치):**
+  SQLite 백엔드와 브라우저 IndexedDB는 서로 다른 물리 저장소이므로, **파괴적 서버 요청 전에 신뢰할 수 있는 삭제 의도를 먼저 영속화**하고, 서버의 내구적 저널을 확인한 후 안전하게 복구 및 동기화하는 **표준 복구 프로토콜(Pre-Intent Durable Cleanup Protocol)**을 강제한다:
+
+  1. **1단계 (선행 의도 영속화):**
+     파괴적 서버 요청 전송 직전 클라이언트의 `localStorage`에 표준 키 `fab_factory_wipe_intent`로 작업 식별자(`operationId`), 타임스탬프, 초기화 옵션(`wipeOption`), 메모 삭제 동의 여부(`purgeIndexedDbRequested`), 의도 상태(`status: INTENT_RECORDED`)를 원자적으로 기록한다:
      ```json
      {
-       "operationId": "wipe-op-550e8400",
-       "timestampUtc": "2026-10-15T05:00:00.000Z",
-       "consentScope": "SIMULATION_HISTORY_AND_INDEXEDDB_MEMOS",
-       "targetSessionId": "sess-active",
+       "operationId": "wipe-550e8400-e29b-41d4-a716-446655440000",
+       "timestampUtc": "2026-10-15T06:00:00.000Z",
+       "wipeOption": "OPTION_1",
+       "purgeIndexedDbRequested": true,
        "status": "INTENT_RECORDED"
      }
      ```
-  2. **2단계 (백엔드 원자적 트랜잭션 수행):** `POST /api/v1/admin/reset` (`operationId` 전달). 백엔드는 단일 트랜잭션(`BEGIN IMMEDIATE ... COMMIT`)으로 역순 삭제를 실행하며, 성공 시 200 OK와 함께 `{ operationId, status: "BACKEND_COMMITTED" }`를 반환한다. 프론트엔드는 응답 수신 즉시 로컬 의도 상태를 `"BACKEND_COMMITTED"`로 승격한다.
-  3. **3단계 (클라이언트 비동기 삭제 및 의도 소거):** 프론트엔드가 비동기로 IndexedDB 삭제(`indexedDB.deleteDatabase()` 또는 `store.clear()`)를 실행하고, 실제 삭제 완료 콜백이 성공한 경우에 한해 `localStorage.removeItem('fab_wipe_intent')`로 의도를 제거한다.
+     - *가드레일:* 브라우저 시크릿 모드나 용량 제한 등으로 `localStorage.setItem` 실패 시, 서버 요청을 일체 전송하지 않고 즉시 **Fail-Closed로 중단**한다.
 
-- **장애 시퀀스 및 복구 상태 전이 매트릭스 (Specification Test Vectors, [F04] 사양):**
-  1. **동의 직후, 서버 요청 전 탭 종료:** 로컬에 `INTENT_RECORDED` 잔여. 재기동 시 백엔드에 `operationId` 상태를 조회 $\to$ 서버 트랜잭션 미실행 확인 $\to$ 의도 레코드를 안전하게 폐기하고 **IndexedDB 메모를 온전히 보존** (사용자 메모 오삭제 원천 차단).
-  2. **서버 트랜잭션 도중(COMMIT 전) 탭 종료/네트워크 단절:** 백엔드 자동 `ROLLBACK` $\to$ 재기동 시 서버 미커밋 확인 $\to$ 의도 폐기 및 **IndexedDB 메모 보존**.
-  3. **서버 COMMIT 완료 직후, 클라이언트 응답 수신 전 탭 종료:** 서버는 커밋 완료, 클라이언트는 `INTENT_RECORDED` 유지. 재기동 시 서버 상태 조회 $\to$ 서버 "COMMITTED" 확인 $\to$ 클라이언트가 상태를 `BACKEND_COMMITTED`로 승격하고 즉시 IndexedDB 비동기 삭제를 재개 $\to$ 완료 후 의도 제거 (데이터 불일치 자가 복구 완료).
-  4. **IndexedDB clear 수행 중 탭 비정상 종료:** 클라이언트에 `BACKEND_COMMITTED` 잔여 $\to$ 재기동 시 즉시 IndexedDB 재정리 재개 $\to$ 완료 후 의도 제거.
-  5. **브라우저 스토리지 쓰기 실패 (스토리지 쿼터 초과, 개인정보 모드 차단 등):** 1단계 사전 의도 기록이 실패할 경우, 서버 파괴 요청을 일체 전송하지 않고 즉시 **Fail-Closed로 중단** ("로컬 스토리지 접근 불가로 초기화 중단")하여 비가역적 데이터 유실을 방지.
-  6. **사용자가 IndexedDB 메모 삭제에 미동의한 경우:** `consentScope = "SIMULATION_HISTORY_ONLY"` $\to$ 백엔드 SQLite만 초기화되고 클라이언트 IndexedDB는 일체 건드리지 않고 안전하게 보존.
+  2. **2단계 (백엔드 파괴적 실행 및 내구적 저널 기록):**
+     클라이언트는 표준 API 엔드포인트 `POST /api/v1/admin/factory-wipe`로 삭제를 요청한다:
+     ```json
+     {
+       "operationId": "wipe-550e8400-e29b-41d4-a716-446655440000",
+       "wipeOption": "OPTION_1",
+       "confirmationPhrase": "FACTORY-WIPE-CONFIRM"
+     }
+     ```
+     백엔드는 삭제 대상 외부에 보존되는 내구적 작업 저널(`system_operation_journal`)과 함께 단일 트랜잭션(`BEGIN IMMEDIATE ... COMMIT`)으로 실행한다:
+     ```sql
+     CREATE TABLE IF NOT EXISTS system_operation_journal (
+         operation_id TEXT PRIMARY KEY,
+         operation_type TEXT NOT NULL, -- 'FACTORY_WIPE'
+         wipe_option TEXT NOT NULL,    -- 'OPTION_1' | 'OPTION_2'
+         status TEXT NOT NULL,         -- 'PENDING', 'COMMITTED', 'FAILED'
+         started_at_utc TEXT NOT NULL,
+         committed_at_utc TEXT,
+         error_message TEXT
+     );
+     ```
+     - **원자적 실행 및 멱등성 보장:**
+       - 저널에 `(operation_id, status='PENDING')` 기록 $\to$ 외래키 역순 삭제 실행 $\to$ 저널을 `(status='COMMITTED')`로 갱신 후 최종 `COMMIT`.
+       - 동일한 `operationId`로 중복 호출 시, 이미 `COMMITTED` 상태이면 재삭제를 수행하지 않고 기존 커밋 결과를 즉시 200 OK로 반환(멱등성 보장).
+       - 성공 응답: `{ "operationId": "...", "status": "COMMITTED", "wipeOption": "OPTION_1", "committedAtUtc": "..." }`.
+
+  3. **3단계 (서버 커밋 확인 후 클라이언트 상태 승격 및 IndexedDB 안전 게이트):**
+     - **핵심 안전 불변식 (Crucial Safety Invariant):**
+       **서버의 커밋 결과가 `COMMITTED`로 공식 확인되기 전에는 어떠한 경우에도 클라이언트 IndexedDB 삭제를 진행하지 않는다.**
+     - HTTP 응답(200 OK) 수신 또는 재기동 시 상태 조회(`GET /api/v1/admin/factory-wipe/status?operationId={operationId}`)를 통해 서버 상태가 `COMMITTED`임이 입증된 경우에만 클라이언트 인텐트 상태를 `"SERVER_COMMITTED"`로 승격한다:
+       ```javascript
+       const intent = JSON.parse(localStorage.getItem('fab_factory_wipe_intent'));
+       intent.status = 'SERVER_COMMITTED';
+       localStorage.setItem('fab_factory_wipe_intent', JSON.stringify(intent));
+       ```
+
+  4. **4단계 (IndexedDB 처리 및 의도 레코드 안전 소거):**
+     - `purgeIndexedDbRequested === true`: `indexedDB.deleteDatabase('fab_one_user_notes')`를 비동기 실행하고, 성공 콜백에서 `localStorage.removeItem('fab_factory_wipe_intent')`를 호출하여 인텐트 레코드를 최종 제거한다.
+     - `purgeIndexedDbRequested === false`: IndexedDB 삭제 단계를 **완전히 건너뛰고(Bypass)** 즉시 `localStorage.removeItem('fab_factory_wipe_intent')`를 호출하여 개인 메모를 100% 온전히 보존한다.
+
+- **장애 시퀀스 및 복구 상태 전이 매트릭스 (Crash & Recovery Specification Vectors):**
+  | 시나리오 ID | 장애 및 비정상 중단 시점 | 서버 상태 (`system_operation_journal`) | 클라이언트 영속 상태 (`fab_factory_wipe_intent`) | 재기동/재시도 시 복구 절차 | 최종 기대 결과 |
+  |---|---|---|---|---|---|
+  | **WIPE-CRASH-01** (Vector a) | 인텐트 기록 후 서버 호출 전 탭 닫힘 | 기록 없음 (`UNKNOWN`) | `status: INTENT_RECORDED` | 재기동 시 `GET /status?operationId` 조회 $\to$ 서버 미실행(`UNKNOWN`) 확인 $\to$ 사용자에게 "미전송 초기화 취소/재시도" 모달 노출 $\to$ 취소 시 인텐트 삭제. | 작업 미시작, 서버 데이터 및 IndexedDB 메모 온전 보존 |
+  | **WIPE-CRASH-02** (Vector b-1) | 네트워크 타임아웃 중 **서버 실제 COMMIT 성공** | `status: COMMITTED` | `status: INTENT_RECORDED` (타임아웃 에러 수신) | 클라이언트가 `GET /status?operationId` 조회 $\to$ 서버 실제 `COMMITTED` 확인 $\to$ 로컬 인텐트 `SERVER_COMMITTED` 승격 $\to$ `purgeIndexedDbRequested` 값에 따라 후속 처리. | 서버 동적 이력 정상 초기화, IndexedDB 안전 삭제 진행 |
+  | **WIPE-CRASH-03** (Vector b-2) | 네트워크 타임아웃 중 **서버 실제 ROLLBACK/실패** | `status: FAILED` 또는 기록 없음(`UNKNOWN`) | `status: INTENT_RECORDED` (타임아웃 에러 수신) | 클라이언트가 `GET /status?operationId` 조회 $\to$ 서버 미커밋 확인 $\to$ **IndexedDB 절대 삭제 금지** $\to$ "서버 초기화 실패: 데이터 보존됨" 안내 노출 및 인텐트 폐기. | 서버 데이터 무결성 보존, IndexedDB 메모 100% 보존 |
+  | **WIPE-CRASH-04** (Vector c) | 서버 COMMIT 완료 직후, 클라이언트 응답 수신 전 크래시 | `status: COMMITTED` | `status: INTENT_RECORDED` | 재기동 시 `GET /status?operationId` 조회 $\to$ `COMMITTED` 확인 $\to$ `SERVER_COMMITTED` 승격 $\to$ `purgeIndexedDbRequested`에 따라 후속 처리. | 고아 데이터 방지, 서버-클라이언트 상태 완전 일치 |
+  | **WIPE-CRASH-05** (Vector d) | 브라우저 저장소 접근 불가 (Private 모드 / Quota 에러) | 호출 없음 (`UNKNOWN`) | `localStorage.setItem` 실패 예외 발생 | 인텐트 기록 실패 시 서버 파괴 요청을 일체 전송하지 않고 즉시 **Fail-Closed 차단** ("저장소 접근 불가로 초기화 중단"). | 파괴적 작업 미실행, 비가역 데이터 유실 방지 |
+  | **WIPE-CRASH-06** (Vector e) | IndexedDB 삭제 도중 브라우저 탭 강제 종료 | `status: COMMITTED` | `status: SERVER_COMMITTED` (잔여 메모 존재 가능) | 재기동 시 `SERVER_COMMITTED` 감지 $\to$ 서버 재호출 없이 `indexedDB.deleteDatabase` 재호출(멱등성) $\to$ 성공 시 `localStorage.removeItem`. | 자가 복구 완료, 클린 초기 상태 환원 |
+  | **WIPE-CRASH-07** (Vector f) | **IndexedDB 삭제 미동의 케이스** (`purgeIndexedDbRequested: false`) | `status: COMMITTED` | `status: INTENT_RECORDED` $\to$ `SERVER_COMMITTED` | 서버 `COMMITTED` 확인 후 `SERVER_COMMITTED` 승격 즉시 **IndexedDB 삭제 단계를 완전히 건너뛰고(Bypass)** $\to$ `localStorage.removeItem`. | 서버 이력 초기화 완료, **IndexedDB 메모 100% 온전 보존** |
 
 ---
 
