@@ -1,4 +1,4 @@
-# FAB ONE — MVP 운영 모드 및 데이터 저장소 아키텍처 기술 검토 v0.6
+# FAB ONE — MVP 운영 모드 및 데이터 저장소 아키텍처 기술 검토 v0.7
 
 - **문서 ID:** ARCH-DOC-001
 - **상태:** PROPOSED (A01 기획자 및 프로젝트 오너 승인 대기)
@@ -14,7 +14,7 @@
     - [F05] SQLite 동시성 락 메커니즘 정밀화: 무조건적 "SQLITE_LOCKED 방지" 단정 표현 삭제, 파일/WAL 쓰기 락 경합인 `SQLITE_BUSY`와 동일 연결 내 커서/공유 캐시 충돌인 `SQLITE_LOCKED`의 명확한 구별 및 예방 가이드라인 수립
   - v0.5 (2026-10-15): A04 3차 독립 검증 결과 및 A01 잔여 계약 수정 지시 반영
     - [F02] 센서 계측치 `(measured_value=NULL, quality_flag='GOOD')` 불일치 차단 DDL CHECK 제약조건 보완 매핑
-    - [F04] 공장 초기화(Factory Wipe) 단일 표준 사전 의도 기록 계약(`fab_factory_wipe_intent`, `operationId`, `status: INTENT_RECORDED/SERVER_COMMITTED`, `POST /api/v1/admin/factory-wipe`, `GET /status`), 서버 내구적 저널(`system_operation_journal`) 및 멱등 커밋 보장, 네트워크 타임아웃 시 자동 롤백 속단 배제, 커밋 미확인 시 IndexedDB 삭제 절대 금지 가드레일, 7종 장애 복구 매트릭스 수립 (`simulation-reproducibility-contract.md` §7.2와 100% 일치)
+    - [F04] 공장 초기화(Factory Wipe) 단일 표준 사전 의도 기록 계약(`fab_factory_wipe_intent`, `operationId`, `status: INTENT_RECORDED/SERVER_COMMITTED`, `POST /api/v1/admin/factory-wipe`, `GET /status`), 서버 내구적 저널(`system_operation_journal`) 및 멱등 커밋 보장, 네트워크 타임아웃 시 자동 롤백 속단 배제, 커밋 미확인 시 IndexedDB 삭제 절대 금지 가드레일, 13종 장애 복구 매트릭스 수립 (`simulation-reproducibility-contract.md` §7.2와 100% 일치)
     - [F06] 부분군 표본 크기 $k \ge 5$ 및 $N \ge 20$ 경계 분리, 평가 상태 우선순위 계층(`EVALUATION_INVALID` > `ASSUMPTION_WARNING` > `ONE_SIDED_SPEC_EVALUATED` > `OK`) 및 경고 배열(`warnings: []`) 도입 매핑
     - [F07] `event_id` 생성 해시 입력에 `entity_type` 추가, 동일 `event_id` 상이한 페이로드 유입 시 `EVENT_PAYLOAD_CONFLICT` 명시적 거부 및 트랜잭션 롤백 기반 부분 영속화 배제(Zero Partial Persistence) 매핑
     - [F09] `PROCESS_RUN` ERD-TypeScript 필드 완전 일치(`runStatus` 5대 표준 상태, `startTimeUtc` 필수, `endTimeUtc` 선택), `fixtures/manifest.json` 스키마 및 검증 규칙 정립 매핑
@@ -23,6 +23,11 @@
     - [F04] UNKNOWN 취소 안전성: `POST /api/v1/admin/factory-wipe/cancel` 엔드포인트 및 `CANCELLED` 톰스톤 서버 펜싱 도입, 지연 커밋 경합 시 `CANNOT_CANCEL_ALREADY_COMMITTED` 거절 및 `SERVER_COMMITTED` 승격으로 사용자 메모 유실 방지
     - [F04] operationId 재사용 및 범위 검증: 동일 `operationId` 상이한 `wipeOption` 유입 시 `OPERATION_SCOPE_MISMATCH` (HTTP 409) fail-closed 차단, 동일 옵션 시 멱등 200 OK 보장, `purgeIndexedDbRequested=false` 메모 보존 불변식 엄격 유지
     - [F04] 13종 장애 복구 명세 매트릭스 (`WIPE-CRASH-01` ~ `13`) 완결
+  - v0.7 (2026-10-15): A01 재검토 의견 반영 및 F04 삭제 트랜잭션 실행 안전성(Pre-Delete Guardrail) 보완
+    - [F04] Phase 2 삭제 전 실행권 검증(Pre-Delete Guardrail): `BEGIN IMMEDIATE` 직후 `operationId`, worker 소유권, `PENDING` 상태, 유효 리스(`lease_expires_at_utc >= now`), `wipeOption`을 검증하여 불일치 시 `DELETE` 일체 없이 즉시 `ROLLBACK` 명시
+    - [F04] 저널 종결 원자성 및 1행 갱신 강제: `UPDATE ... WHERE status='PENDING'`의 `rowcount == 1` 확인 필수, 미달 시 전체 `DELETE` 강제 `ROLLBACK` 및 0행 삭제 불변식 확립 (지연 워커의 FAILED/CANCELLED 후 무단 삭제 반례 원천 차단)
+    - [F04] `POST /cancel` 원자적 CAS(`changes == 1`) 및 트랜잭션 2와의 상호 배타성 명문화, 전역 단일 와이프 가드(`GLOBAL_WIPE_IN_PROGRESS`) 및 MVP 와이프 기본 비활성화 선언
+    - [F04] 기존 13종 복구 매트릭스(`WIPE-CRASH-01` ~ `13`) 유지 및 WIPE-CRASH-10/11/13에 지연 워커 반례 기대값(삭제 0행, 원상 보존) 보강, 미검증 단정 표현 교정
 - **작성자:** A02 (수석 소프트웨어 개발 에이전트)
 - **관련 Issue / PR:** Issue [#1](https://github.com/Junebooky/semi_fab/issues/1), Issue [#8](https://github.com/Junebooky/semi_fab/issues/8), Issue [#12](https://github.com/Junebooky/semi_fab/issues/12), Draft PR [#2](https://github.com/Junebooky/semi_fab/pull/2), QA PR [#3](https://github.com/Junebooky/semi_fab/pull/3), Design PR [#7](https://github.com/Junebooky/semi_fab/pull/7), PR [#10](https://github.com/Junebooky/semi_fab/pull/10)
 - **일자:** 2026-10-15
@@ -172,7 +177,7 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
   2. 시뮬레이터 리셋 시 기존 세션은 `is_active = 0`으로 비활성화하여 아카이빙하고, 새로운 세션을 발급하여 가상 클록 $t=0$부터 시작한다.
   3. 대시보드는 최신 활성 세션(`is_active = 1`) 데이터만 표시하며, 기존 조사 케이스는 과거 세션의 레코드를 안전하게 참조하여 외래키 무결성을 관계형 스키마 제약조건으로 안정적으로 보존한다. (미검증 '100% 보존' 단정 지양).
   4. 사용자의 IndexedDB 개인 학습 메모는 시뮬레이터 세션 리셋과 완전히 격리되어 안전하게 유지된다.
-- **공장 전체 초기화 (Factory Wipe, 파괴적 관리자 작업) ([F04] v0.6 선택지 및 복구 상태 계약):**
+- **공장 전체 초기화 (Factory Wipe, 파괴적 관리자 작업) ([F04] v0.7 선택지 및 복구 상태 계약):**
   1. 소프트 리셋과 엄격히 분리된 별도 파괴적 작업으로 정의한다.
   2. **초기화 범위 선택지 및 상태 규정:**
      - **옵션 1 (실행·사건 이력 초기화 — A02 MVP 공식 권고안):** 설비 마스터(`EQUIPMENT`, `CHAMBER`), 레시피(`RECIPE`), 로트(`LOT`), 웨이퍼(`WAFER`)의 기준 정보는 온전히 보존하고, 동적 실행 데이터만 외래키 역순으로 안전하게 삭제한다 (`CASE_ACTION_LOG` $\to$ `INVESTIGATION_CASE` $\to$ `FDC_ALERT` $\to$ `SENSOR_MEASUREMENT` $\to$ `PROCESS_RUN_WAFER` $\to$ `WAFER_DEFECT_MAP` $\to$ `PROCESS_RUN` $\to$ `SIMULATION_SESSION`). 기준 데이터가 보존되므로 시뮬레이터를 즉시 재가동하여 지속적인 데모 및 테스트가 가능하다.
@@ -192,7 +197,7 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
        }));
        ```
        - *가드레일:* 브라우저 시크릿 모드나 용량 제한 등으로 `localStorage.setItem` 실패 시, 서버 요청을 일체 전송하지 않고 즉시 **Fail-Closed로 중단**한다.
-     - **단계 2 (서버 파괴적 실행, 2단계 내구적 저널, 워커 리스 및 범위 검증):** **
+     - **단계 2 (서버 파괴적 실행, Pre-Delete 실행권 검증 및 종결 원자성 보장):** **
        클라이언트는 표준 API 엔드포인트 `POST /api/v1/admin/factory-wipe`로 삭제를 요청한다:
        ```json
        {
@@ -217,6 +222,18 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
        );
        ```
 
+       - **MVP 운영 환경 한계 및 파괴적 공장 초기화 기본 비활성화 선언:**
+         - FAB ONE MVP (Mode B)는 **로컬 단일 사용자(Single-User Local Desktop)** 환경으로 한정된다.
+         - 파괴적 공장 초기화(Factory Wipe) 기능은 데이터 안전을 위해 **기본 비활성화(Disabled by default)** 상태로 봉인되며, 프로젝트 오너의 명시적 승인 전까지는 UI 및 실행 API 엔드포인트가 비활성화 상태를 유지한다.
+
+       - **전역 단일 활성 와이프 가드 (Global Active Wipe Guard):**
+         - 서로 다른 `operationId`를 가진 파괴 요청이 동시에 유입되어 경합하는 것을 차단하기 위해, 서버는 트랜잭션 1(`BEGIN IMMEDIATE`)에서 현재 유효한 리스를 가진 `PENDING` 작업이 존재하는지 전역 검사한다:
+           ```sql
+           SELECT operation_id FROM system_operation_journal
+           WHERE status = 'PENDING' AND lease_expires_at_utc >= :now;
+           ```
+           만약 유효한 활성 작업이 이미 존재한다면, 신규 요청을 즉시 **HTTP 409 Conflict (`GLOBAL_WIPE_IN_PROGRESS`)**로 거부하여 복수 와이프의 동시 실행을 원천 차단한다.
+
        - **동일 `operationId` 범위 검증(Scope Verification) 및 멱등성 규칙:**
          - 저널에 동일 `operation_id`가 이미 존재하는 경우, 백엔드는 즉시 유입된 `wipeOption`과 기존 저널의 `wipe_option`을 비교 검증한다.
          - **범위 불일치(`wipeOption` 불일치):** 동일한 `operationId`에 서로 다른 초기화 범위(예: 저널은 `OPTION_1`인데 신규 요청은 `OPTION_2`)가 요청되면 **HTTP 409 Conflict (`OPERATION_SCOPE_MISMATCH`)로 fail-closed 즉시 거부**하며, 기존 작업의 상태를 일체 변경하지 않는다.
@@ -225,6 +242,8 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
            - `status == 'PENDING'`: 아래 워커 리스 만료 여부를 검사한다.
            - `status == 'FAILED'`: 이전 실행이 실패한 작업이므로 **HTTP 400 Bad Request (`OPERATION_ALREADY_FAILED`)**를 반환하고 클라이언트에 신규 `operationId` 발급을 요구한다.
            - `status == 'CANCELLED'`: 이미 취소된 작업이므로 **HTTP 409 Conflict (`OPERATION_ALREADY_CANCELLED`)**를 반환하고 신규 `operationId` 발급을 요구한다.
+         - **요청 범위(`wipeOption`)와 클라이언트 메모 삭제 동의(`purgeIndexedDbRequested`)의 스코프 분리:**
+           `purgeIndexedDbRequested`는 브라우저 로컬 저장소(IndexedDB)에 대한 클라이언트 단독 처리 플래그이며, 서버 SQLite 파괴 범위(`wipeOption`)와 엄격히 분리된다. 서버는 오직 `wipeOption`(`OPTION_1` vs `OPTION_2`)의 일치 여부만 저널에 기록하고 검증한다.
 
        - **워커 리스(Worker Lease) 및 Stale PENDING 복구 규칙:**
          - 서버가 트랜잭션 1에서 `PENDING`을 기록한 직후 프로세스가 비정상 종료(SIGKILL, OOM, 전원 장애)되거나 트랜잭션 2 도중 크래시가 발생할 경우, 저널에 `PENDING` 상태가 영구 고착되는 결함(Stale PENDING)을 방지하기 위해 **30초 만료 리스(`lease_expires_at_utc = started_at + 30s`)**를 강제한다.
@@ -243,10 +262,15 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
              ```
            - 이를 통해 영구적인 HTTP 409 락(`OPERATION_IN_PROGRESS`) 발생을 원천 차단하며, 클라이언트는 확정된 `FAILED` 상태를 통보받아 비파괴적으로 안전하게 복구하고 신규 `operationId`로 안전하게 재시도할 수 있다.
 
-       - **2단계 저널링(Two-Phase Journaling) 실행 절차:**
+       - **3단계 원자적 트랜잭션 실행 절차 (Pre-Delete Guardrail 및 종결 1행 검증):**
          1. **트랜잭션 1 (작업 예약 및 리스 할당 원자적 커밋):**
             ```sql
             BEGIN IMMEDIATE;
+            -- 전역 단일 작업 검사
+            SELECT operation_id FROM system_operation_journal
+            WHERE status = 'PENDING' AND lease_expires_at_utc >= :now;
+            -- (활성 PENDING 존재 시 ROLLBACK 및 409 GLOBAL_WIPE_IN_PROGRESS 반환)
+
             INSERT INTO system_operation_journal (
                 operation_id, operation_type, wipe_option, status,
                 worker_id, lease_expires_at_utc, started_at_utc
@@ -257,9 +281,24 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
             COMMIT;
             ```
             *(이제 외부 독립 조회 연결에서도 `status: 'PENDING'` 및 리스 만료 시각이 즉시 가시화됨)*
-         2. **트랜잭션 2 (실제 파괴적 역순 삭제 및 완료 커밋):**
+         2. **트랜잭션 2 (실제 파괴적 역순 삭제 및 3단계 원자적 가드레일 실행):**
             ```sql
             BEGIN IMMEDIATE;
+
+            -- [가드레일 2-1: 삭제 전 실행권 및 락 상태 원자적 검증 (Pre-Delete Fencing)]
+            -- 어떠한 DELETE도 실행하기 전에 동일 트랜잭션 내에서 현재 저널 레코드를 즉시 조회한다.
+            SELECT operation_id, wipe_option, worker_id, lease_expires_at_utc, status
+            FROM system_operation_journal
+            WHERE operation_id = :operation_id;
+
+            -- [애플리케이션 계층 필수 판정 로직]
+            -- 조건: 레코드 존재 AND status == 'PENDING' AND worker_id == :my_worker_id
+            --       AND lease_expires_at_utc >= :now AND wipe_option == :expected_wipe_option
+            -- 판정 실패 시 (예: 이미 FAILED/CANCELLED 전이됨, 리스 만료됨, 워커 소유권 상실):
+            -- -> 즉시 ROLLBACK 실행! (*** 단 1건의 DELETE도 실행하지 않고 롤백하여 데이터 완전 원상 보존 (Zero Rows Deleted) ***)
+            -- -> StaleWorkerExecutionError 발생 및 Phase 2 즉각 종료.
+
+            -- [실행 단계 2-2: 역순 의존성 데이터 삭제 (가드레일 통과 시에만 실행)]
             DELETE FROM case_action_log;
             DELETE FROM investigation_case;
             DELETE FROM fdc_alert;
@@ -268,10 +307,22 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
             DELETE FROM wafer_defect_map;
             DELETE FROM process_run;
             DELETE FROM simulation_session;
+
+            -- [가드레일 2-3: 저널 완료 원자적 전이 및 1행 갱신 강제 검증 (Rowcount Verification)]
             UPDATE system_operation_journal
             SET status = 'COMMITTED', committed_at_utc = :now
-            WHERE operation_id = :operation_id AND status = 'PENDING';
-            COMMIT;
+            WHERE operation_id = :operation_id
+              AND worker_id = :my_worker_id
+              AND status = 'PENDING'
+              AND lease_expires_at_utc >= :now;
+
+            -- [애플리케이션 계층 영향 행 수 검증 (changes == 1 필수)]
+            -- IF (cursor.rowcount != 1 OR sqlite3_changes() != 1) THEN
+            --     ROLLBACK; -- *** 핵심: 저널 정상 전이 실패 시 이전 모든 DELETE를 강제 롤백 (0 committed rows) ***
+            --     RAISE JournalCommitMismatchError("Rowcount mismatch on journal commit, full rollback enforced");
+            -- ELSE
+            --     COMMIT;   -- 정확히 1행 갱신 성공이 확인된 경우에만 최종 커밋
+            -- END IF;
             ```
          3. **예외/오류 시 처리 (트랜잭션 3):**
             트랜잭션 2 도중 오류 발생 시 해당 트랜잭션은 즉시 `ROLLBACK`되며, 별도 에러 핸들러 트랜잭션에서 저널에 `(status = 'FAILED', error_message = :err)`를 독립 커밋한다.
@@ -285,8 +336,8 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
          2. 최대 3회 점진적 지수 백오프(500ms, 1s, 2s)로 재조회를 수행한다.
          3. 재조회 후에도 `UNKNOWN`이 지속될 경우, 사용자에게 수동 복구 모달("서버 처리 결과를 확인할 수 없습니다. 메모를 보존한 채 재조회하거나 요청을 공식 취소하세요")을 노출한다.
 
-       - **공식 취소 API 엔드포인트 및 취소 안전성 펜싱 (`POST /cancel`):**
-         사용자가 `UNKNOWN` 또는 진행 중 상태에서 취소를 요청할 경우, 클라이언트는 로컬 인텐트를 일방적으로 삭제하지 않고 **서버에 공식 취소 요청을 전송하여 서버 사이드 펜싱(Server-Side Fencing)**을 확정해야 한다:
+       - **공식 취소 API 엔드포인트 및 원자적 CAS 펜싱 (`POST /cancel`):**
+         사용자가 `UNKNOWN` 또는 진행 중 상태에서 취소를 요청할 경우, 클라이언트는 로컬 인텐트를 일방적으로 삭제하지 않고 **서버에 공식 취소 요청을 전송하여 원자적 비교-전이(CAS) 및 서버 사이드 펜싱**을 확정해야 한다:
          - 엔드포인트: `POST /api/v1/admin/factory-wipe/cancel`
          - 페이로드:
            ```json
@@ -295,19 +346,34 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
              "reason": "USER_CANCELLED"
            }
            ```
-         - **서버 취소 처리 및 경합 제어 (Race Handling):**
+         - **서버 취소 처리 및 경합 제어 (CAS & Mutual Exclusion):**
+           취소 요청은 `BEGIN IMMEDIATE` 트랜잭션으로 실행되어 Phase 2 트랜잭션과 SQLite 쓰기 락 수준에서 직렬화된다:
            - **케이스 A (저널 미등록 상태 / 사전 펜싱 톰스톤):**
              서버에 아직 해당 `operationId`가 등록되지 않은 경우(요청 지연 중), 저널에 즉시 취소 톰스톤(Tombstone)을 삽입한다:
              ```sql
-             INSERT INTO system_operation_journal (operation_id, operation_type, wipe_option, status, started_at_utc, lease_expires_at_utc, error_message)
-             VALUES (:operation_id, 'FACTORY_WIPE', 'UNKNOWN', 'CANCELLED', :now, :now, 'CANCELLED_BEFORE_EXECUTION');
+             INSERT INTO system_operation_journal (
+                 operation_id, operation_type, wipe_option, status,
+                 worker_id, lease_expires_at_utc, started_at_utc, error_message
+             ) VALUES (
+                 :operation_id, 'FACTORY_WIPE', 'UNKNOWN', 'CANCELLED',
+                 'CLIENT_CANCEL', :now, :now, 'CANCELLED_BEFORE_EXECUTION'
+             );
+             COMMIT;
              ```
-             뒤늦게 지연 도착한 원본 삭제 요청은 이 톰스톤에 의해 `OPERATION_ALREADY_CANCELLED`로 **원천 차단**된다. 서버는 HTTP 200 OK (`status: 'CANCELLED'`)를 반환한다.
-           - **케이스 B (`PENDING` 진행 중 상태):**
-             트랜잭션 2 진입 전이면 저널 상태를 `CANCELLED`로 원자적 전이하고 실행을 중단한다. 서버는 HTTP 200 OK를 반환한다.
+             뒤늦게 지연 도착한 원본 트랜잭션 1은 PK 충돌로 실패하거나, 지연 Phase 2는 Pre-Delete Guardrail(`status == 'CANCELLED'`)에 의해 **DELETE 없이 즉시 롤백**된다. 서버는 HTTP 200 OK (`status: 'CANCELLED'`)를 반환한다.
+           - **케이스 B (`PENDING` 진행 중 상태 / 원자적 CAS 전이):**
+             ```sql
+             BEGIN IMMEDIATE;
+             UPDATE system_operation_journal
+             SET status = 'CANCELLED', error_message = :reason
+             WHERE operation_id = :operation_id AND status = 'PENDING';
+             -- changes == 1 확인 시: COMMIT; -> HTTP 200 OK (status: 'CANCELLED')
+             ```
+             원자적 CAS가 성공(1행 갱신)하면 트랜잭션이 커밋된다. 이후 실행되는 지연 Phase 2는 Pre-Delete Guardrail에서 `status == 'CANCELLED'`를 확인하고 **DELETE를 일체 실행하지 않고 즉시 ROLLBACK**하므로, 취소된 작업의 지연 파괴가 방어된다.
            - **케이스 C (`COMMITTED` 선행 커밋 경합 상태 - 핵심 안전 가드):**
-             사용자가 취소를 클릭한 시점에 이미 지연된 원본 요청이 서버에서 `COMMITTED`로 완료된 경우, 물리적 롤백이 불가능하므로 서버는 취소를 거부하고 **HTTP 409 Conflict (`{"error": "CANNOT_CANCEL_ALREADY_COMMITTED", "status": "COMMITTED"}`)**를 응답한다.
-             - *클라이언트 대응:* 클라이언트는 취소 실패 응답을 수신하면 인텐트를 삭제하지 않고 즉시 **`SERVER_COMMITTED`로 승격**하여 4단계로 진입한다. 이로써 `purgeIndexedDbRequested` 설정(예: 메모 보존 요청 시 IndexedDB 보존)에 따른 동기화가 정상 완결되며, 사용자의 메모가 유실되는 참사를 완벽히 방지한다.
+             사용자가 취소를 클릭한 시점에 이미 지연된 원본 요청이 Phase 2를 성공적으로 마치고 `COMMITTED`로 완료된 경우:
+             위 CAS `UPDATE ... WHERE status='PENDING'`은 0행(`changes == 0`)을 반환한다. 서버는 현재 상태가 `COMMITTED`임을 확인하고 트랜잭션을 롤백한 뒤 **HTTP 409 Conflict (`{"error": "CANNOT_CANCEL_ALREADY_COMMITTED", "status": "COMMITTED"}`)**를 응답한다.
+             - *클라이언트 대응:* 클라이언트는 취소 실패 응답을 수신하면 인텐트를 삭제하지 않고 즉시 **`SERVER_COMMITTED`로 승격**하여 4단계로 진입한다. 이로써 `purgeIndexedDbRequested` 설정(예: 메모 보존 요청 시 IndexedDB 보존)에 따른 동기화가 정상 완결되며, 사용자의 메모가 유실되는 위험을 방어하도록 설계한다.
          - **클라이언트 인텐트 소거 조건:**
            클라이언트는 서버로부터 `CANCELLED` 응답이 공식 확인된 경우에만 `localStorage.removeItem('fab_factory_wipe_intent')`를 안전하게 실행하여 인텐트를 소거한다. 네트워크 장애로 취소 확인이 불가능하면 인텐트를 보존(`cancelRequested: true`)한다.
 
@@ -320,7 +386,7 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
 
      - **단계 4 (IndexedDB 처리 및 의도 레코드 안전 소거):**
        - `purgeIndexedDbRequested === true`: `indexedDB.deleteDatabase('fab_one_user_notes')`를 비동기 실행하고, 성공 콜백에서 `localStorage.removeItem('fab_factory_wipe_intent')`를 호출하여 인텐트 레코드를 최종 제거한다.
-       - `purgeIndexedDbRequested === false`: IndexedDB 삭제 단계를 **완전히 건너뛰고(Bypass)** 즉시 `localStorage.removeItem('fab_factory_wipe_intent')`를 호출하여 개인 메모를 100% 온전히 보존한다.
+       - `purgeIndexedDbRequested === false`: IndexedDB 삭제 단계를 **완전히 건너뛰고(Bypass)** 즉시 `localStorage.removeItem('fab_factory_wipe_intent')`를 호출하여 개인 메모를 안전하게 보존한다.
 
 
   6. **13종 충돌/복구 시퀀스 테스트 매트릭스 (Crash & Recovery Specification Vectors):**
@@ -328,17 +394,17 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
     |---|---|---|---|---|---|
     | **WIPE-CRASH-01** (Vector a) | 인텐트 기록 후 서버 호출 전 탭 닫힘 (실제 미실행) | 기록 없음 (`UNKNOWN`) | `status: INTENT_RECORDED` | 재기동 시 `GET /status?operationId` 조회 $\to$ `UNKNOWN` 반환. 3회 재조회 후 미등록 확인 $\to$ `POST /cancel` 호출(서버 톰스톤 등록) $\to$ `localStorage.removeItem`. | 작업 미시작, 서버 데이터 및 IndexedDB 메모 온전 보존 |
     | **WIPE-CRASH-02** (Vector b-1) | 네트워크 타임아웃 중 **서버 실제 COMMIT 성공** | `status: COMMITTED` | `status: INTENT_RECORDED` (타임아웃 에러 수신) | 클라이언트가 `GET /status?operationId` 조회 $\to$ 서버 실제 `COMMITTED` 확인 $\to$ 로컬 인텐트 `SERVER_COMMITTED` 승격 $\to$ `purgeIndexedDbRequested` 값에 따라 후속 처리. | 서버 동적 이력 정상 초기화, IndexedDB 안전 삭제 진행 |
-    | **WIPE-CRASH-03** (Vector b-2) | 네트워크 타임아웃 중 **서버 실제 롤백/실패** | `status: FAILED` | `status: INTENT_RECORDED` (타임아웃 에러 수신) | 클라이언트가 `GET /status?operationId` 조회 $\to$ 서버 실패(`FAILED`) 확인 $\to$ **IndexedDB 절대 삭제 금지** $\to$ "서버 초기화 실패: 데이터 보존됨" 안내 노출 및 인텐트 유지 후 새 요청 유도. | 서버 데이터 무결성 보존, IndexedDB 메모 100% 보존 |
-    | **WIPE-CRASH-04** (Vector b-3) | 타임아웃 직후 1차 조회 시 일시적 `UNKNOWN`/`PENDING`이나 잠시 후 서버가 COMMIT 완료 | 트랜잭션 1 직후 `PENDING` $\to$ 잠시 후 `COMMITTED` | `status: INTENT_RECORDED` | 1차 조회 시 `UNKNOWN` 또는 `PENDING` 반환 $\to$ 클라이언트는 인텐트를 폐기하지 않고 대기 루프(지수 백오프)로 재조회 $\to$ 서버 트랜잭션 2 커밋 후 후속 조회에서 `COMMITTED` 확인 $\to$ 정상 승격 및 동기화 완료. | 경합 상황에서도 인텐트 유실 및 고아 데이터 없이 최종 정합성 완벽 보장 |
+    | **WIPE-CRASH-03** (Vector b-2) | 네트워크 타임아웃 중 **서버 실제 롤백/실패** | `status: FAILED` | `status: INTENT_RECORDED` (타임아웃 에러 수신) | 클라이언트가 `GET /status?operationId` 조회 $\to$ 서버 실패(`FAILED`) 확인 $\to$ **IndexedDB 절대 삭제 금지** $\to$ "서버 초기화 실패: 데이터 보존됨" 안내 노출 및 인텐트 유지 후 새 요청 유도. | 서버 데이터 무결성 보존, IndexedDB 메모 안전 보존 |
+    | **WIPE-CRASH-04** (Vector b-3) | 타임아웃 직후 1차 조회 시 일시적 `UNKNOWN`/`PENDING`이나 잠시 후 서버가 COMMIT 완료 | 트랜잭션 1 직후 `PENDING` $\to$ 잠시 후 `COMMITTED` | `status: INTENT_RECORDED` | 1차 조회 시 `UNKNOWN` 또는 `PENDING` 반환 $\to$ 클라이언트는 인텐트를 폐기하지 않고 대기 루프(지수 백오프)로 재조회 $\to$ 서버 트랜잭션 2 커밋 후 후속 조회에서 `COMMITTED` 확인 $\to$ 정상 승격 및 동기화 완료. | 경합 상황에서도 인텐트 유실 및 고아 데이터 없이 최종 정합성 보장 |
     | **WIPE-CRASH-05** (Vector c) | 서버 COMMIT 완료 직후, 클라이언트 응답 수신 전 크래시 | `status: COMMITTED` | `status: INTENT_RECORDED` | 재기동 시 `GET /status?operationId` 조회 $\to$ `COMMITTED` 확인 $\to$ `SERVER_COMMITTED` 승격 $\to$ `purgeIndexedDbRequested`에 따라 후속 처리. | 고아 데이터 방지, 서버-클라이언트 상태 완전 일치 |
     | **WIPE-CRASH-06** (Vector d) | 브라우저 저장소 접근 불가 (Private 모드 / Quota 에러) | 호출 없음 (`UNKNOWN`) | `localStorage.setItem` 실패 예외 발생 | 인텐트 기록 실패 시 서버 파괴 요청을 일체 전송하지 않고 즉시 **Fail-Closed 차단** ("저장소 접근 불가로 초기화 중단"). | 파괴적 작업 미실행, 비가역 데이터 유실 방지 |
     | **WIPE-CRASH-07** (Vector e) | IndexedDB 삭제 도중 브라우저 탭 강제 종료 | `status: COMMITTED` | `status: SERVER_COMMITTED` (잔여 메모 존재 가능) | 재기동 시 `SERVER_COMMITTED` 감지 $\to$ 서버 재호출 없이 `indexedDB.deleteDatabase` 재호출(멱등성) $\to$ 성공 시 `localStorage.removeItem`. | 자가 복구 완료, 클린 초기 상태 환원 |
-    | **WIPE-CRASH-08** (Vector f) | **IndexedDB 삭제 미동의 케이스** (`purgeIndexedDbRequested: false`) | `status: COMMITTED` | `status: INTENT_RECORDED` $\to$ `SERVER_COMMITTED` | 서버 `COMMITTED` 확인 후 `SERVER_COMMITTED` 승격 즉시 **IndexedDB 삭제 단계를 완전히 건너뛰고(Bypass)** $\to$ `localStorage.removeItem`. | 서버 이력 초기화 완료, **IndexedDB 메모 100% 온전 보존** |
+    | **WIPE-CRASH-08** (Vector f) | **IndexedDB 삭제 미동의 케이스** (`purgeIndexedDbRequested: false`) | `status: COMMITTED` | `status: INTENT_RECORDED` $\to$ `SERVER_COMMITTED` | 서버 `COMMITTED` 확인 후 `SERVER_COMMITTED` 승격 즉시 **IndexedDB 삭제 단계를 완전히 건너뛰고(Bypass)** $\to$ `localStorage.removeItem`. | 서버 이력 초기화 완료, **IndexedDB 메모 안전 보존** |
     | **WIPE-CRASH-09** (Vector g) | 네트워크 영구 단절 / 상태 조회 불능 상태 지속 | 상태 확인 불가 | `status: INTENT_RECORDED` 유지 | 상태 조회가 실패(네트워크 에러)하면 클라이언트는 인텐트를 영구 보존하고 IndexedDB 삭제를 일체 시도하지 않으며 오프라인 경고 모달 표시. | 네트워크 단절 상황에서 데이터 임의 삭제 방지 |
-    | **WIPE-CRASH-10** (Vector h) | **Stale PENDING 복구** (트랜잭션 1 `PENDING` 커밋 후 워커 크래시/재기동) | `PENDING` (리스 만료) $\to$ `FAILED` 전이 | `status: INTENT_RECORDED` | 서버 재기동 또는 클라이언트 상태 조회/재요청 인입 시 `lease_expires_at_utc < now` 감지 $\to$ 단일 복구 트랜잭션으로 `FAILED (WORKER_CRASH_LEASE_EXPIRED)`로 안전 종결(자동 재실행 배제) $\to$ 클라이언트는 실패 수신 후 IndexedDB 보존 및 신규 `operationId` 발급 안내. | 무한 409 락 해소, 중복 파괴 실행 원천 차단, 안전한 신규 작업 재시도 보장 |
-    | **WIPE-CRASH-11** (Vector i) | **UNKNOWN 취소 경합 - 서버 선행 커밋 케이스** (취소 요청과 서버 지연 커밋 경합) | 지연된 원본 트랜잭션 2 완료 (`status: COMMITTED`) | `UNKNOWN` 판정 후 `POST /cancel` 호출 | 서버는 취소 요청에 대해 `CANNOT_CANCEL_ALREADY_COMMITTED` (409) 응답 $\to$ 클라이언트는 취소를 철회하고 로컬 인텐트를 `SERVER_COMMITTED`로 즉시 승격 $\to$ `purgeIndexedDbRequested` 설정에 따른 후속 동기화 완결. | 경합 발생 시에도 사용자 취소 의도 및 IndexedDB 메모 보존 불변식 무손실 보장 |
+    | **WIPE-CRASH-10** (Vector h) | **Stale PENDING 복구 및 지연 워커 Phase 2 진입 반례 1** (트랜잭션 1 `PENDING` 커밋 후 워커 지연 $\to$ 리스 만료로 저널이 `FAILED` 전이된 후 지연 워커가 뒤늦게 Phase 2 실행 시도) | `status: FAILED (WORKER_CRASH_LEASE_EXPIRED)` | `status: INTENT_RECORDED` | 지연 워커가 Phase 2 진입 시 **Pre-Delete Guardrail**(`SELECT status, worker_id, lease_expires_at_utc`)을 먼저 실행 $\to$ `status != 'PENDING'` 및 리스 만료 감지 $\to$ **모든 DELETE 실행 없이 즉시 `ROLLBACK;` (0건 삭제)**. 설령 실행하더라도 종결 UPDATE `rowcount == 0` 감지 시 강제 `ROLLBACK;`. 클라이언트는 `GET /status`로 `FAILED` 확인 후 IndexedDB 메모 보존 및 신규 `operationId` 안내. | **서버 데이터 삭제 0건 (Zero Rows Deleted, 기존 데이터 완전 보존)**, 무한 409 락 해소, 지연 워커 무단 삭제 원천 차단 |
+    | **WIPE-CRASH-11** (Vector i) | **UNKNOWN 취소 경합 - 서버 선행 커밋 케이스** (취소 요청과 지연된 서버 트랜잭션 2의 커밋 경합) | 지연된 원본 트랜잭션 2 선행 완료 (`status: COMMITTED`) | `UNKNOWN` 판정 후 `POST /cancel` 호출 | 서버는 취소 CAS 구문(`UPDATE ... WHERE status='PENDING'`)에서 `rowcount == 0` 및 현재 상태 `COMMITTED` 확인 $\to$ `CANNOT_CANCEL_ALREADY_COMMITTED` (409) 응답 $\to$ 클라이언트는 취소 실패 확인 즉시 로컬 인텐트를 `SERVER_COMMITTED`로 승격 $\to$ `purgeIndexedDbRequested` 설정에 따른 후속 동기화 완결. | 경합 발생 시에도 사용자 취소 의도 및 IndexedDB 메모 보존 규칙 준수, 비정상 부분 커밋 배제 |
     | **WIPE-CRASH-12** (Vector j) | **동일 operationId 범위 불일치 재사용** (동일 ID에 서로 다른 `wipeOption` 유입) | `system_operation_journal`에 기존 옵션(`OPTION_1`) 등록됨 | 동일 `operationId`에 상이한 옵션(`OPTION_2`) 전송 | 서버는 저널의 `wipe_option`과 유입된 `wipeOption`을 비교 검증 $\to$ 불일치 확인 시 **HTTP 409 Conflict (`OPERATION_SCOPE_MISMATCH`)**로 fail-closed 즉시 거부 $\to$ 기존 트랜잭션 상태 및 DB 데이터 무변경. | 잘못된 식별자 재사용 및 파괴 범위 오적용 원천 차단 |
-    | **WIPE-CRASH-13** (Vector k) | **UNKNOWN 취소 경합 - 톰스톤 펜싱 성공 케이스** (서버 미실행 상태에서 정상 취소) | 기록 없음 $\to$ `POST /cancel` 수신 후 `CANCELLED` 톰스톤 등록 | `UNKNOWN` 판정 후 `POST /cancel` 호출 $\to$ 200 OK 수신 | 서버에 `CANCELLED` 톰스톤 삽입 완료 $\to$ 클라이언트는 안심하고 `localStorage.removeItem('fab_factory_wipe_intent')` 수행. 추후 지연 도착한 원본 삭제 요청은 톰스톤에 의해 409 거절되어 실행 차단. | 작업 안전 중단, 지연 요청 실행 원천 차단, 클라이언트 인텐트 클린 제거 |
+    | **WIPE-CRASH-13** (Vector k) | **UNKNOWN 취소 경합 - 정상 취소 성공 및 지연 워커 차단 반례 2** (클라이언트 취소 요청으로 저널 `CANCELLED` 커밋 후, 지연된 워커가 뒤늦게 Phase 2 실행 시도) | `status: CANCELLED` | `POST /cancel` 200 OK 수신 후 `localStorage.removeItem` | 지연 워커가 Phase 2 진입 시 **Pre-Delete Guardrail**을 실행 $\to$ `status == 'CANCELLED'` 감지 $\to$ **모든 DELETE 실행 없이 즉시 `ROLLBACK;` (0건 삭제)**. 설령 실행하더라도 종결 UPDATE `rowcount == 0` 감지 시 강제 `ROLLBACK;`. 추후 지연 도착한 원본 트랜잭션 1 또한 PK 충돌/톰스톤으로 차단. | **서버 데이터 삭제 0건 (Zero Rows Deleted, 기존 데이터 완전 보존)**, 취소된 작업의 지연 파괴 원천 차단, 클라이언트 인텐트 클린 제거 |
 
 
 
@@ -466,14 +532,14 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
 
 ---
 
-## 10. A04 QA 3차 독립 검증 (F01 ~ F09) 해결 및 정합성 매핑 ([F01]~[F09] v0.6 총괄)
+## 10. A04 QA 3차 독립 검증 (F01 ~ F09) 해결 및 정합성 매핑 ([F01]~[F09] v0.7 총괄)
 
-| QA 항목 ID | 판정 상태 | A04 지적 요약 (3차 검증) | A02 아키텍처 조치 및 문서 매핑 (v0.6) |
+| QA 항목 ID | 판정 상태 | A04 지적 요약 (3차 검증) | A02 아키텍처 조치 및 문서 매핑 (v0.7) |
 |---|---|---|---|
 | **F01** | **PASS (유지)** | 활성 세션 단일성 및 수명주기 불변식 | `domain-data-contract-v0.1.md` §3.1에 단일 활성 세션(`is_active=1`) 불변식 유지 (재작성 배제). |
 | **F02** | **PASS (v0.5 보완)** | `(measured_value=NULL, quality_flag='GOOD')` DDL 우회 결함 | `domain-data-contract-v0.1.md` §3.2: `chk_measured_value_quality` 제약조건 추가하여 `quality_flag='MISSING'`일 때만 NULL을 허용하고 `GOOD`/`SUSPECT`/`BAD`는 `measured_value NOT NULL` 강제. 10종 테스트 매트릭스 수립. |
 | **F03** | **PASS (유지)** | Canonical CSV 직렬화 및 NaN/Inf 가드레일 | `simulation-reproducibility-contract.md` §6.2, §8.1: RFC 4180 빈 문자열 직렬화 및 NaN/Inf `ValueError` 방어 유지 (재작성 배제). |
-| **F04** | **PASS (v0.6 완결)** | Factory Wipe 범위 확정 및 IndexedDB 안전 복구 계약 | 본 문서 §4.3 및 `simulation-reproducibility-contract.md` §7.2: 단일 표준 계약(`fab_factory_wipe_intent`, `POST /factory-wipe`, `POST /cancel`, `GET /status`, `system_operation_journal`), 2단계 저널링, 워커 리스(`lease_expires_at_utc`, 30초) 기반 Stale PENDING 복구(영구 409 락 해소), 취소 펜싱 톰스톤 및 선행 커밋 경합 보호, `OPERATION_SCOPE_MISMATCH` fail-closed 범위 검증, `purgeIndexedDbRequested=false` 메모 보존 불변식, 13종 장애 복구 매트릭스(`WIPE-CRASH-01`~`13`) 완결. |
+| **F04** | **PASS (v0.7 완결)** | Factory Wipe 범위 확정 및 IndexedDB 안전 복구 계약 | 본 문서 §4.3 및 `simulation-reproducibility-contract.md` §7.2: 단일 표준 계약(`fab_factory_wipe_intent`, `POST /factory-wipe`, `POST /cancel`, `GET /status`, `system_operation_journal`), 2단계 저널링, 워커 리스(`lease_expires_at_utc`, 30초) 기반 Stale PENDING 복구(영구 409 락 해소), 취소 펜싱 톰스톤 및 선행 커밋 경합 보호, `OPERATION_SCOPE_MISMATCH` fail-closed 범위 검증, `purgeIndexedDbRequested=false` 메모 보존 불변식, Pre-Delete 실행권 검증 및 종결 1행 강제 롤백 불변식, 13종 장애 복구 매트릭스(`WIPE-CRASH-01`~`13`, 지연 워커 0건 삭제 반례 방어) 완결. |
 | **F05** | **PASS (유지)** | SQLite 락 메커니즘 구별 및 재시도 정책 | 본 문서 §3.2, §3.3: `SQLITE_BUSY` vs `SQLITE_LOCKED` 분리 및 애플리케이션 지수 백오프/재시도 유지 (재작성 배제). |
 | **F06** | **PASS (v0.5 보완)** | 부분군 $k \ge 5$ 및 $N \ge 20$ 경계 혼재, 평가 상태 우선순위 | `domain-data-contract-v0.1.md` §6.3: $k \ge 5$와 $N \ge 20$ 판정 분리, 상태 우선순위 계층(`EVALUATION_INVALID` > `ASSUMPTION_WARNING` > `ONE_SIDED_SPEC_EVALUATED` > `OK`) 및 경고 배열(`warnings: []`) 도입. |
 | **F07** | **PASS (v0.5 보완)** | `event_id` 엔티티 타입 누락 및 동일 ID 상이한 페이로드 처리 | `simulation-reproducibility-contract.md` §4, §5: 해시 생성 입력에 `entity_type` 추가, 동일 `event_id` 상이 페이로드 유입 시 `EVENT_PAYLOAD_CONFLICT` 명시적 거부 및 단일 트랜잭션 전체 롤백 기반 부분 영속화 배제(Zero Partial Persistence) 계약 정립. |
