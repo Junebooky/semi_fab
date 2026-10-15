@@ -28,12 +28,12 @@ A04 QA의 ADR-001 검토 의견(PR #3, QA-F02~QA-F04)과 A03 디자인 명세(PR
 | **아키텍처 구성** | Next.js 정적 내보내기 / SPA + 브라우저 내 픽스처 로더 | Next.js 프론트엔드 + Python FastAPI 백엔드 + 로컬 SQLite | Next.js + FastAPI/Node + Supabase (PostgreSQL + RLS + GoTrue Auth) |
 | **주요 용도** | 공개 포트폴리오 웹사이트, 무비용 쇼케이스, 브라우저 학습 | 개발자/평가자 로컬 실행, 정밀 통계 계산, 고속 시뮬레이션 | 다중 사용자 실시간 사건 조사, 크로스 디바이스 동기화, 엔터프라이즈 협업 |
 | **배포 환경** | GitHub Pages, Vercel 정적 호스팅, Cloudflare Pages | 로컬 머신 (macOS/Linux/Windows), 단일 컨테이너(Docker) | Supabase Cloud + Vercel/AWS ECS/Fly.io |
-| **운영 비용** | **$0 / 월** (완전 무료) | **$0 / 월** (사용자 로컬 자원 활용) | $25+/월 (Supabase Pro, DB 인스턴스, 백엔드 컨테이너) |
+| **운영 비용** | **무료** (Vercel/GitHub Pages 프리티어 한도 내 $0) | **무료** (사용자 로컬 컴퓨팅 자원 활용) | $25+/월 (Supabase Pro, DB 인스턴스, 백엔드 컨테이너) |
 | **데이터 영속성** | 브라우저 IndexedDB (사용자 메모/임시 세션만) | 로컬 영속 볼륨 내 단일 파일 (`.db`) | 클라우드 관리형 PostgreSQL (WAL 백업, PITR 복원) |
 | **동시성 모델** | 단일 브라우저 탭 / 독립 격리 | 단일 작성자(Single-Writer), 다중 읽기(Multi-Reader) | 다중 트랜잭션 동시 처리, Row-Level Lock, MVCC |
 | **정합성 보장** | 없음 (메모리 및 IndexedDB 비구조적 저장) | ACID 보장 (`PRAGMA foreign_keys=ON`, WAL 트랜잭션) | 완전한 RDBMS ACID, 외래키 무결성, RLS 보안 격리 |
 | **보안 및 인증** | 없음 (UI 필터 기반 가상 역할 선택) | 없음 (로컬 단일 사용자 전제, 가상 역할 뷰) | Supabase Auth (JWT), 세분화된 RBAC, Row Level Security |
-| **마이그레이션 난이도** | - (정적 픽스처 기반) | **기준점** (리포지토리 패턴으로 추상화) | 낮음 (SQLite 스키마 $\to$ PostgreSQL DDL 변환 필요) |
+| **마이그레이션 난이도** | - (정적 픽스처 기반) | **기준점** (리포지토리 패턴으로 추상화) | **보통** (SQLite 스키마 $\to$ PostgreSQL DDL 변환, RLS 정책, 커넥션 풀 튜닝 필요) |
 
 ### 2.1 Mode A 상세 분석 및 한계
 - **장점:** 호스팅 인프라 유지 비용 전무, 웹 링크 클릭만으로 즉시 시연 가능, 보안 위협 및 서버 장애 리스크 없음.
@@ -74,9 +74,9 @@ SQLite는 하위 호환성을 이유로 기본적으로 외래키 제약조건 �
 - **경합 타임아웃:** `PRAGMA busy_timeout = 5000;` (5초)를 설정하여 쓰기 락 경합 시 즉각 실패하지 않고 지수 백오프(Exponential Backoff)로 대기하도록 한다.
 - **동기화 레벨:** `PRAGMA synchronous = NORMAL;`을 적용하여 WAL 모드에서 데이터 무결성을 유지하면서 디스크 I/O 병목을 최소화한다.
 
-### 3.3 트랜잭션 격리 및 쓰기 정책
+### 3.3 트랜잭션 격리 및 쓰기 정책 (P0-3 대응)
 - 시뮬레이션 배치 쓰기 및 조사 케이스 등록 시 기본 `BEGIN DEFERRED` 대신 **`BEGIN IMMEDIATE`**를 사용하여 트랜잭션 시작 시점에 쓰기 락을 선점함으로써 교착 상태(Deadlock)를 원천 차단한다.
-- 공정 실행(`process_run`), 센서 계측치(`measurement`), 알람(`alarm`)의 일괄 삽입은 단일 트랜잭션 내에서 청크 단위(예: 1,000건)로 커밋하여 원자성(Atomicity)을 보장한다.
+- **배치 쓰기 원자성 보장 규약:** 공정 실행(`process_run`), 센서 계측치(`measurement`), 알람(`alarm`)의 일괄 삽입 시 메모리 및 SQLite 바인딩 파라미터(999개/32766개) 한도를 준수하기 위해 1,000건 단위의 청크로 나누어 `executemany`를 호출하되, **반드시 단일 트랜잭션(`BEGIN IMMEDIATE ... COMMIT`) 내에서 수행하며, 모든 청크의 실행이 100% 완료된 후에만 최종 `COMMIT`을 실행**한다. 중간에 단 1개의 청크라도 실패하면 즉시 전체 트랜잭션을 `ROLLBACK`하여 부분적으로 저장된 불완전한 공정 이력이 남지 않도록 한다.
 
 ### 3.4 데이터베이스 파일 경로 및 백업/복구 절차
 - **기본 경로:** `data/fab_one_mvp.db` (Git 추적 제외: `.gitignore` 등록 필수).
@@ -130,9 +130,13 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
   2. 메모 콘텐츠 내 악성 스크립트 실행 방지를 위한 XSS 살균(Sanitization) 처리.
   3. CSV 내보내기 시 수식 삽입 공격(Formula Injection, `=`, `+`, `-`, `@`로 시작하는 셀) 방지를 위한 단일 따옴표(`'`) 이스케이프 적용.
 
-### 4.3 시뮬레이터 리셋과 IndexedDB 메모의 경계
-- **기본 정책 (A02 제안):** 시뮬레이션 시나리오 초기화(Reset) 시 설비/공정/센서/알람 데이터는 초기 픽스처 상태로 되돌아가지만, **사용자가 작성한 IndexedDB 학습 메모는 보존**한다.
-- 사용자가 작성한 메모까지 삭제하려면 설정 메뉴에서 "사용자 메모 및 환경설정 전체 초기화" 버튼을 누르고 명시적 확인 모달을 거치도록 분리한다.
+### 4.3 시뮬레이터 리셋과 이력 보존 외래키 정합성 (P0-3 대응)
+- **외래키 충돌 문제:** 조사 케이스(`INVESTIGATION_CASE`)가 특정 `run_id` 및 `alert_id`를 외래키(`ON DELETE RESTRICT`)로 참조하고 있을 때, 시뮬레이터 리셋 시 원본 실행/알람 레코드를 삭제하면 외래키 위반 오류로 리셋이 실패한다.
+- **세션 ID 기반 불변 이력 보존 (Soft-Reset):**
+  1. 모든 실행과 알람에 `simulation_session_id`를 부여한다.
+  2. 시뮬레이터 리셋 시 기존 세션은 `is_active = 0`으로 비활성화하여 아카이빙하고, 새로운 세션을 발급하여 가상 클록 $t=0$부터 시작한다.
+  3. 대시보드는 최신 활성 세션(`is_active = 1`) 데이터만 표시하며, 기존 조사 케이스는 과거 세션의 레코드를 안전하게 참조하여 외래키 무결성이 100% 보존된다.
+  4. 사용자의 IndexedDB 개인 학습 메모는 시뮬레이터 세션 리셋과 완전히 격리되어 안전하게 유지된다. (단, 사용자가 '공장 초기화 전체 삭제'를 명시 승인한 경우에 한해 일괄 삭제).
 
 ---
 
@@ -249,7 +253,7 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
 1. **캔버스 배경색 규약 (#FFFFFF) 적용:**
    - 사용자 최신 지시에 따라 기본 캔버스 배경을 순백색 `#FFFFFF`로 확정한다. A03 토큰의 `color.surface.canvas=#F6F8FC`는 Tailwind 설정에서 `#FFFFFF`로 덮어쓰거나 A03의 후속 디자인 PR에서 수정되도록 조율한다.
 2. **반도체 그린/에메랄드 3D 클레이 플레이스홀더 및 레이아웃 시프트 방지:**
-   - 3D 완성 에셋을 지금 제작하지 않고, Wafer 및 Etch Chamber를 위한 교체 가능한 2개 이상의 이미지 슬롯(`assetId: "slot-wafer-hero"`, `assetId: "slot-chamber-diag"`)을 준비한다.
+   - 3D 완성 에셋을 지금 제작하지 않고, Wafer 및 Etch Chamber를 위한 교체 가능한 2개 이상의 이미지 슬롯(`assetId: "illustration.wafer.v1"`, `assetId: "illustration.etch-chamber.v1"`)을 준비한다.
    - **엔지니어링 조치:** 이미지 로딩 지연에 따른 레이아웃 시프트(CLS, Cumulative Layout Shift)를 방지하기 위해 CSS `aspect-ratio` 및 `object-fit: contain`을 강제하고 스켈레톤 UI를 제공한다.
    - **의미 색상 분리:** 3D 일러스트에 사용되는 에메랄드/그린 색상은 단순 장식용이며, 장비의 '정상(Normal)' 상태를 나타내는 시맨틱 상태 색상(`color.severity.normal.text`)과 명확히 격리한다.
 3. **EKL 3단계 인터랙션 (L1/L2/L3) 정적 MDX 파이프라인:**
