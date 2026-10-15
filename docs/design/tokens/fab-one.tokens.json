@@ -3,23 +3,24 @@
   "_meta": {
     "product": "FAB ONE",
     "owner": "A03",
-    "version": "0.1.0-review",
+    "version": "0.2.0-review",
     "issue": "https://github.com/Junebooky/semi_fab/issues/4",
     "originalDesign": true,
     "notOfficialToss": true,
-    "architecture": "ADR-001 pending approval"
+    "architecture": "ADR-001 pending approval",
+    "ownerDirection": "2026-10-15 Issue #9: #FFFFFF baseline; emerald clay illustration placeholder slots; no original 3D deliverables"
   },
   "color": {
     "surface": {
       "canvas": {
         "$type": "color",
-        "$value": "#F6F8FC",
-        "$description": "App canvas"
+        "$value": "#FFFFFF",
+        "$description": "Approved owner direction: pure white app canvas"
       },
       "card": {
         "$type": "color",
         "$value": "#FFFFFF",
-        "$description": "Analysis and card surface"
+        "$description": "Pure white default card; borders create hierarchy"
       },
       "subtle": {
         "$type": "color",
@@ -122,48 +123,35 @@
         "$value": "#155BC1",
         "$description": "Focus ring pair with 2px outline"
       }
-    }
-  },
-  "spacing": {
-    "1": {
-      "$type": "dimension",
-      "$value": "4px",
-      "$description": "XS"
     },
-    "2": {
-      "$type": "dimension",
-      "$value": "8px",
-      "$description": "S"
-    },
-    "3": {
-      "$type": "dimension",
-      "$value": "12px",
-      "$description": "M"
-    },
-    "4": {
-      "$type": "dimension",
-      "$value": "16px",
-      "$description": "regular"
-    },
-    "6": {
-      "$type": "dimension",
-      "$value": "24px",
-      "$description": "L"
-    },
-    "8": {
-      "$type": "dimension",
-      "$value": "32px",
-      "$description": "XL"
-    },
-    "10": {
-      "$type": "dimension",
-      "$value": "40px",
-      "$description": "2XL"
-    },
-    "12": {
-      "$type": "dimension",
-      "$value": "48px",
-      "$description": "3XL"
+    "asset": {
+      "clay": {
+        "dark": {
+          "$type": "color",
+          "$value": "#076F5B",
+          "$description": "Emerald clay illustrative shadow only; NOT severity"
+        },
+        "deep": {
+          "$type": "color",
+          "$value": "#0B9F78",
+          "$description": "Emerald clay illustrated material"
+        },
+        "primary": {
+          "$type": "color",
+          "$value": "#16B88A",
+          "$description": "Main temporary clay illustration fill only"
+        },
+        "light": {
+          "$type": "color",
+          "$value": "#A4E9C8",
+          "$description": "Soft clay highlight only"
+        },
+        "pale": {
+          "$type": "color",
+          "$value": "#DDF8EC",
+          "$description": "Soft clay backdrop ONLY within asset illustration, not global canvas"
+        }
+      }
     }
   },
   "radius": {
@@ -314,6 +302,68 @@
       "$type": "dimension",
       "$value": "44px",
       "$description": "Minimum primary interactive touch target"
+    }
+  },
+  "space": {
+    "1": {
+      "$type": "dimension",
+      "$value": "4px",
+      "$description": "XS"
+    },
+    "2": {
+      "$type": "dimension",
+      "$value": "8px",
+      "$description": "S"
+    },
+    "3": {
+      "$type": "dimension",
+      "$value": "12px",
+      "$description": "M"
+    },
+    "4": {
+      "$type": "dimension",
+      "$value": "16px",
+      "$description": "regular"
+    },
+    "6": {
+      "$type": "dimension",
+      "$value": "24px",
+      "$description": "L"
+    },
+    "8": {
+      "$type": "dimension",
+      "$value": "32px",
+      "$description": "XL"
+    },
+    "10": {
+      "$type": "dimension",
+      "$value": "40px",
+      "$description": "2XL"
+    },
+    "12": {
+      "$type": "dimension",
+      "$value": "48px",
+      "$description": "3XL"
+    }
+  },
+  "shadow": {
+    "card": {
+      "$type": "shadow",
+      "$value": {
+        "color": "#17263B0F",
+        "offsetX": "0px",
+        "offsetY": "4px",
+        "blur": "18px",
+        "spread": "0px"
+      },
+      "$description": "Light card elevation on white; must still use border/spacing"
+    }
+  },
+  "border": {
+    "focus": {
+      "$type": "dimension",
+      "$value": "2px",
+      "$description": "Visible focus outline width; 2px offset"
     }
   }
 }
