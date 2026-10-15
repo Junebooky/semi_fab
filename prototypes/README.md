@@ -95,3 +95,67 @@ Missing/invalid path: CSS reserves dimensions and leaves a **temporary emerald S
 3. Interactive prototype uses DOM button/overlay event handlers; actual framework integration, URL deep-links, full a11y, contrast and mobile/browser testing remain A02/A04 work.
 4. Final 3D art is **owner-provided later**, not requested from A03 at this stage. Placeholder emerald SVGs and replacement contract are the deliverable.
 5. [PR #7](https://github.com/Junebooky/semi_fab/pull/7) remains REVIEW and updated for white canvas and semantic contracts; merge only after project owner authorization.
+
+## 7. A01 PR #11 P1 corrections — regression and asset test procedures
+
+**Feedback source:** [A01 review #6184254594](https://github.com/Junebooky/semi_fab/pull/11#issuecomment-6184254594). Changes are on the same PR #11 branch, **REVIEW** pending real browser QA. White `#FFFFFF` canvas and emerald-only illustrations remain unchanged.
+
+### P1-01: Alert ID and evidence association
+
+- `DEMO_ALERTS["AL-DEMO-001"]`: ETCH-02 / CH-B / RUN-DEMO-044, fixture `SYN-ETCH-02-01`. Click this row's **상세 보기 →** and verify the evidence page heading, selected alert ID, equipment ID and Run ID all match; navigating back and opening via Equipment nav does not unexpectedly select another alarm.
+- `DEMO_ALERTS["AL-DEMO-002"]`: ETCH-01 / CH-A **has no associated evidence fixture**. The second row's **맥락 보기 불가** control is disabled, and its Korean reason explains that this alarm has no separate data; clicking/keyboard activation must **not** open ETCH-02/CH-B evidence. This is deliberate rather than fabricating CH-A sensor values.
+- A02 must map all production alerts by stable ID, not row index or default equipment. Never fall back to another equipment's evidence if fixture fails to load.
+- Future optional feature: provide a separate `alertId`-specific CH-A freshness page, but only when A01/A02-approved data exists.
+
+### P1-02: L1/L2/L3 concept consistency
+
+The single immutable `KNOWLEDGE_CONCEPTS` object stores `title`, `description`, `insightFormula`, `deepTitle`, `body`, `formula`, `cautions` and `source` for each `conceptId`. Each L2→L3 transition populates all elements via `textContent`; no mixed-topic static L3 paragraphs.
+
+| Action | Expected L2 | Expected L3 |
+| --- | --- | --- |
+| Command Center → 식각 속도 (hover/focus then click) → L3 | static thickness/time example; not live etch data | Etch rate definition, `30 nm/min` **arithmetic example**, film/time/method cautions, A01 source review pending |
+| Equipment evidence → UCL/LCL이란? (hover/focus then click) → L3 | SPC control vs product spec limits; numeric calculation **unapproved** | UCL/LCL definition, formula/signal method **unapproved (no numbers)**, separate caveats/source, **no Etch Rate arithmetic** |
+| Close / return / reopen other concept | concept title and content update atomically | no content retained from prior topic; focus returns to origin per design |
+| Missing `conceptId` | no misleading fallback concept | A02 production build must show explicit unavailable state |
+
+### P1-03: Plot and alternative table from same source
+
+`DEMO_FIXTURES["SYN-ETCH-02-01"]` is the **sole source** for both SVG circles/polyline segments and accessible `tbody#fixture-rows`, including nulls:
+
+| Virtual point | T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 |
+| --- | ---: | ---: | ---: | ---: | --- | --- | ---: | ---: |
+| Synthetic relative signal [a.u.] | 42 | 44 | 47 | 46 | missing (`null`) | missing (`null`) | 57 | 80 |
+
+- All **eight separate** time points must be in the data table; T4 and T5 appear individually as `— · 데이터 없음`.
+- SVG renders **no point at null** and **no line bridging T3→T6**. Both SVG descriptive text and data table are populated from the same array.
+- Chart must retain the warning **'도식용 가상 한계선 · 통계적 관리한계 미검증'** immediately above the SVG. UCL/LCL are unverified illustrations and not values measured in a fab or valid acceptance boundaries.
+- A02 must replace the *entire* fixture with a validated synthetic data adapter before shipping app calculations; don't hand-copy alternative table numbers again.
+
+### P1-04: Replacement image test plan for A04
+
+The two empty config entries in `ASSET_OVERRIDES` intentionally render green static SVG fallbacks. Test **both IDs independently** at desktop and 360px.
+
+| Test | Test input / preparation | Expected visual and technical result |
+| --- | --- | --- |
+| IMG-01 Default | Both src values remain empty | Two fixed-ratio original emerald fallbacks visible; no external image request |
+| IMG-02 Not found | Set wafer src to `"assets/nonexistent-wafer.webp"`, reload | Browser `img.onerror` retains wafer fallback and `role=img` + Korean name; no broken-image icon or wrapper collapse |
+| IMG-03 Valid transparent image | Put a permitted test PNG or WebP at `prototypes/assets/test-wafer.png` (path relative to the HTML file) and point wafer override to `"assets/test-wafer.png"` | Wafer fallback replaced **inside existing 1:1 slot**, `contain` and visible 12% safe padding, alt remains on loaded `img`. Chamber slot untouched |
+| IMG-04 Valid different aspect | Provide 4:3 wafer and tall transparent chamber samples; repeat per slot | Entire asset stays visible, letterboxed if necessary; no `cover` cropping or altered parent geometry |
+| IMG-05 Slow asset | Browser devtools Network → Slow 3G/disable cache; load an actual image | Reserved wrapper dimensions before/after decoding are unchanged; no image-triggered layout jump; document any CLS/layout-shift entries |
+| IMG-06 Deliberate 404 recovery | Switch an already valid config path to nonexistent, reload | Only its own placeholder returns; no cross-slot art or alt confusion |
+| IMG-07 Responsive | 360px phone and 400% browser zoom; repeat success/error | No overlap with graph, alert text or CTA; fallback stays visible and readable |
+| IMG-08 Performance | Run actual browser with reduced motion/data and low-power mobile if available | Core controls work without WebGL or animation; record loading time and any layout shifts |
+
+**Measurement procedure:** open Chrome/Edge DevTools → Performance (Layout Shift regions) and Network (disable cache, select slow connection). Compare the `getBoundingClientRect()` of `[data-asset="illustration.wafer.v1"]` / `[data-asset="illustration.etch-chamber.v1"]` before/after load and capture console/network errors. The absence of a shift in source code is **not** a measured CLS pass. For file URLs, use a simple local static server if asset loading is blocked by browser file-origin policies; never upload private owner images to a public repo without approval.
+
+### P1-05: A04 independent QA scenarios (NOT_RUN)
+
+1. Desktop: select the two alert rows; verify only CH-B has enabled evidence and CH-A cannot reach a wrong chamber.
+2. Inspect chart SVG circles/segments and all eight data rows; compare each numeric value, gap, unit and fixture name.
+3. Keyboard-only: Tab/Shift+Tab through alert, EKL L1; Enter/Space opens L2; Esc and Back navigate; focus restores.
+4. Mobile 360px and 400% zoom: L2/L3 modal focus containment, no sideways page overflow hiding controls; tables can scroll horizontally.
+5. Screen-reader names: term button, popup/dialog title, deep panel title/reading order and close; L3 UCL/LCL body must not read any Etch Rate formula.
+6. Compare artifact loading/404/fallback, timing, bounding rect and CLS for owner replacement; reduced motion.
+7. A01 confirms all domain terminology and placeholder policy; A02 assures future sample source and persistence boundaries.
+
+**Status evidence:** source-level corrections are committed to PR #11. **Browser UI tests, assisted technology tests, actual image load measurements and statistical rule validation have not been run or claimed as PASS.** A04 owns independent execution/results and A01/project owner authorizes merge.
