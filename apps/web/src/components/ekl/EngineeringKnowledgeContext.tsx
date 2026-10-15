@@ -65,6 +65,30 @@ export function EngineeringKnowledgeProvider({ children }: { children: React.Rea
     }
   }, []);
 
+  // Manage inert attribute on background app-container when modal is open
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const appContainers = document.querySelectorAll<HTMLElement>('.app-container');
+    if (activeLevel !== 0) {
+      appContainers.forEach((el) => {
+        el.setAttribute('inert', '');
+        el.setAttribute('aria-hidden', 'true');
+      });
+    } else {
+      appContainers.forEach((el) => {
+        el.removeAttribute('inert');
+        el.removeAttribute('aria-hidden');
+      });
+    }
+
+    return () => {
+      appContainers.forEach((el) => {
+        el.removeAttribute('inert');
+        el.removeAttribute('aria-hidden');
+      });
+    };
+  }, [activeLevel]);
+
   // Keyboard navigation: Escape key handling
   useEffect(() => {
     if (activeLevel === 0) return;

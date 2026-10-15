@@ -839,13 +839,10 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
           return;
         }
 
-        let traceRes, wafersRes, summaryRes;
+        // Step 1: fetch summary FIRST to acquire active_run_id (P1-A)
+        let summaryRes;
         try {
-          [traceRes, wafersRes, summaryRes] = await Promise.all([
-            fetchMocks.fetchTrace(),
-            fetchMocks.fetchWafers(),
-            fetchMocks.fetchSummary()
-          ]);
+          summaryRes = await fetchMocks.fetchSummary();
         } catch {
           // Network disconnection
           if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
@@ -871,6 +868,55 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
 
         if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
 
+        if (!summaryRes.ok) {
+          this.trace = null;
+          this.notFoundError = {
+            waferId: targetWafer,
+            status: summaryRes.status,
+            message: `API 서버 요약 조회 실패 (HTTP ${summaryRes.status})`
+          };
+          this.mode = 'B';
+          return;
+        }
+
+        let summaryData;
+        try {
+          summaryData = await summaryRes.json();
+        } catch {
+          if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+          this.trace = null;
+          this.notFoundError = { waferId: targetWafer, status: 502, message: 'Malformed JSON' };
+          this.mode = 'B';
+          return;
+        }
+
+        if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+
+        const currentRunId = summaryData?.active_run_id;
+        if (!currentRunId || typeof currentRunId !== 'string') {
+          this.trace = null;
+          this.notFoundError = { waferId: targetWafer, status: 500, message: '서버 활성 Run 부재 오류' };
+          this.mode = 'B';
+          return;
+        }
+
+        // Step 2: fetch trace and wafers with explicit currentRunId
+        let traceRes, wafersRes;
+        try {
+          [traceRes, wafersRes] = await Promise.all([
+            fetchMocks.fetchTrace(currentRunId),
+            fetchMocks.fetchWafers(currentRunId)
+          ]);
+        } catch {
+          if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+          this.trace = null;
+          this.notFoundError = { waferId: targetWafer, status: 500, message: '서버 통신 실패' };
+          this.mode = 'B';
+          return;
+        }
+
+        if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+
         if (traceRes.status === 404) {
           let errDetail = '404 Not Found';
           try {
@@ -881,11 +927,12 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
           this.trace = null;
           this.notFoundError = { waferId: targetWafer, status: 404, message: errDetail };
           this.mode = 'B';
+          this.activeRunId = currentRunId;
           return;
         }
 
-        if (!traceRes.ok || !wafersRes.ok || !summaryRes.ok) {
-          const failedStatus = !traceRes.ok ? traceRes.status : (!wafersRes.ok ? wafersRes.status : summaryRes.status);
+        if (!traceRes.ok || !wafersRes.ok) {
+          const failedStatus = !traceRes.ok ? traceRes.status : wafersRes.status;
           this.trace = null;
           this.notFoundError = {
             waferId: targetWafer,
@@ -897,12 +944,11 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
           return;
         }
 
-        let traceData, wafersData, summaryData;
+        let traceData, wafersData;
         try {
-          [traceData, wafersData, summaryData] = await Promise.all([
+          [traceData, wafersData] = await Promise.all([
             traceRes.json(),
-            wafersRes.json(),
-            summaryRes.json()
+            wafersRes.json()
           ]);
         } catch {
           if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
@@ -915,7 +961,7 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
 
         if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
 
-        const isRunCoherent = traceData.run_id === summaryData.active_run_id;
+        const isRunCoherent = traceData.run_id === currentRunId;
         const isLotCoherent = wafersData.length > 0 && wafersData.some(w => w.wafer_id === targetWafer && w.lot_id === traceData.lot_id);
 
         if (!isRunCoherent || !isLotCoherent) {
@@ -933,7 +979,7 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
         // Commit all
         this.trace = traceData;
         this.wafers = wafersData;
-        this.activeRunId = summaryData.active_run_id;
+        this.activeRunId = currentRunId;
         this.mode = 'B';
         this.notFoundError = null;
         this.notice = `Mode B (Live API): 웨이퍼 ${targetWafer} 동기화 완료.`;
@@ -951,12 +997,12 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
   }));
   const validSummary = { active_run_id: validTraceW08.run_id, lot_id: validTraceW08.lot_id };
 
-  // (a) Scenario A: trace 200 + list 500 -> fail-closed, trace=null, no synthetic fallback, mode=B
+  // (a) Scenario A: summary 200 + trace 200 + list 500 -> fail-closed, trace=null, no synthetic fallback, mode=B
   const hA = createHarness();
   await hA.executeLoadData('W-08', {
-    fetchTrace: async () => ({ ok: true, status: 200, json: async () => validTraceW08 }),
-    fetchWafers: async () => ({ ok: false, status: 500, json: async () => ({ error: 'Internal Error' }) }),
-    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary })
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary }),
+    fetchTrace: async (rId) => ({ ok: true, status: 200, json: async () => validTraceW08 }),
+    fetchWafers: async (rId) => ({ ok: false, status: 500, json: async () => ({ error: 'Internal Error' }) })
   });
   assert.equal(hA.trace, null, "(a) Trace MUST be null when wafer list fails with 500");
   assert.notEqual(hA.notFoundError, null);
@@ -966,9 +1012,9 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
   // (b) Scenario B: trace 200 + summary mismatch (different run_id or lot_id) -> fail-closed
   const hB = createHarness();
   await hB.executeLoadData('W-08', {
-    fetchTrace: async () => ({ ok: true, status: 200, json: async () => validTraceW08 }),
-    fetchWafers: async () => ({ ok: true, status: 200, json: async () => validWafers }),
-    fetchSummary: async () => ({ ok: true, status: 200, json: async () => ({ active_run_id: 'RUN-DIFFERENT-999' }) })
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => ({ active_run_id: 'RUN-DIFFERENT-999', lot_id: validTraceW08.lot_id }) }),
+    fetchTrace: async (rId) => ({ ok: true, status: 200, json: async () => validTraceW08 }),
+    fetchWafers: async (rId) => ({ ok: true, status: 200, json: async () => validWafers })
   });
   assert.equal(hB.trace, null, "(b) Trace MUST be null when active run ID diverges");
   assert.notEqual(hB.notFoundError, null);
@@ -981,16 +1027,16 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
   const delayedPromiseW01 = new Promise(resolve => { delayedResolveW01 = resolve; });
 
   const pW01 = hC.executeLoadData('W-01', {
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary }),
     fetchTrace: async () => ({ ok: true, status: 200, json: async () => generateModeAWaferTraceTest('W-01') }),
-    fetchWafers: async () => ({ ok: true, status: 200, json: async () => { await delayedPromiseW01; return validWafers; } }),
-    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary })
+    fetchWafers: async () => ({ ok: true, status: 200, json: async () => { await delayedPromiseW01; return validWafers; } })
   });
 
   // User immediately switches to W-08
   await hC.executeLoadData('W-08', {
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary }),
     fetchTrace: async () => ({ ok: true, status: 200, json: async () => validTraceW08 }),
-    fetchWafers: async () => ({ ok: true, status: 200, json: async () => validWafers }),
-    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary })
+    fetchWafers: async () => ({ ok: true, status: 200, json: async () => validWafers })
   });
   assert.equal(hC.trace.wafer_id, 'W-08');
 
@@ -1002,9 +1048,9 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
   // (d) Scenario D: Response present but malformed JSON -> fail-closed with 502, no synthetic fallback
   const hD = createHarness();
   await hD.executeLoadData('W-08', {
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary }),
     fetchTrace: async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError("Unexpected token < in JSON"); } }),
-    fetchWafers: async () => ({ ok: true, status: 200, json: async () => validWafers }),
-    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary })
+    fetchWafers: async () => ({ ok: true, status: 200, json: async () => validWafers })
   });
   assert.equal(hD.trace, null, "(d) Trace MUST be null on malformed JSON");
   assert.notEqual(hD.notFoundError, null);
@@ -1014,14 +1060,99 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
   // (e) Scenario E: Server genuinely offline with valid W-08 -> Clean Mode A fallback
   const hE = createHarness();
   await hE.executeLoadData('W-08', {
+    fetchSummary: async () => { throw new TypeError("Failed to fetch (ECONNREFUSED)"); },
     fetchTrace: async () => { throw new TypeError("Failed to fetch (ECONNREFUSED)"); },
-    fetchWafers: async () => { throw new TypeError("Failed to fetch (ECONNREFUSED)"); },
-    fetchSummary: async () => { throw new TypeError("Failed to fetch (ECONNREFUSED)"); }
+    fetchWafers: async () => { throw new TypeError("Failed to fetch (ECONNREFUSED)"); }
   });
   assert.notEqual(hE.trace, null, "(e) Clean Mode A fallback when server is unreachable");
   assert.equal(hE.trace.wafer_id, 'W-08');
   assert.equal(hE.mode, 'A', "(e) Mode switched to A on genuine network connection failure");
   assert.equal(hE.notFoundError, null);
+});
+
+test('P1-A Explicit Run ID Origin Query Contract: Summary-first run_id discovery and explicit list/trace propagation', async () => {
+  const recordedCalls = [];
+  const serverSummaryRunId = 'RUN-DEMO-20261015-ACTIVE';
+  const serverLotId = 'LOT-DEMO-801';
+
+  const mockSummary = { active_run_id: serverSummaryRunId, lot_id: serverLotId };
+  const mockTrace = {
+    ...generateModeAWaferTraceTest('W-08'),
+    run_id: serverSummaryRunId,
+    lot_id: serverLotId
+  };
+  const mockWafers = Array.from({ length: 25 }, (_, i) => ({
+    wafer_id: `W-${String(i+1).padStart(2, '0')}`,
+    lot_id: serverLotId,
+    slot_number: i+1,
+    sequence: i+1,
+    exposure_status: i < 7 ? 'CONFIRMED_EXPOSED' : (i < 12 ? 'CANDIDATE_EXPOSED' : 'NOT_EXPOSED')
+  }));
+
+  // Replicate summary-first loader
+  async function loadDataHarness(targetWafer, fetchSummaryFn, fetchTraceFn, fetchWafersFn) {
+    // 1. Fetch summary first
+    const summaryRes = await fetchSummaryFn();
+    const summaryData = await summaryRes.json();
+    const activeRunId = summaryData.active_run_id;
+
+    // 2. Fetch trace and wafers with explicit activeRunId
+    const [traceRes, wafersRes] = await Promise.all([
+      fetchTraceFn(targetWafer, activeRunId),
+      fetchWafersFn(activeRunId)
+    ]);
+
+    const traceData = await traceRes.json();
+    const wafersData = await wafersRes.json();
+
+    // Verify coherence
+    assert.equal(traceData.run_id, activeRunId);
+    assert.ok(wafersData.every(w => w.lot_id === traceData.lot_id));
+
+    return { traceData, wafersData, activeRunId };
+  }
+
+  // 1. First load: verifies summary is fetched first and run_id is propagated to both
+  const result1 = await loadDataHarness(
+    'W-08',
+    async () => {
+      recordedCalls.push({ endpoint: 'summary' });
+      return { ok: true, status: 200, json: async () => mockSummary };
+    },
+    async (wId, rId) => {
+      recordedCalls.push({ endpoint: 'trace', waferId: wId, runId: rId });
+      return { ok: true, status: 200, json: async () => mockTrace };
+    },
+    async (rId) => {
+      recordedCalls.push({ endpoint: 'wafers', runId: rId });
+      return { ok: true, status: 200, json: async () => mockWafers };
+    }
+  );
+
+  assert.equal(recordedCalls[0].endpoint, 'summary', 'Summary MUST be called first');
+  assert.equal(recordedCalls[1].runId, serverSummaryRunId, 'Trace call MUST include explicit run_id from summary');
+  assert.equal(recordedCalls[2].runId, serverSummaryRunId, 'Wafers call MUST include explicit run_id from summary');
+  assert.equal(result1.activeRunId, serverSummaryRunId);
+
+  // 2. Subsequent query (W-01 -> W-08): explicit run_id is maintained
+  recordedCalls.length = 0;
+  await loadDataHarness(
+    'W-01',
+    async () => {
+      recordedCalls.push({ endpoint: 'summary' });
+      return { ok: true, status: 200, json: async () => mockSummary };
+    },
+    async (wId, rId) => {
+      recordedCalls.push({ endpoint: 'trace', waferId: wId, runId: rId });
+      return { ok: true, status: 200, json: async () => ({ ...mockTrace, wafer_id: 'W-01' }) };
+    },
+    async (rId) => {
+      recordedCalls.push({ endpoint: 'wafers', runId: rId });
+      return { ok: true, status: 200, json: async () => mockWafers };
+    }
+  );
+  assert.equal(recordedCalls[1].runId, serverSummaryRunId);
+  assert.equal(recordedCalls[2].runId, serverSummaryRunId);
 });
 
 // ============================================================================
@@ -1030,10 +1161,14 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
 
 import { readFileSync } from 'node:fs';
 
-// Helper matching calculateEtchRate in apps/web/src/lib/engineering-knowledge.ts
+// Helper matching calculateEtchRate in apps/web/src/components/ekl/engineering-knowledge.ts
 function calculateEtchRateTest(initialThickness, finalThickness, processTimeMinutes) {
-  if (isNaN(initialThickness) || isNaN(finalThickness) || isNaN(processTimeMinutes)) {
-    return { success: false, errorMessage: '유효한 숫자를 입력해 주세요.' };
+  if (
+    !Number.isFinite(initialThickness) ||
+    !Number.isFinite(finalThickness) ||
+    !Number.isFinite(processTimeMinutes)
+  ) {
+    return { success: false, errorMessage: '유효한 유한 숫자를 입력해 주세요.' };
   }
   if (initialThickness < 0 || finalThickness < 0) {
     return { success: false, errorMessage: '박막 두께는 음수가 될 수 없습니다.' };
@@ -1043,6 +1178,9 @@ function calculateEtchRateTest(initialThickness, finalThickness, processTimeMinu
   }
   const deltaThickness = initialThickness - finalThickness;
   const etchRate = deltaThickness / processTimeMinutes;
+  if (!Number.isFinite(etchRate)) {
+    return { success: false, errorMessage: '식각 속도 계산 결과가 유효한 범위를 벗어났습니다.' };
+  }
   if (deltaThickness < 0) {
     return {
       success: true,
@@ -1056,7 +1194,7 @@ function calculateEtchRateTest(initialThickness, finalThickness, processTimeMinu
   };
 }
 
-test('BUILD-04 EKL Calculation Model Contract: Etch Rate arithmetic, unit validation and boundary conditions', () => {
+test('BUILD-04 EKL Calculation Model Contract: Etch Rate arithmetic, unit validation, Number.isFinite bounds, and boundary conditions', () => {
   // 1. Standard valid nominal calculation: (200 - 140) nm / 2.0 min = 30.00 nm/min
   const res1 = calculateEtchRateTest(200, 140, 2.0);
   assert.equal(res1.success, true);
@@ -1091,9 +1229,26 @@ test('BUILD-04 EKL Calculation Model Contract: Etch Rate arithmetic, unit valida
   // 7. Boundary: NaN inputs must fail-closed
   const resNaN = calculateEtchRateTest(NaN, 140, 2.0);
   assert.equal(resNaN.success, false);
-  assert.ok(resNaN.errorMessage.includes('유효한 숫자를 입력해 주세요'));
+  assert.ok(resNaN.errorMessage.includes('유효한 유한 숫자를 입력해 주세요'));
 
-  // 8. Domain Warning: Final thickness > Initial thickness (Deposition warning)
+  // 8. P1-B Boundary: Infinity and non-finite inputs (e.g. parseFloat('1e309')) must fail-closed
+  const resInf1 = calculateEtchRateTest(Infinity, 140, 2.0);
+  assert.equal(resInf1.success, false);
+  assert.ok(resInf1.errorMessage.includes('유효한 유한 숫자를 입력해 주세요'));
+
+  const resInf2 = calculateEtchRateTest(200, -Infinity, 2.0);
+  assert.equal(resInf2.success, false);
+  assert.ok(resInf2.errorMessage.includes('유효한 유한 숫자를 입력해 주세요'));
+
+  const resOverflow = calculateEtchRateTest(parseFloat('1e309'), 140, 2.0);
+  assert.equal(resOverflow.success, false);
+  assert.ok(resOverflow.errorMessage.includes('유효한 유한 숫자를 입력해 주세요'));
+
+  const resTimeInf = calculateEtchRateTest(200, 140, parseFloat('1e309'));
+  assert.equal(resTimeInf.success, false);
+  assert.ok(resTimeInf.errorMessage.includes('유효한 유한 숫자를 입력해 주세요'));
+
+  // 9. Domain Warning: Final thickness > Initial thickness (Deposition warning)
   const resDeposition = calculateEtchRateTest(140, 200, 2.0);
   assert.equal(resDeposition.success, true);
   assert.equal(resDeposition.value, -30.00);
@@ -1211,6 +1366,68 @@ test('BUILD-04 EKL Interaction State Machine: L1 -> L2 -> L3 navigation and cont
   assert.equal(restoredFocus, 'trigger-rf-power-btn', 'Focus must restore to origin trigger');
   assert.equal(sm.screenContext.selectedWafer, 'W-08', 'Screen context must remain intact');
   assert.equal(sm.screenContext.activeRunId, 'RUN-DEMO-044');
+});
+
+test('P1-B Accessible Modal Dialog Contract: Focus trapping, Tab/Shift+Tab cycle, and background inert isolation', () => {
+  // Replicate focus trapping algorithm used in EngineeringInsightCard and EngineeringDeepDivePanel
+  function simulateFocusTrap(focusableElements, currentFocus, key, shiftKey) {
+    if (key !== 'Tab') return currentFocus;
+    if (focusableElements.length === 0) return null;
+
+    const first = focusableElements[0];
+    const last = focusableElements[focusableElements.length - 1];
+
+    if (shiftKey) {
+      if (currentFocus === first || !focusableElements.includes(currentFocus)) {
+        return last; // Wrap backward to last
+      }
+      const prevIdx = focusableElements.indexOf(currentFocus) - 1;
+      return focusableElements[prevIdx];
+    } else {
+      if (currentFocus === last || !focusableElements.includes(currentFocus)) {
+        return first; // Wrap forward to first
+      }
+      const nextIdx = focusableElements.indexOf(currentFocus) + 1;
+      return focusableElements[nextIdx];
+    }
+  }
+
+  const l2Elements = ['btn-close', 'input-t1', 'input-t2', 'input-time', 'btn-esc-close', 'btn-go-deep'];
+
+  // Forward Tab from last element wraps to first
+  const wrappedForward = simulateFocusTrap(l2Elements, 'btn-go-deep', 'Tab', false);
+  assert.equal(wrappedForward, 'btn-close', 'Tab on last element must wrap to first element');
+
+  // Forward Tab from middle element advances to next
+  const advanceForward = simulateFocusTrap(l2Elements, 'input-t1', 'Tab', false);
+  assert.equal(advanceForward, 'input-t2');
+
+  // Backward Shift+Tab from first element wraps to last
+  const wrappedBackward = simulateFocusTrap(l2Elements, 'btn-close', 'Tab', true);
+  assert.equal(wrappedBackward, 'btn-go-deep', 'Shift+Tab on first element must wrap to last element');
+
+  // Shift+Tab from dialog title (-1) or outside wraps to last
+  const outsideShiftTab = simulateFocusTrap(l2Elements, 'dialog-title', 'Tab', true);
+  assert.equal(outsideShiftTab, 'btn-go-deep', 'Shift+Tab from dialog title must focus last element');
+
+  // Tab from outside focuses first
+  const outsideTab = simulateFocusTrap(l2Elements, 'dialog-title', 'Tab', false);
+  assert.equal(outsideTab, 'btn-close', 'Tab from outside must focus first element');
+
+  // Verify source files contain aria-modal="true" and focus trap listeners
+  const l2Source = readFileSync(new URL('../src/components/ekl/EngineeringInsightCard.tsx', import.meta.url), 'utf8');
+  assert.ok(l2Source.includes('aria-modal="true"'));
+  assert.ok(l2Source.includes("e.key !== 'Tab'"));
+  assert.ok(l2Source.includes('last.focus()') && l2Source.includes('first.focus()'));
+
+  const l3Source = readFileSync(new URL('../src/components/ekl/EngineeringDeepDivePanel.tsx', import.meta.url), 'utf8');
+  assert.ok(l3Source.includes('aria-modal="true"'));
+  assert.ok(l3Source.includes("e.key !== 'Tab'"));
+  assert.ok(l3Source.includes('last.focus()') && l3Source.includes('first.focus()'));
+
+  const ctxSource = readFileSync(new URL('../src/components/ekl/EngineeringKnowledgeContext.tsx', import.meta.url), 'utf8');
+  assert.ok(ctxSource.includes('.setAttribute(\'inert\', \'\')'));
+  assert.ok(ctxSource.includes('.removeAttribute(\'inert\')'));
 });
 
 test('BUILD-04 Traceability Error Differentiation & Cassette Protection Invariant', () => {

@@ -249,8 +249,12 @@ export function calculateEtchRate(initialThickness: number, finalThickness: numb
   errorMessage?: string;
   warningMessage?: string;
 } {
-  if (isNaN(initialThickness) || isNaN(finalThickness) || isNaN(processTimeMinutes)) {
-    return { success: false, errorMessage: '유효한 숫자를 입력해 주세요.' };
+  if (
+    !Number.isFinite(initialThickness) ||
+    !Number.isFinite(finalThickness) ||
+    !Number.isFinite(processTimeMinutes)
+  ) {
+    return { success: false, errorMessage: '유효한 유한 숫자를 입력해 주세요.' };
   }
 
   if (initialThickness < 0 || finalThickness < 0) {
@@ -263,6 +267,10 @@ export function calculateEtchRate(initialThickness: number, finalThickness: numb
 
   const deltaThickness = initialThickness - finalThickness;
   const etchRate = deltaThickness / processTimeMinutes;
+
+  if (!Number.isFinite(etchRate)) {
+    return { success: false, errorMessage: '식각 속도 계산 결과가 유효한 범위를 벗어났습니다.' };
+  }
 
   if (deltaThickness < 0) {
     return {

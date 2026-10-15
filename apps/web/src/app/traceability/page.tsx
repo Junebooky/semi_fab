@@ -305,19 +305,10 @@ function TraceabilityContent() {
     setIsLoading(true);
     setNotFoundError(null);
 
-    // 2. Fetch from Live API (Mode B)
-    let traceRes: Response;
-    let wafersRes: Response;
+    // 2. Fetch server summary FIRST to reliably acquire active_run_id (P1-A)
     let summaryRes: Response;
-
-    const runParam = activeRunId ? `?run_id=${encodeURIComponent(activeRunId)}` : '';
-
     try {
-      [traceRes, wafersRes, summaryRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/v1/demo/wafers/${targetWafer}/trace${runParam}`, { cache: 'no-store' }),
-        fetch(`http://localhost:8000/api/v1/demo/wafers${runParam}`, { cache: 'no-store' }),
-        fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' })
-      ]);
+      summaryRes = await fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' });
     } catch {
       // Genuine network connection failure (server unreachable / port 8000 down) -> Fallback to Mode A
       if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
@@ -344,10 +335,83 @@ function TraceabilityContent() {
       return;
     }
 
-    // Guard after fetch completion
+    // Guard after summary fetch
     if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
 
-    // Handle HTTP 404 for target wafer from an active server
+    if (!summaryRes.ok) {
+      setTrace(null);
+      setNotFoundError({
+        waferId: targetWafer,
+        status: summaryRes.status,
+        message: `API 서버 요약 조회 실패 (HTTP ${summaryRes.status}): 활성 공정 요약을 조회하지 못해 데이터 출처 무결성을 위해 조회를 차단했습니다.`
+      });
+      setMode('B');
+      setNotice(`서버 응답 오류 (HTTP ${summaryRes.status}): 활성 Run 요약 정보를 가져오지 못했습니다.`);
+      setIsLoading(false);
+      return;
+    }
+
+    let summaryData: any;
+    try {
+      summaryData = await summaryRes.json();
+    } catch {
+      if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
+      setTrace(null);
+      setNotFoundError({
+        waferId: targetWafer,
+        status: 502,
+        message: '서버 응답 형식 오류 (Malformed JSON): 공정 요약 데이터 형식이 올바른 JSON이 아닙니다.'
+      });
+      setMode('B');
+      setNotice('서버 응답 형식 오류: 공정 요약 JSON 파싱에 실패했습니다.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Guard after summary JSON parse
+    if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
+
+    const currentRunId = summaryData?.active_run_id;
+    if (!currentRunId || typeof currentRunId !== 'string') {
+      setTrace(null);
+      setNotFoundError({
+        waferId: targetWafer,
+        status: 500,
+        message: '서버 활성 Run 부재 오류: 활성 공정 Run ID가 확인되지 않아 조회를 차단했습니다.'
+      });
+      setMode('B');
+      setNotice('서버 데이터 오류: 유효한 활성 공정 Run ID가 존재하지 않습니다.');
+      setIsLoading(false);
+      return;
+    }
+
+    // 3. Concurrently fetch trace detail and 25-wafer list with explicit run_id (P1-A)
+    const runQuery = `?run_id=${encodeURIComponent(currentRunId)}`;
+    let traceRes: Response;
+    let wafersRes: Response;
+    try {
+      [traceRes, wafersRes] = await Promise.all([
+        fetch(`http://localhost:8000/api/v1/demo/wafers/${targetWafer}/trace${runQuery}`, { cache: 'no-store' }),
+        fetch(`http://localhost:8000/api/v1/demo/wafers${runQuery}`, { cache: 'no-store' })
+      ]);
+    } catch {
+      if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
+      setTrace(null);
+      setNotFoundError({
+        waferId: targetWafer,
+        status: 500,
+        message: '서버 통신 실패: 웨이퍼 상세 및 목록 조회 중 네트워크 연결이 끊어졌습니다.'
+      });
+      setMode('B');
+      setNotice('네트워크 오류: 상세 데이터 수신에 실패했습니다.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Guard after trace & wafers fetch
+    if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
+
+    // Handle HTTP 404 for target wafer
     if (traceRes.status === 404) {
       let errorDetail = `서버 공정 DB에서 웨이퍼 '${targetWafer}'를 찾을 수 없습니다 (404 Not Found).`;
       try {
@@ -365,6 +429,7 @@ function TraceabilityContent() {
         message: errorDetail
       });
       setMode('B');
+      setActiveRunId(currentRunId);
       setNotice(`HTTP 404 Not Found: 서버 공정 DB에 웨이퍼 '${targetWafer}' 이력이 등록되어 있지 않습니다.`);
 
       if (wafersRes.ok) {
@@ -374,25 +439,18 @@ function TraceabilityContent() {
           setWafers(wData);
         } catch {}
       }
-      if (summaryRes.ok) {
-        try {
-          const sData = await summaryRes.json();
-          if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
-          setActiveRunId(sData.active_run_id);
-        } catch {}
-      }
       setIsLoading(false);
       return;
     }
 
-    // Check if any of the endpoints failed (HTTP non-2xx)
-    if (!traceRes.ok || !wafersRes.ok || !summaryRes.ok) {
-      const failedStatus = !traceRes.ok ? traceRes.status : (!wafersRes.ok ? wafersRes.status : summaryRes.status);
+    // Check if either trace or wafers failed (non-2xx)
+    if (!traceRes.ok || !wafersRes.ok) {
+      const failedStatus = !traceRes.ok ? traceRes.status : wafersRes.status;
       setTrace(null);
       setNotFoundError({
         waferId: targetWafer,
         status: failedStatus,
-        message: `API 서버 응답 불완전 (HTTP ${failedStatus}): 상세, 목록, 요약 중 일부 조회가 실패하여 데이터 혼합을 방지하기 위해 조회를 차단했습니다.`
+        message: `API 서버 응답 불완전 (HTTP ${failedStatus}): 웨이퍼 상세 또는 목록 조회가 실패하여 데이터 혼합을 방지하기 위해 조회를 차단했습니다.`
       });
       setMode('B');
       setNotice(`서버 응답 오류 (HTTP ${failedStatus}): 데이터 출처 무결성을 위해 조회를 차단했습니다.`);
@@ -400,15 +458,13 @@ function TraceabilityContent() {
       return;
     }
 
-    // Parse all 3 JSON payloads safely
+    // Parse JSON payloads for trace and wafers
     let traceData: WaferTraceDetail;
     let wafersData: WaferItem[];
-    let summaryData: any;
     try {
-      [traceData, wafersData, summaryData] = await Promise.all([
+      [traceData, wafersData] = await Promise.all([
         traceRes.json(),
-        wafersRes.json(),
-        summaryRes.json()
+        wafersRes.json()
       ]);
     } catch {
       if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
@@ -416,10 +472,10 @@ function TraceabilityContent() {
       setNotFoundError({
         waferId: targetWafer,
         status: 502,
-        message: '서버 응답 형식 오류 (Malformed JSON): 서버가 반환한 데이터 형식이 올바른 JSON이 아닙니다.'
+        message: '서버 응답 형식 오류 (Malformed JSON): 상세 또는 목록 데이터 형식이 올바른 JSON이 아닙니다.'
       });
       setMode('B');
-      setNotice('서버 응답 형식 오류: JSON 파싱에 실패했습니다.');
+      setNotice('서버 응답 형식 오류: 상세/목록 JSON 파싱에 실패했습니다.');
       setIsLoading(false);
       return;
     }
@@ -429,7 +485,7 @@ function TraceabilityContent() {
 
     // Lineage & Coherence Validation:
     // Verify trace, wafers, and summary belong to the same active run and cassette lot
-    const isRunCoherent = traceData.run_id === summaryData.active_run_id;
+    const isRunCoherent = traceData.run_id === currentRunId;
     const isLotCoherent = wafersData.length > 0 && wafersData.some(w => w.wafer_id === targetWafer && w.lot_id === traceData.lot_id);
 
     if (!isRunCoherent || !isLotCoherent) {
@@ -437,7 +493,7 @@ function TraceabilityContent() {
       setNotFoundError({
         waferId: targetWafer,
         status: 500,
-        message: `데이터 계통성 불일치 오류: 웨이퍼 상세(Run: ${traceData.run_id}), 목록(Lot: ${traceData.lot_id}), 활성 Run(Run: ${summaryData.active_run_id})의 출처가 일치하지 않습니다.`
+        message: `데이터 계통성 불일치 오류: 웨이퍼 상세(Run: ${traceData.run_id}), 목록(Lot: ${traceData.lot_id}), 활성 Run(Run: ${currentRunId})의 출처가 일치하지 않습니다.`
       });
       setMode('B');
       setNotice('데이터 계약 오류: 동일 공정 Run 및 Lot 계통 검증에 실패하여 조회를 차단했습니다.');
@@ -448,10 +504,10 @@ function TraceabilityContent() {
     // ATOMIC STATE COMMIT: All 3 succeeded, parsed, verified, and request token is still active!
     setTrace(traceData);
     setWafers(wafersData);
-    setActiveRunId(summaryData.active_run_id);
+    setActiveRunId(currentRunId);
     setMode('B');
     setNotFoundError(null);
-    setNotice(`Mode B (Live API): 웨이퍼 ${targetWafer} 공정 이력, 25매 카세트 및 Run 요약 동기화 완료.`);
+    setNotice(`Mode B (Live API): 웨이퍼 ${targetWafer} 공정 이력, 25매 카세트 및 Run 요약(${currentRunId}) 동기화 완료.`);
     setIsLoading(false);
   }, [seed]);
 

@@ -16,6 +16,50 @@ export function EngineeringDeepDivePanel() {
     }
   }, [activeLevel, activeConcept]);
 
+  // Keyboard focus trap within Level 3 drawer for accessible aria-modal=true dialog
+  useEffect(() => {
+    if (activeLevel !== 3) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return;
+
+      const container = panelRef.current;
+      if (!container) return;
+
+      const focusable = Array.from(
+        container.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter(el => el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0 || el === document.activeElement);
+
+      if (focusable.length === 0) {
+        e.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (e.shiftKey) {
+        // Shift + Tab
+        if (active === first || active === titleRef.current || !container.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        // Tab
+        if (active === last || !container.contains(active)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeLevel]);
+
   if (activeLevel !== 3 || !activeConcept) {
     return null;
   }
