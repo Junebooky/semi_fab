@@ -528,9 +528,16 @@ function FabOneDemoContent() {
           }
           if (res.ok) {
             const data: InvestigationDetail = await res.json();
+            // [P1-A]: Discard response if another alert was selected or request was superseded during JSON body streaming
+            if (requestId !== activeInvestigationReqIdRef.current || currentSelectedAlertIdRef.current !== alert.alert_id) {
+              return;
+            }
             setInvestigationData(data);
             setNoticeMessage(`엔지니어링 조사: [${alert.severity}] ${alert.alert_id} (${alert.rule_code}) 세부 근거 및 영향 웨이퍼 분석 열림`);
           } else {
+            if (requestId !== activeInvestigationReqIdRef.current || currentSelectedAlertIdRef.current !== alert.alert_id) {
+              return;
+            }
             setInvestigationData(null);
             setNoticeMessage(`알림: [${alert.severity}] ${alert.alert_id}에 연결된 조사 근거를 불러올 수 없습니다 (HTTP ${res.status}).`);
           }
