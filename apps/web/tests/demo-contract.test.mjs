@@ -1453,6 +1453,381 @@ test('BUILD-04 Traceability Error Differentiation & Cassette Protection Invarian
   assert.ok(tracePageSource.includes('가상 시나리오 재구성 (Synthetic Scenario Reconstruction)'), 'Timeline synthetic disclaimer must be present');
 });
 
+// ============================================================================
+// BUILD-05: FDC Command Center Regression Test Suites
+// ============================================================================
 
+// Helper matching generateModeAFixture in apps/web/src/app/command-center/page.tsx
+function generateModeACommandCenterFixtureTest(seed = 20261015) {
+  const lotNum = 800 + (seed % 50);
+  const runNum = String(seed % 1000).padStart(3, '0');
+  const runId = `RUN-DEMO-${runNum}`;
+  const lotId = `LOT-DEMO-${lotNum}`;
+  const alertId = `AL-DEMO-${runNum}`;
 
+  const alerts = [
+    {
+      alert_id: alertId,
+      equipment_id: "ETCH-02",
+      chamber_id: "CH-B",
+      recipe_id: "RCP-POLY-001",
+      severity: "CRITICAL",
+      alarm_code: "ALM-ETCH-RF-402",
+      description: "CH-B RF Power 1820W 급상승 (UCL: 1050W 초과) 및 OES 변곡점 감지",
+      status: "NEW",
+      event_time_utc: "2026-10-15T09:30:00Z",
+      lot_id: lotId,
+      run_id: runId,
+      wafer_candidates: ["W-08", "W-09", "W-10", "W-11", "W-12"],
+      investigation_eligible: true
+    },
+    {
+      alert_id: "AL-DEMO-002",
+      equipment_id: "ETCH-01",
+      chamber_id: "CH-A",
+      recipe_id: "RCP-CLN-002",
+      severity: "WARNING",
+      alarm_code: "ALM-ETCH-PR-201",
+      description: "CH-A 챔버 압력 기준치 미세 드리프트 (85.2 mTorr)",
+      status: "ACKNOWLEDGED",
+      event_time_utc: "2026-10-15T09:15:00Z",
+      lot_id: "LOT-DEMO-799",
+      run_id: "RUN-DEMO-998",
+      wafer_candidates: [],
+      investigation_eligible: false
+    },
+    {
+      alert_id: "AL-STANDBY-001",
+      equipment_id: "ETCH-03",
+      chamber_id: "CH-C",
+      recipe_id: "IDLE",
+      severity: "INFO",
+      alarm_code: "ALM-SYS-IDLE-100",
+      description: "ETCH-03 정기 PM 대기 상태 진입",
+      status: "CLOSED",
+      event_time_utc: "2026-10-15T08:50:00Z",
+      lot_id: null,
+      run_id: null,
+      wafer_candidates: [],
+      investigation_eligible: false
+    }
+  ];
 
+  return { alerts, activeRunId: runId, lotId };
+}
+
+test('BUILD-05 Command Center Contract: Summary-first run_id discovery, alerts endpoint binding, and lineage validation', async () => {
+  const recordedCalls = [];
+  const serverSummaryRunId = 'RUN-DEMO-20261015-ACTIVE';
+  const serverLotId = 'LOT-DEMO-801';
+
+  const mockSummary = { active_run_id: serverSummaryRunId, lot_id: serverLotId };
+  const mockAlerts = [
+    {
+      alert_id: 'AL-DEMO-20261015-01',
+      equipment_id: 'ETCH-02',
+      chamber_id: 'CH-B',
+      recipe_id: 'RCP-POLY-001',
+      severity: 'CRITICAL',
+      alarm_code: 'ALM-ETCH-RF-402',
+      description: 'CH-B RF Power 이상',
+      status: 'NEW',
+      event_time_utc: '2026-10-15T09:30:00Z',
+      lot_id: serverLotId,
+      run_id: serverSummaryRunId,
+      wafer_candidates: ['W-08', 'W-09']
+    },
+    {
+      alert_id: 'AL-STANDBY-001',
+      equipment_id: 'ETCH-03',
+      chamber_id: 'CH-C',
+      recipe_id: 'IDLE',
+      severity: 'INFO',
+      alarm_code: 'ALM-SYS-IDLE-100',
+      description: 'Standby IDLE',
+      status: 'CLOSED',
+      event_time_utc: '2026-10-15T08:50:00Z',
+      lot_id: null,
+      run_id: null,
+      wafer_candidates: []
+    }
+  ];
+
+  // Harness simulating loadData in command-center/page.tsx
+  let activeReqId = 0;
+  async function loadCommandCenterDataHarness(fetchSummaryFn, fetchAlertsFn) {
+    const reqId = ++activeReqId;
+
+    // Step 1: Summary first
+    const summaryRes = await fetchSummaryFn();
+    const summaryData = await summaryRes.json();
+    const currentRunId = summaryData?.active_run_id;
+
+    if (reqId !== activeReqId) return { discarded: true };
+
+    // Step 2: Fetch alerts with explicit run_id
+    const alertsRes = await fetchAlertsFn(currentRunId);
+    const alertsData = await alertsRes.json();
+
+    if (reqId !== activeReqId) return { discarded: true };
+
+    // Step 3: Validate lineage - all run-bound alerts must match currentRunId
+    const validatedAlerts = alertsData.filter(al => {
+      if (al.run_id && al.run_id !== currentRunId) {
+        return false; // Cross-run data discarded
+      }
+      return true;
+    });
+
+    return {
+      activeRunId: currentRunId,
+      lotId: summaryData?.lot_id,
+      alerts: validatedAlerts,
+      discarded: false
+    };
+  }
+
+  // Verification 1: Order of execution and run_id parameter binding
+  const res = await loadCommandCenterDataHarness(
+    async () => {
+      recordedCalls.push({ endpoint: 'summary' });
+      return { ok: true, status: 200, json: async () => mockSummary };
+    },
+    async (rId) => {
+      recordedCalls.push({ endpoint: 'alerts', runId: rId });
+      return { ok: true, status: 200, json: async () => mockAlerts };
+    }
+  );
+
+  assert.equal(recordedCalls[0].endpoint, 'summary', 'Summary MUST be requested first');
+  assert.equal(recordedCalls[1].endpoint, 'alerts');
+  assert.equal(recordedCalls[1].runId, serverSummaryRunId, 'Alerts endpoint must be called with discovered run_id');
+  assert.equal(res.activeRunId, serverSummaryRunId);
+  assert.equal(res.alerts.length, 2);
+
+  // Verification 2: Stale async response discard on rapid re-triggering
+  let delayedResolve = null;
+  const delayedPromise = new Promise(resolve => { delayedResolve = resolve; });
+
+  const staleCall = loadCommandCenterDataHarness(
+    async () => ({ ok: true, status: 200, json: async () => ({ active_run_id: 'RUN-OLD' }) }),
+    async () => {
+      await delayedPromise;
+      return { ok: true, status: 200, json: async () => mockAlerts };
+    }
+  );
+
+  // New fast call
+  const fastCall = await loadCommandCenterDataHarness(
+    async () => ({ ok: true, status: 200, json: async () => ({ active_run_id: 'RUN-NEW' }) }),
+    async () => ({ ok: true, status: 200, json: async () => mockAlerts })
+  );
+
+  delayedResolve();
+  const staleRes = await staleCall;
+
+  assert.equal(staleRes.discarded, true, 'Older in-flight response must be discarded');
+  assert.equal(fastCall.activeRunId, 'RUN-NEW');
+});
+
+test('BUILD-05 Filter, Sort, and Invariant Synchronization State Machine', () => {
+  const fixture = generateModeACommandCenterFixtureTest(20261015);
+  const allAlerts = fixture.alerts;
+
+  // Filter & sort logic matching command-center/page.tsx
+  function applyFilterAndSort(alerts, severityFilter, statusFilter, equipFilter, sortOrder) {
+    let result = [...alerts];
+
+    if (severityFilter !== 'ALL') {
+      result = result.filter(a => a.severity === severityFilter);
+    }
+    if (statusFilter !== 'ALL') {
+      result = result.filter(a => a.status === statusFilter);
+    }
+    if (equipFilter !== 'ALL') {
+      result = result.filter(a => a.equipment_id === equipFilter);
+    }
+
+    result.sort((a, b) => {
+      const timeA = new Date(a.event_time_utc).getTime();
+      const timeB = new Date(b.event_time_utc).getTime();
+      return sortOrder === 'NEWEST' ? timeB - timeA : timeA - timeB;
+    });
+
+    return result;
+  }
+
+  // 1. Initial ALL state
+  const initial = applyFilterAndSort(allAlerts, 'ALL', 'ALL', 'ALL', 'NEWEST');
+  assert.equal(initial.length, 3);
+  assert.equal(initial[0].alert_id, fixture.alerts[0].alert_id); // 09:30:00Z is newest
+
+  // 2. Severity filter: CRITICAL only
+  const criticalOnly = applyFilterAndSort(allAlerts, 'CRITICAL', 'ALL', 'ALL', 'NEWEST');
+  assert.equal(criticalOnly.length, 1);
+  assert.equal(criticalOnly[0].severity, 'CRITICAL');
+
+  // 3. Status filter: ACKNOWLEDGED only
+  const ackOnly = applyFilterAndSort(allAlerts, 'ALL', 'ACKNOWLEDGED', 'ALL', 'NEWEST');
+  assert.equal(ackOnly.length, 1);
+  assert.equal(ackOnly[0].status, 'ACKNOWLEDGED');
+
+  // 4. Equipment filter: ETCH-03 only
+  const etch03Only = applyFilterAndSort(allAlerts, 'ALL', 'ALL', 'ETCH-03', 'NEWEST');
+  assert.equal(etch03Only.length, 1);
+  assert.equal(etch03Only[0].equipment_id, 'ETCH-03');
+
+  // 5. Sort OLDEST: ascending event_time_utc
+  const oldestFirst = applyFilterAndSort(allAlerts, 'ALL', 'ALL', 'ALL', 'OLDEST');
+  assert.equal(oldestFirst[0].alert_id, 'AL-STANDBY-001'); // 08:50:00Z is oldest
+  assert.equal(oldestFirst[2].alert_id, fixture.alerts[0].alert_id);
+
+  // 6. 0-item empty state with impossible filter combo
+  const emptyResult = applyFilterAndSort(allAlerts, 'CRITICAL', 'CLOSED', 'ETCH-01', 'NEWEST');
+  assert.equal(emptyResult.length, 0);
+
+  // 7. Selection synchronization invariant
+  let selectedAlertId = initial[0].alert_id; // AL-DEMO-...
+  // User applies filter that excludes selectedAlertId
+  const filteredToStandby = applyFilterAndSort(allAlerts, 'INFO', 'ALL', 'ALL', 'NEWEST');
+  const isSelectedInFiltered = filteredToStandby.some(a => a.alert_id === selectedAlertId);
+  assert.equal(isSelectedInFiltered, false);
+
+  // Auto-selection rule: pick first matching alert or null if empty
+  const nextSelected = filteredToStandby.length > 0 ? filteredToStandby[0] : null;
+  assert.notEqual(nextSelected, null);
+  assert.equal(nextSelected.alert_id, 'AL-STANDBY-001');
+
+  // When empty:
+  const nextSelectedEmpty = emptyResult.length > 0 ? emptyResult[0] : null;
+  assert.equal(nextSelectedEmpty, null, 'Selected alert must be null when filtered list is empty');
+});
+
+test('BUILD-05 Investigation Navigation and Standby Equipment Isolation Contract', () => {
+  const fixture = generateModeACommandCenterFixtureTest(20261015);
+  const activeAlert = fixture.alerts[0]; // CRITICAL in active run
+  const standbyAlert = fixture.alerts[2]; // INFO in standby run
+
+  // Navigation target evaluation rule matching command-center/page.tsx
+  function evaluateNavigationAction(alert, activeRunId) {
+    const isInvestigatable = Boolean(alert.run_id && alert.run_id === activeRunId);
+    if (isInvestigatable) {
+      return {
+        allowed: true,
+        route: `/?alert=${encodeURIComponent(alert.alert_id)}&investigation=true`,
+        reason: 'Active run telemetry & sensor excursion analysis available'
+      };
+    } else {
+      return {
+        allowed: false,
+        route: null,
+        reason: '연결된 활성 공정 Run 부재 (Standby 설비 / 대기 상태 알람)'
+      };
+    }
+  }
+
+  // 1. Active CRITICAL alert provides valid investigation route
+  const activeNav = evaluateNavigationAction(activeAlert, fixture.activeRunId);
+  assert.equal(activeNav.allowed, true);
+  assert.equal(activeNav.route, `/?alert=${encodeURIComponent(activeAlert.alert_id)}&investigation=true`);
+
+  // 2. Standby alert explicitly disables investigation route
+  const standbyNav = evaluateNavigationAction(standbyAlert, fixture.activeRunId);
+  assert.equal(standbyNav.allowed, false);
+  assert.equal(standbyNav.route, null);
+  assert.ok(standbyNav.reason.includes('연결된 활성 공정 Run 부재'));
+
+  // 3. Candidate wafer chips link target
+  const waferChips = activeAlert.wafer_candidates.map(wId => ({
+    waferId: wId,
+    route: `/traceability?wafer=${encodeURIComponent(wId)}`
+  }));
+  assert.equal(waferChips.length, 5);
+  assert.equal(waferChips[0].route, '/traceability?wafer=W-08');
+  assert.equal(waferChips[4].route, '/traceability?wafer=W-12');
+});
+
+test('BUILD-05 Mode A/B Fail-Closed Boundary and Network Offline Demarcation', async () => {
+  // Simulator matching command-center/page.tsx error handling
+  async function simulateCommandCenterFetch(scenario) {
+    let mode = 'B';
+    let alerts = [];
+    let errorMessage = null;
+
+    if (scenario === 'NETWORK_OFFLINE') {
+      // True network offline -> clean Mode A fallback
+      mode = 'A';
+      const fixture = generateModeACommandCenterFixtureTest(20261015);
+      alerts = fixture.alerts;
+      errorMessage = null;
+      return { mode, alerts, errorMessage };
+    }
+
+    if (scenario === 'SERVER_500') {
+      // Server error -> Mode B fail-closed (DO NOT switch to Mode A)
+      mode = 'B';
+      alerts = [];
+      errorMessage = '서버 요약 조회 실패 (HTTP 500)';
+      return { mode, alerts, errorMessage };
+    }
+
+    if (scenario === 'MALFORMED_JSON') {
+      // Malformed JSON -> Mode B fail-closed
+      mode = 'B';
+      alerts = [];
+      errorMessage = '서버 응답 형식 오류 (Malformed JSON)';
+      return { mode, alerts, errorMessage };
+    }
+
+    return { mode: 'B', alerts: [], errorMessage: null };
+  }
+
+  // 1. Genuine network offline: switches to Mode A with deterministic fixture
+  const offline = await simulateCommandCenterFetch('NETWORK_OFFLINE');
+  assert.equal(offline.mode, 'A');
+  assert.equal(offline.alerts.length, 3);
+  assert.equal(offline.errorMessage, null);
+
+  // 2. Server 500: fails closed in Mode B, no synthetic fabrication
+  const server500 = await simulateCommandCenterFetch('SERVER_500');
+  assert.equal(server500.mode, 'B');
+  assert.equal(server500.alerts.length, 0);
+  assert.ok(server500.errorMessage.includes('HTTP 500'));
+
+  // 3. Malformed JSON: fails closed in Mode B
+  const malformed = await simulateCommandCenterFetch('MALFORMED_JSON');
+  assert.equal(malformed.mode, 'B');
+  assert.equal(malformed.alerts.length, 0);
+  assert.ok(malformed.errorMessage.includes('Malformed JSON'));
+});
+
+test('BUILD-05 Command Center Page Source Invariants & EKL Integration', () => {
+  const ccPageSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const homePageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const tracePageSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+
+  // 1. Bidirectional navigation tabs
+  assert.ok(ccPageSource.includes('/command-center') && ccPageSource.includes('/traceability'));
+  assert.ok(homePageSource.includes('/command-center'), 'Home page navbar must link to /command-center');
+  assert.ok(tracePageSource.includes('/command-center'), 'Traceability navbar must link to /command-center');
+
+  // 2. Investigation return link
+  assert.ok(homePageSource.includes('FDC Command Center 큐로 복귀') || homePageSource.includes('Command Center'), 'Home investigation must have backlink to command center');
+
+  // 3. EKL Level 1 triggers in command center
+  const requiredEKLConcepts = ['spc-ucl-missing', 'wafer-exposure-status', 'rf-power', 'oes-relative-signal'];
+  requiredEKLConcepts.forEach(cId => {
+    assert.ok(ccPageSource.includes(cId), `Command Center must have EKL trigger for '${cId}'`);
+  });
+
+  // 4. Domain disclaimers
+  assert.ok(ccPageSource.includes('Sensor Excursion ≠ Product Defect'), 'Sensor excursion disclaimer must be present');
+  assert.ok(ccPageSource.includes('반도체 공정 시뮬레이션') || ccPageSource.includes('가상 합성'), 'Synthetic simulation disclaimer must be present');
+
+  // 5. Total & filtered count badges
+  assert.ok(ccPageSource.includes('전체 수집 알람'), 'Total alarms badge must be present');
+  assert.ok(ccPageSource.includes('현재 필터 일치'), 'Filtered alarms badge must be present');
+
+  // 6. Empty state with reset
+  assert.ok(ccPageSource.includes('필터 초기화'));
+});

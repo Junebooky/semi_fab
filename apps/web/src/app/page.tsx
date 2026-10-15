@@ -736,6 +736,13 @@ function FabOneDemoContent() {
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
+          <Link href="/command-center" className="nav-tab-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            FDC 커맨드 센터 (Command Center)
+          </Link>
         </nav>
 
         <div className="top-status-pills">
@@ -1392,6 +1399,13 @@ function FabOneDemoContent() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Link
+                          href="/command-center"
+                          className="btn-secondary"
+                          style={{ textDecoration: 'none', padding: '3px 10px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          커맨드 센터 전체 알람 보기 ↗
+                        </Link>
                         <span className="pill" style={{ background: '#FEF3C7', color: '#B45309', borderColor: '#FCD34D' }}>
                           {investigationData.status === 'UNDER_INVESTIGATION' ? '조사 진행 중 (Under Investigation)' : investigationData.status}
                         </span>

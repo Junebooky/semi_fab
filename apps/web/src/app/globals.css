@@ -1281,4 +1281,159 @@ button:focus-visible, input:focus-visible {
   }
 }
 
+/* ========================================================
+   BUILD-05 FDC Command Center Styles (White & Emerald)
+   ======================================================== */
+.cc-layout-grid {
+  display: grid;
+  grid-template-columns: 440px 1fr;
+  gap: 24px;
+  margin-top: 20px;
+}
+
+.cc-queue-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.cc-detail-card {
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.cc-kpi-bar {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.cc-kpi-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cc-kpi-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.cc-kpi-val {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.cc-filter-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.cc-filter-chip {
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--line);
+  background: #FFFFFF;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cc-filter-chip:hover {
+  background: #F1F5F9;
+  color: var(--ink);
+}
+
+.cc-filter-chip.active {
+  background: #17263B;
+  color: #FFFFFF;
+  border-color: #17263B;
+}
+
+.cc-filter-chip.active.critical {
+  background: #DC2626;
+  color: #FFFFFF;
+  border-color: #DC2626;
+}
+
+.cc-filter-chip.active.warning {
+  background: #D97706;
+  color: #FFFFFF;
+  border-color: #D97706;
+}
+
+.cc-filter-chip.active.info {
+  background: #2563EB;
+  color: #FFFFFF;
+  border-color: #2563EB;
+}
+
+.cc-alarm-list-scroll {
+  max-height: 540px;
+  overflow-y: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: #FFFFFF;
+}
+
+.cc-alarm-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+.cc-alarm-item:hover {
+  background: #F8FAFC;
+}
+
+.cc-alarm-item.selected {
+  background: #F0FDF4;
+  border-left: 4px solid #0B9F78;
+}
+
+.cc-empty-box {
+  padding: 36px 20px;
+  text-align: center;
+  background: #F8FAFC;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  margin-top: 12px;
+}
+
+@media (max-width: 1024px) {
+  .cc-layout-grid {
+    grid-template-columns: 1fr;
+  }
+  .cc-kpi-bar {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .cc-kpi-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 
