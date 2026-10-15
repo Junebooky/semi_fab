@@ -110,3 +110,46 @@ test("owner visual direction and independent replaceable image slots", () => {
   assert.match(html,/object-fit:contain/);
   assert.match(html,/img.onerror=/);
 });
+
+
+/**
+ * A04 B08 / A01 #6184556541: color-only regression for small table headers.
+ * This test computes WCAG 2.x relative luminance (sRGB transfer curve) rather
+ * than relying on superficial hex comparisons.
+ * Runtime layout/zoom and assistive-technology compliance still require A04.
+ */
+function relativeLuminance(hex) {
+  const rgb = hex.match(/^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/);
+  assert.ok(rgb, "expected an opaque 6-digit sRGB color");
+  const values = rgb.slice(1).map((channel) => {
+    const normalized = parseInt(channel, 16) / 255;
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2];
+}
+function contrastRatio(a, b) {
+  const la = relativeLuminance(a), lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+test("WCAG AA: shared table header meets >=4.5:1 on off-white and white", () => {
+  const rule = html.match(/(?:^|\n)th\{([^}]+)\}/);
+  assert.ok(rule, "expected shared th rule, not individual per-table patches");
+  const color = rule[1].match(/(?:^|;)color:(#[0-9a-fA-F]{6})(?:;|$)/)?.[1];
+  const background = rule[1].match(/(?:^|;)background:(#[0-9a-fA-F]{6})(?:;|$)/)?.[1];
+  assert.equal(color?.toUpperCase(), "#59697F");
+  assert.equal(background?.toUpperCase(), "#FCFDFE");
+  assert.equal(contrastRatio("#718095", "#FCFDFE").toFixed(2), "3.95");
+  assert.equal(contrastRatio(color, background).toFixed(2), "5.50");
+  assert.equal(contrastRatio(color, "#FFFFFF").toFixed(2), "5.60");
+  assert.ok(contrastRatio(color, background) >= 4.5);
+  assert.ok(contrastRatio(color, "#FFFFFF") >= 4.5);
+  // All three actual table theads and any future EKL formula variable table
+  // inherit this shared rule; the .var-table th rule changes alignment only.
+  assert.equal((html.match(/<table(?:\s|>)/g) || []).length, 3);
+  assert.equal((html.match(/<thead>/g) || []).length, 3);
+  assert.match(html, /\.var-table th,\.var-table td\{text-align:left;padding:9px 8px\}/);
+  assert.doesNotMatch(html, /\.var-table th\{[^}]*\b(?:color|background):/);
+  assert.doesNotMatch(rule[1], /#718095/i);
+});
