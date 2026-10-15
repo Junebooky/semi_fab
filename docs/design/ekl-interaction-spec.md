@@ -242,3 +242,15 @@ interface KnowledgeViewState {
 - **EKL-D05 (A01):** Which parts of 'case notes' and 'personal knowledge notes' are separate, to avoid implied shared audit.
 
 **Next review:** A01 sign-off on domain/content and pending decisions; A02 implementation feasibility; A04 independent tests against this document and [A04 QA plan](https://github.com/Junebooky/semi_fab/pull/3).
+
+## 9. Issue #9 prototype EKL content alignment — P1 correction (2026-10-15)
+
+**Design contract** synchronized to [PR #11's editable prototype](https://github.com/Junebooky/semi_fab/blob/a03/issue-9-white-emerald-visual/prototypes/fab-one-issue-9.html) / A01 [review #6184254594](https://github.com/Junebooky/semi_fab/pull/11#issuecomment-6184254594). This is a **visual demo**, not deployed or A01-approved engineering knowledge.
+
+- A stable `conceptId` selects a **single versioned content record** (prototype `KNOWLEDGE_CONCEPTS[conceptId]`) containing `title`, `description`, `insightFormula`, `deepTitle`, `body`, `formula`, `cautions`, `source`. Every L2 and L3 field must update *together* via this key; changing only the panel heading while retaining another topic's paragraphs is forbidden.
+- For `etch-rate`, L2/L3 use the **static arithmetic demonstration** `(200−140) nm / 2 min = 30 nm/min`. It is not a reading from the simulated sensor series (which uses `[a.u.]`). Film, step, metrology method and temporal assumptions await A01 review; the prose cannot claim verified process performance.
+- For `control-limit`, L2/L3 explain `UCL/LCL` as **SPC process control limits** distinct from `USL/LSL` product specifications, state the estimator/method and accepted numeric values are **not yet defined**, and warn that a limit crossing does not determine physical cause or lot defect. **Do not show Etch Rate arithmetic or an invented UCL/LCL formula.**
+- Unknown `conceptId` must never fall back silently to unrelated content; display '이 개념의 공학 설명을 찾지 못했습니다' in product implementation. The current prototype refuses to open an unrecognized key.
+- **Structure/roles remain unchanged:** L1 hover/focus (noninteractive tooltip), L2 click/tap card, L3 desktop nonmodal `aside` and mobile full-screen modal. Escape, focus restoration, screen-reader order and 360px/400% zoom are **independent browser QA pending A01's SHA-specific QA_READY**.
+- Notes in the visual prototype are **read-only explanatory copy**, not IndexedDB persistence. The A01 provisional policy preserves notes on ordinary simulator reset, but no running storage module is claimed.
+- A03's source mock-DOM regression test covers the two concepts' body/formula/cautions/source mapping. The file lives at `prototypes/prototype-contract.test.mjs` on PR #11. **A04 final QA must wait** for A01's `[A01][QA_READY]` with exact PR/head SHA; PR edits invalidate prior verification of earlier SHAs.
