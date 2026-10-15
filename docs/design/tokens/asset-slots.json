@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "0.1.0",
+  "status": "REVIEW",
+  "owner": "A03",
+  "ownerAssetPolicy": "Owner supplies final 3D images; only slots and fallback delivered in MVP.",
+  "background": "#FFFFFF",
+  "provenance": "Issue #9 / PR #7 reviewer guidance",
+  "allowedFormats": [
+    "image/webp",
+    "image/png",
+    "image/avif"
+  ],
+  "assetTokensPrefix": "color.asset.clay",
+  "defaultFit": "contain",
+  "fallbackStrategy": "Keep reserved aspect-ratio box; if missing/loading/error/empty src, display inline accessible SVG/CSS placeholder in emerald scheme; never collapse layout or show broken image icon.",
+  "slots": [
+    {
+      "assetId": "illustration.wafer.v1",
+      "semanticRole": "illustrative wafer / die concept, not data visualization",
+      "placement": [
+        "Command Center intro top/right",
+        "EKL educational card only"
+      ],
+      "source": null,
+      "placeholder": "wafer-wire-emerald",
+      "desktop": {
+        "widthPx": 196,
+        "heightPx": 196,
+        "aspectRatio": "1 / 1"
+      },
+      "mobile": {
+        "widthPx": 132,
+        "heightPx": 132,
+        "aspectRatio": "1 / 1"
+      },
+      "safePaddingPercent": 12,
+      "objectFit": "contain",
+      "objectPosition": "center",
+      "acceptedBackground": "transparent",
+      "altKo": "웨이퍼와 칩 배열을 단순화한 개념도, 축척 아님",
+      "decorativeAlt": "",
+      "captionKo": "개념도 · 축척 아님",
+      "loading": "lazy-if-below-fold; eager-if-above-fold",
+      "performance": {
+        "targetBytes": "<= 120 KiB per typical slot image; verify actual devices",
+        "decoding": "async",
+        "widthHeightRequired": true,
+        "srcSet": "1x/2x optional; do not change wrapper size"
+      }
+    },
+    {
+      "assetId": "illustration.etch-chamber.v1",
+      "semanticRole": "illustrative simulated Etch equipment chamber, not real product photo",
+      "placement": [
+        "Equipment Intelligence header context card",
+        "EKL process knowledge"
+      ],
+      "source": null,
+      "placeholder": "chamber-wire-emerald",
+      "desktop": {
+        "widthPx": 240,
+        "heightPx": 192,
+        "aspectRatio": "5 / 4"
+      },
+      "mobile": {
+        "widthPx": 160,
+        "heightPx": 128,
+        "aspectRatio": "5 / 4"
+      },
+      "safePaddingPercent": 12,
+      "objectFit": "contain",
+      "objectPosition": "center",
+      "acceptedBackground": "transparent",
+      "altKo": "식각 챔버를 단순화한 개념도, 축척 아님",
+      "decorativeAlt": "",
+      "captionKo": "개념도 · 축척 아님",
+      "loading": "lazy-if-below-fold; eager-if-above-fold",
+      "performance": {
+        "targetBytes": "<= 140 KiB per typical slot image; verify actual devices",
+        "decoding": "async",
+        "widthHeightRequired": true,
+        "srcSet": "1x/2x optional; do not change wrapper size"
+      }
+    }
+  ]
+}
