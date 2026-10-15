@@ -192,6 +192,15 @@ $$\text{SortKey} = (\text{sim\_timestamp\_epoch\_ms}, \text{event\_phase}, \text
     2. 충돌이 발생한 이벤트뿐 아니라 연관된 어떠한 계측치(`sensor_measurement`), 공정 실행(`process_run`), 알람(`fdc_alert`)도 데이터베이스나 스테이징 영역에 **부분적으로 저장(Partial Persistence)되거나 고아 레코드로 남지 않는다** (0 rows written).
     3. 이미 이전 트랜잭션에서 영속화 완료된 선행 이벤트가 존재하는 상태에서 동일한 `event_id`에 다른 페이로드를 가진 후행 이벤트가 도착한 경우: 이전 트랜잭션의 커밋 완료 데이터는 RDBMS 특성상 물리적 롤백이 불가능하므로, 후행 이벤트 트랜잭션에서 **새로운 커밋 행을 일체 추가하지 않고(0 new committed rows)** 즉시 거부하며, 해당 시뮬레이션 세션 전체를 `INTEGRITY_COMPROMISED`로 플래그하여 기존 데이터 또한 무효/격리 처리하고 이후의 모든 쓰기 작업을 영구 차단한다. 이로써 이벤트 도착 순서가 뒤바뀌더라도 불완전한 상태 전이가 영속화되는 것을 방지한다.
 
+
+- **F07-P0 — 이전 커밋 데이터의 내구적 무효화 및 쓰기 펜싱:**
+  - `simulation_session`에는 `is_active`(서비스 수명주기와 무관)와 별개의 영속 `integrity_status: VALID | INTEGRITY_COMPROMISED`, `integrity_reason`, `integrity_marked_at_utc`를 사용한다. 도메인 계약 §3.4의 `session_ingest_guard(session_id, guard_state: IDLE | OPEN | QUARANTINED, batch_token)`는 별도의 내구적 예약 테이블이다. 이전 커밋된 측정치·실행·알람 행은 **물리 ROLLBACK 불가**이므로 삭제하지 않고 유효 결과 조회/통계/CSV에서 **격리**한다.
+  - **1단계 — 선행 영속 예약:** 신규 세션 INSERT와 해당 세션의 `IDLE` 가드 생성은 같은 COMMIT에서 수행한다. 모든 시뮬레이션 이벤트/실행/계측/알람 쓰기 전 `BEGIN IMMEDIATE`에서 `is_active=1 AND integrity_status='VALID' AND guard_state='IDLE'`을 확인, 가드를 `OPEN, batch_token=:unique_batch_token`으로 CAS UPDATE해 **rowcount=1**인 경우에만 **별도 COMMIT**한다. 예약 COMMIT 전에 이벤트 쓰기 금지. 가드 행 없음·`OPEN`·`QUARANTINED`·무효 상태면 즉시 fail-closed; 마이그레이션 시에도 기존 이벤트 감사 전 `IDLE` 자동 생성 금지.
+  - **2단계 — 이벤트 배치 및 정상 완료:** 별도의 `BEGIN IMMEDIATE`에서 같은 토큰 소유 `OPEN` 및 세션 `VALID`·활성 여부를 재확인한다. 충돌 없이 유효한 이벤트 배치를 적재한 경우, **같은 트랜잭션 안에서** 해당 가드 `OPEN → IDLE`, 토큰 `NULL` CAS를 적용한다. 가드 `rowcount=1`이면 이벤트 행 + 해제를 함께 COMMIT하고 0이면 신규 행 전부 ROLLBACK한다. 다른 워커/동시 배치는 예약 불가.
+  - **3단계 — 이벤트 충돌:** `EVENT_PAYLOAD_CONFLICT` 또는 `EVENT_ID_COLLISION_DETECTED` 감지 즉시 **현재 이벤트 배치 ROLLBACK(새 커밋 0행)**. 1단계의 `OPEN`은 별도 선행 COMMIT되어 여전히 존재한다. 이어 **별도 `BEGIN IMMEDIATE`**에서 `simulation_session.integrity_status='VALID' → 'INTEGRITY_COMPROMISED'` + 원인/ISO UTC 시각, `session_ingest_guard.guard_state='OPEN' → 'QUARANTINED'` + 토큰 초기화를 각각 조건부 UPDATE한다. 두 CAS 모두 1행일 때만 **함께 COMMIT**하고 아니면 ROLLBACK 후 상태 재조회, 계속 쓰기 거부. 종결 격리 상태는 재검증 없는 자동 `VALID` 복귀 불가.
+  - **4단계 — 격리 실패/프로세스 종료/재기동:** 예약 COMMIT 이후 2단계 중 중단되거나 충돌 ROLLBACK 후 격리 COMMIT 전 중단되어도 **`OPEN` 가드는 남는다**. 시작/모든 쓰기/정상 조회 전에 `integrity_status='VALID' AND guard_state='IDLE'`을 필수로 검증해 `OPEN`·가드 누락·`QUARANTINED`·손상 세션은 **후속 쓰기/일반 결과 조회 차단**. 남은 `OPEN`은 배치 완료를 추정하지 않고 별도 복구 트랜잭션에서 `INTEGRITY_COMPROMISED` + 원인 `INTERRUPTED_BATCH_REQUIRES_REVIEW`와 `QUARANTINED`로 내구화한다; 격리 COMMIT 실패 시 `OPEN`을 해제하지 않고 재시도·운영자 확인 대상으로 유지한다. 이전 세션을 비활성 아카이브로 전환해도 격리 상태 보존; 안전한 새 세션의 독립 실행만 허용.
+  - **독립 최소 SQLite 기대값(제품 NOT_RUN):** 충돌 이전에 COMMIT된 이벤트 1행은 DB에 남되 유효 결과에서 제외, 충돌 배치 신규 커밋 0행; 격리 전 강제 종료면 `OPEN`이 재기동 후 남아 쓰기 0행; 별도 격리 COMMIT 성공 뒤 재접속해도 `INTEGRITY_COMPROMISED/QUARANTINED`이고 쓰기 0행.
+
 ---
 
 ## 6. 부동소수점 연산 및 수치 반올림 계약 ([F03] 해결)
