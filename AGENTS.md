@@ -78,6 +78,17 @@ MVP Local-first / Supabase selection is under review in Issue #1:
 https://github.com/Junebooky/semi_fab/issues/1
 No unapproved Supabase schema changes.
 
+## Explicit agent-to-agent handoff and dependencies (A01 gate)
+
+See canonical workflow: [docs/product/agent-handoff-workflow.md](docs/product/agent-handoff-workflow.md). This applies to **all** A01–A05 prompts and overrides an older assumption that GitHub upload automatically informs another agent.
+
+- A02, A03 and A05 **submit to A01 first** via PR and final three-line message. Each may work on their assigned independent tasks concurrently.
+- **Only A01** examines revisions and issues a GitHub comment marked **[A01][QA_READY]**, with **target PR and exact head SHA**, authorizing A04 to run QA on that version. A04 must not run final acceptance on an unfinished/stale head or because another agent wrote [REVIEW].
+- A04 reports test outcomes and evidence **back to A01**, not to A02/A03 directly. A01 either sends requested changes to author(s), or requests approval from human owner; no direct main merges.
+- A05 may draft portfolio messaging early but can upgrade implementation/verification claims only after corresponding A02 evidence and independent A04 result are accepted.
+- Shared GitHub does **not** message isolated agent chats. Human owner forwards A01 dispatches to the named recipient. Include the **recipient inside the first sentence** of the final three-line report (keep lines exactly `보고:`, `위치:`, `링크:`).
+
+**Current gates:** A02 Issue #8 / PR #10 fixes; A03 Issue #9 / PR #11 fixes; A05 Issue #5 / PR #6 link corrections; **A04 Issue #12 waits for A01 QA_READY on PR #10 or #11 separately.**
 ## Ownership
 - `docs/product/`, `docs/domain/`, `docs/architecture/`: A01 leads
 - `apps/web/`, `services/api/`, `services/simulator/`: A02 leads
