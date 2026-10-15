@@ -163,7 +163,7 @@ $$\text{SortKey} = (\text{sim\_timestamp\_epoch\_ms}, \text{event\_phase}, \text
    - 새로운 세션(`new_session_id`)을 생성하고 가상 클록을 $t = 0$으로 초기화한다.
    - 활성 대시보드는 `is_active = 1`인 최신 세션 데이터만 필터링하여 조회한다.
 3. **이력 보존 및 무결성 보장:**
-   - 기존 세션에서 생성된 조사 케이스(`case_id`)는 과거의 `run_id` 및 `alert_id`를 그대로 안전하게 참조하며, 외래키 무결성이 100% 유지된다.
+   - 기존 세션에서 생성된 조사 케이스(`case_id`)는 과거의 `run_id` 및 `alert_id`를 그대로 안전하게 참조하며, 외래키 무결성을 안정적으로 보존한다.
 4. **전체 공장 초기화 (Factory Wipe):** 사용자가 명시적으로 '전체 데이터 초기화'를 확인한 경우에 한하여, 단일 트랜잭션 내에서 자식 테이블(`CASE_ACTION_LOG` $\to$ `INVESTIGATION_CASE` $\to$ `FDC_ALERT` $\to$ `PROCESS_RUN`) 순서로 삭제한다.
 
 ---

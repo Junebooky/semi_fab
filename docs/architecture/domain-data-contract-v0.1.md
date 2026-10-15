@@ -25,6 +25,9 @@ A01 검토 의견(#6184247949) 및 A04 QA 사전 지적사항(QA-F05, QA-F06)을
 
 ```mermaid
 erDiagram
+    SIMULATION_SESSION ||--o{ PROCESS_RUN : contains
+    SIMULATION_SESSION ||--o{ FDC_ALERT : contains
+    SIMULATION_SESSION ||--o{ SENSOR_MEASUREMENT : contains
     EQUIPMENT ||--o{ CHAMBER : contains
     CHAMBER ||--o{ PROCESS_RUN : executes
     RECIPE ||--o{ RECIPE_STEP : contains
@@ -39,6 +42,15 @@ erDiagram
     FDC_ALERT ||--o| INVESTIGATION_CASE : initiates
     INVESTIGATION_CASE ||--o{ CASE_ACTION_LOG : records
     WAFER ||--o{ WAFER_DEFECT_MAP : has
+
+    SIMULATION_SESSION {
+        string session_id PK "UUID 또는 SES-SYN-001"
+        string scenario_id "ETH-SYN-01"
+        int seed "20261015"
+        int is_active "1: 현재 활성 세션, 0: 과거 아카이브"
+        string started_at_utc
+        string completed_at_utc
+    }
 
     EQUIPMENT {
         string equipment_id PK "예: ETCH-02"
@@ -80,6 +92,7 @@ erDiagram
 
     PROCESS_RUN {
         string run_id PK "예: RUN-SYN-044"
+        string session_id FK
         string chamber_id FK
         string recipe_id FK
         string lot_id FK
@@ -101,6 +114,7 @@ erDiagram
 
     SENSOR_MEASUREMENT {
         string measurement_id PK "UUID"
+        string session_id FK
         string run_id FK
         string sensor_id "CHAMBER_PRESSURE"
         float measured_value
@@ -113,6 +127,7 @@ erDiagram
 
     FDC_ALERT {
         string alert_id PK "예: AL-SYN-001"
+        string session_id FK
         string run_id FK
         string chamber_id FK
         string rule_id "SPC-WECO-RULE-1"
@@ -163,6 +178,18 @@ erDiagram
 - **UI 및 통계 가드레일:**
   - 화면상에서 특정 챔버의 이상 알람을 이유로 "해당 Lot 전체 25매 결함 확정"으로 표기하는 것을 엄격히 금지한다.
   - A03 대시보드에서는 반드시 **'영향 가능 후보 Lot/Wafer (Candidate Exposed)'**로 명시하고, 엔지니어의 추가 조사 워크플로를 통해서만 검증 상태로 전이시킨다.
+
+### 3.4 시뮬레이션 세션(`SIMULATION_SESSION`) 및 소프트 리셋(Soft-Reset) 외래키 계약 (P0-3 대응)
+- **세션 엔티티 역할:** 시뮬레이터 실행 단위의 수명주기를 관리하고 과거 실행 데이터의 불변성을 보장한다.
+- **필수 및 유일 활성 세션 정책:**
+  - 시스템 내에는 동시에 **오직 하나의 활성 세션(`is_active = 1`)만 존재**하도록 유일성 제약(Unique Partial Index: `CREATE UNIQUE INDEX idx_unique_active_session ON simulation_session(is_active) WHERE is_active = 1;`)을 둔다.
+  - 모든 `PROCESS_RUN`, `SENSOR_MEASUREMENT`, `FDC_ALERT`는 생성 시 현재 활성 세션의 `session_id`를 필수 외래키(`NOT NULL`, `ON DELETE RESTRICT`)로 참조한다.
+- **소프트 리셋 트랜잭션 범위:**
+  - 시뮬레이터 리셋 호출 시 단일 트랜잭션(`BEGIN IMMEDIATE ... COMMIT`) 내에서:
+    1. 현재 활성 세션을 `UPDATE simulation_session SET is_active = 0, completed_at_utc = :now WHERE is_active = 1;` 처리하여 논리적으로 아카이빙.
+    2. 새로운 활성 세션을 `INSERT INTO simulation_session (session_id, scenario_id, seed, is_active, started_at_utc) VALUES (:new_id, :scenario_id, :seed, 1, :now);` 실행.
+    3. 가상 시뮬레이션 클록을 $t=0$으로 재설정.
+  - 이 과정에서 과거 세션의 레코드에 대한 물리적 삭제(`DELETE`)가 발생하지 않으므로, 과거 세션의 `run_id`와 `alert_id`를 외래키로 참조하는 기존 `INVESTIGATION_CASE`는 외래키 충돌(`FOREIGN KEY constraint failed`) 없이 온전히 보존된다.
 
 ---
 
@@ -342,8 +369,18 @@ export type ExposureStatus = "CONFIRMED_EXPOSED" | "CANDIDATE_EXPOSED" | "NOT_EX
 export type CapabilityType = "WITHIN_SUBGROUP_CAPABILITY" | "OVERALL_PERFORMANCE";
 export type SigmaEstimator = "SAMPLE_STD_S" | "R_BAR_OVER_D2" | "S_BAR_OVER_C4";
 
+export interface SimulationSession {
+  sessionId: string;
+  scenarioId: string;
+  seed: number;
+  isActive: boolean; // DB: 1 -> true, 0 -> false
+  startedAtUtc: string;
+  completedAtUtc?: string;
+}
+
 export interface SensorSample {
   measurementId: string;
+  sessionId: string;
   runId: string;
   sensorId: string;
   value: number | null;
@@ -356,6 +393,7 @@ export interface SensorSample {
 
 export interface ProcessRunWafer {
   runWaferId: string;
+  sessionId: string;
   runId: string;
   waferId: string;
   lotId: string;
@@ -380,6 +418,7 @@ export interface CapabilityResult {
 
 export interface FdcAlertItem {
   alertId: string;
+  sessionId: string;
   runId: string;
   chamberId: string;
   equipmentId: string;

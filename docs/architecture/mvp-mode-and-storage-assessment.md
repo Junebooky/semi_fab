@@ -44,7 +44,7 @@ A04 QA의 ADR-001 검토 의견(PR #3, QA-F02~QA-F04)과 A03 디자인 명세(PR
 
 ### 2.2 Mode B 상세 분석 (A02 권장 개발 표준)
 - **장점:**
-  - Python 생태계(FastAPI, NumPy, Pandas, SciPy)를 온전히 활용하여 반도체 FDC/SPC 공학 계산의 수치적 엄밀성을 100% 충족.
+  - Python 생태계(FastAPI, NumPy, Pandas, SciPy)를 온전히 활용하여 반도체 FDC/SPC 공학 계산의 수치적 엄밀성을 구현할 수 있는 환경 제공 (단위 테스트를 통한 검증 목표).
   - SQLite를 활용한 엄격한 외래키 무결성 및 인덱스 쿼리 성능 확보.
   - 로컬 파일시스템에 시뮬레이션 결과 및 케이스가 영구 보관되어 재현성 검증에 최적화.
 - **기술적 제약:**
@@ -76,7 +76,7 @@ SQLite는 하위 호환성을 이유로 기본적으로 외래키 제약조건 �
 
 ### 3.3 트랜잭션 격리 및 쓰기 정책 (P0-3 대응)
 - 시뮬레이션 배치 쓰기 및 조사 케이스 등록 시 기본 `BEGIN DEFERRED` 대신 **`BEGIN IMMEDIATE`**를 사용하여 트랜잭션 시작 시점에 쓰기 락을 선점함으로써 교착 상태(Deadlock)를 원천 차단한다.
-- **배치 쓰기 원자성 보장 규약:** 공정 실행(`process_run`), 센서 계측치(`measurement`), 알람(`alarm`)의 일괄 삽입 시 메모리 및 SQLite 바인딩 파라미터(999개/32766개) 한도를 준수하기 위해 1,000건 단위의 청크로 나누어 `executemany`를 호출하되, **반드시 단일 트랜잭션(`BEGIN IMMEDIATE ... COMMIT`) 내에서 수행하며, 모든 청크의 실행이 100% 완료된 후에만 최종 `COMMIT`을 실행**한다. 중간에 단 1개의 청크라도 실패하면 즉시 전체 트랜잭션을 `ROLLBACK`하여 부분적으로 저장된 불완전한 공정 이력이 남지 않도록 한다.
+- **배치 쓰기 원자성 보장 규약:** 공정 실행(`process_run`), 센서 계측치(`measurement`), 알람(`alarm`)의 일괄 삽입 시 메모리 및 SQLite 바인딩 파라미터(999개/32766개) 한도를 준수하기 위해 1,000건 단위의 청크로 나누어 `executemany`를 호출하되, **반드시 단일 트랜잭션(`BEGIN IMMEDIATE ... COMMIT`) 내에서 수행하며, 모든 청크의 실행이 정상 완료된 후에만 최종 `COMMIT`을 실행**한다. 중간에 단 1개의 청크라도 실패하면 즉시 전체 트랜잭션을 `ROLLBACK`하여 부분적으로 저장된 불완전한 공정 이력이 남지 않도록 한다.
 
 ### 3.4 데이터베이스 파일 경로 및 백업/복구 절차
 - **기본 경로:** `data/fab_one_mvp.db` (Git 추적 제외: `.gitignore` 등록 필수).
@@ -234,7 +234,7 @@ semi_fab/
 1. **Phase 1: 데이터 계약 및 픽스처 동결 (현재)**
    - 본 PR의 데이터 계약, 재현성 계약, 픽스처 해시 검증 프로토콜 공식 승인.
 2. **Phase 2: 코어 계산 엔진 및 결정론적 시뮬레이터 (Engine First)**
-   - Python NumPy 기반 핵심 공학 수식(`die_yield`, `etch_rate`, `cpk`) 단위 테스트(Pytest) 100% 통과.
+   - Python NumPy 기반 핵심 공학 수식(`die_yield`, `etch_rate`, `cpk_ppk`) 단위 테스트(Pytest) 전수 통과를 목표로 검증.
    - PCG64 기반 3-Run 동일 해시 재현성 테스트 검증.
 3. **Phase 3: Mode B 로컬 백엔드 & 영속 SQLite (API Layer)**
    - FastAPI 라우터 및 SQLite WAL 모드, 외래키 제약조건 연동.
@@ -257,7 +257,7 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
    - **엔지니어링 조치:** 이미지 로딩 지연에 따른 레이아웃 시프트(CLS, Cumulative Layout Shift)를 방지하기 위해 CSS `aspect-ratio` 및 `object-fit: contain`을 강제하고 스켈레톤 UI를 제공한다.
    - **의미 색상 분리:** 3D 일러스트에 사용되는 에메랄드/그린 색상은 단순 장식용이며, 장비의 '정상(Normal)' 상태를 나타내는 시맨틱 상태 색상(`color.severity.normal.text`)과 명확히 격리한다.
 3. **EKL 3단계 인터랙션 (L1/L2/L3) 정적 MDX 파이프라인:**
-   - L1(툴팁, 비인터랙티브), L2(앵커 카드, 계산 예시), L3(우측 패널, 상세 MDX 및 메모) 구조는 Next.js App Router의 Server Components 및 정적 MDX 로더(`next-mdx-remote` 또는 `@next/mdx`)와 완벽히 호환된다.
+   - L1(툴팁, 비인터랙티브), L2(앵커 카드, 계산 예시), L3(우측 패널, 상세 MDX 및 메모) 구조는 Next.js App Router의 Server Components 및 정적 MDX 로더(`next-mdx-remote` 또는 `@next/mdx`)와 호환되도록 설계한다.
    - 보안을 위해 허용된 MDX 컴포넌트만 렌더링하는 컴포넌트 Allowlist 방식을 적용한다.
 
 ---
@@ -266,12 +266,12 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
 
 | QA 이슈 ID | 심각도 | A04 지적 요약 | A02 아키텍처 해결안 및 문서 매핑 |
 |---|---|---|---|
-| **QA-F01** | High | 시드만으로는 재현 불가 (RNG 알고리즘, 클록, 순서 미정) | `simulation-reproducibility-contract.md`에 PCG64 알고리즘, 가상 클록(UTC 고정, 1초 틱), 4단계 결정론적 정렬 키, 픽스처 SHA-256 체크섬 강제 명시. |
+| **QA-F01** | High | 시드만으로는 재현 불가 (RNG 알고리즘, 클록, 순서 미정) | `simulation-reproducibility-contract.md`에 PCG64 알고리즘, 가상 클록(UTC 고정, 1초 틱), 정적 6요소 결정론적 정렬 키, 사이드카 체크섬 파일(`fixtures/checksums.sha256`) 검증 명시. |
 | **QA-F02** | High | SQLite 외래키 미강제, 트랜잭션/동시성/복구 정책 부재 | 본 문서 제3절에 `PRAGMA foreign_keys=ON;`, WAL 저널 모드, `BEGIN IMMEDIATE`, `VACUUM INTO` 백업 및 서버리스 임시 파일 배치 금지 규약 명시. |
-| **QA-F03** | Medium | IndexedDB 데이터 손실 경고, 내보내기/가져오기 규격 부재 | 본 문서 제4절에 로컬 전용 한계 고지 UX, JSON 스키마(v1.0.0), XSS/수식 삽입 방지 살균 및 시뮬레이션 리셋 시 메모 보존 경계 명시. |
+| **QA-F03** | Medium | IndexedDB 데이터 손실 경고, 내보내기/가져오기 규격 부재 | 본 문서 제4절에 로컬 전용 한계 고지 UX, JSON 스키마(v1.0.0), XSS/수식 삽입 방지 살균 및 세션 기반 소프트 리셋 메모 보존 경계 명시. |
 | **QA-F04** | High | 역할 전환기(Role Switcher)가 실제 보안 RBAC/감사로 오인될 위험 | 본 문서 제5절에 `viewPreference` 명명, 권한 없는 시뮬레이션 컨텍스트 헤더 명시, Mode C 이전 엔터프라이즈 감사/인가 클레임 전면 차단. |
 | **QA-F05** | Medium | 이상 경고가 결함/인과관계를 확정하는 표현 사용 위험 | `domain-data-contract-v0.1.md` 제6.3절에 "SPC 경고는 조사의 근거일 뿐, 인과관계나 결함을 증명하지 않는다"는 문구 강제 및 화면 가이드 명시. |
-| **QA-F06** | High | 수식 추정량(Cpk sigma), 분모(Die Yield), 단위/부호 규약 공백 | `domain-data-contract-v0.1.md` 제6절에 다이 수율 에지 제외 분모식, 식각률 음수(증착 의심) 플래그, Cpk 표본 표준편차($s$) 공식 및 단위 명시. |
+| **QA-F06** | High | 수식 추정량(Cpk sigma), 분모(Die Yield), 단위/부호 규약 공백 | `domain-data-contract-v0.1.md` 제6절에 다이 수율 에지 제외 분모식, 식각률 음수 편차(`SUSPECT_THICKNESS_INCREASE`, 임의 알람 금지), 전체 변동 기반 $P_p/P_{pk}$(표본 표준편차 $s$)와 군내 변동 기반 $C_p/C_{pk}$($\bar{R}/d_2, \bar{s}/c_4$) 추정량 분리 명시. |
 
 ---
 
@@ -289,13 +289,13 @@ A03의 디자인 시스템 및 EKL 상호작용 명세(PR #7)와 2026-10-15 사�
    - [ ] 안 3: 모든 로컬 데이터 일괄 삭제
 3. **[A01 결정 필요 1-3] Mode C (Supabase) 전환 마일스톤 기준 공식 승인:**
    - 실시간 다중 사용자 동시 편집, 엔터프라이즈 RBAC/RLS, 중앙 감사 로그 요구 발생 시점에 한하여 마이그레이션 착수.
-4. **[A01 결정 필요 2-1] 공정능력지수(Cpk) 표준편차 추정량 공식 채택:**
-   - [ ] 안 1 (A02 권장): 표본 표준편차 ($s$, $n-1$ 자유도) 단일 적용 및 EKL 고지
-   - [ ] 안 2: 부분군 범위 기반 추정량 ($\bar{R}/d_2$) 적용
-5. **[A01 결정 필요 2-2] 식각률 음수(두께 증가) 발생 시 처리 정책:**
-   - [ ] 안 1 (A02 권장): `SUSPECT_DEPOSITION_OR_MEASUREMENT_ERROR` 경고 생성 및 음수값 그대로 표시
-   - [ ] 안 2: 계산 에러(`ERR_NEGATIVE_ETCH_RATE`)로 차트에 결측 표시
+4. **[A01 결정 필요 2-1] 공정능력지수(Cp/Cpk) 및 공정성능지수(Pp/Ppk) 추정량 분리 규약 승인:**
+   - [ ] 안 1 (A02 제안 / 승인 대기): 전체 변동 기반 Pp/Ppk(표본 표준편차 s)와 군내 변동 기반 Cp/Cpk(R-bar/d2 또는 s-bar/c4)를 분리하고 EKL·API·화면에 추정량을 명시하는 제안안 승인
+   - [ ] 안 2: 단일 지표(s 기반 Pp/Ppk)만 산출하고 화면 명칭을 Ppk로 통일
+5. **[A01 결정 필요 2-2] 식각률 음수 편차(두께 증가) 발생 시 처리 정책:**
+   - [ ] 안 1 (A02 제안 / 승인 대기): SUSPECT_THICKNESS_INCREASE 플래그 및 설명 표시 (음수값 유지, 자동 증착 단정 및 자동 알람 생성 금지) 제안안 승인
+   - [ ] 안 2: 계산 에러(ERR_NEGATIVE_ETCH_RATE)로 간주하고 차트에 결측 표시
 6. **[A01 결정 필요 3-1] 수치 반올림 표준 규칙 승인:**
-   - [ ] 안 1 (A02 권장): 사사오입 (`ROUND_HALF_UP`)
+   - [ ] 안 1 (A02 제안 / 승인 대기): 사사오입 (`ROUND_HALF_UP`)
    - [ ] 안 2: 은행원 반올림 (`ROUND_HALF_EVEN`)
 
