@@ -47,9 +47,11 @@
 
 **실제 기업 직무와의 차이:** SK하이닉스의 공식 직무 인터뷰는 공정 엔지니어를 양산 공정 조건·레시피 평가와 계측 데이터 분석을 수행하는 역할, 장비 엔지니어를 장비 셋업·점검·개조·보전·이상 대응을 담당하는 역할로 설명한다. 공식 직무 소개에는 제조 오퍼레이터, 품질보증, IT, 데이터 사이언스 등 서로 다른 직무도 구분된다. **FAB ONE은 이 업무 전체를 수행하는 시스템이나 현업 경력 자체가 아니라 일부 문제 해결 흐름을 학습·재현하는 포트폴리오다.** 입사 시 지원 공고별 요건은 다시 대조한다.
 
-- [SK하이닉스 Talent Hub — 양산기술 직무 인터뷰](https://talent.skhynix.com/hub/en/job/interview/9)
+- [SK하이닉스 Talent Hub — 양산기술 직무 인터뷰](https://talent.skhynix.com/hub/en/job/interview/53)
 - [SK하이닉스 Talent Hub — 직무 소개](https://talent.skhynix.com/hub/en/job/introduce?id=902)
 - [SK하이닉스 Talent Hub — PI 포함 소자 직무 인터뷰](https://talent.skhynix.com/hub/en/job/interview/73)
+
+> **외부 참고 링크 확인: 2026-10-15 (KST).** `/hub/en/job/interview/9`는 이번 웹 조회에서 공식 사이트의 오류 페이지로 이동했으므로, 공정·장비 엔지니어의 역할 설명이 실제 표시되는 공식 인터뷰 `/hub/en/job/interview/53`을 사용한다. 직무 소개 `id=902`와 인터뷰 `/73`도 내용 열림을 확인했다. 링크 유효성은 점검 시점의 결과이며 이후 변경될 수 있다.
 
 위 출처는 **역할 설명의 참고 자료**이며 SK하이닉스의 FAB ONE 평가·검토·제휴·승인을 뜻하지 않는다. 삼성전자 등 타사 직무·채용 요건을 동일하게 일반화하지 않는다.
 
