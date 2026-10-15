@@ -47,9 +47,11 @@
 >
 > **현재 공개된 증거:** 초기 README, 아키텍처 제안, QA 테스트 계획. **검증된 실행 애플리케이션/시뮬레이터는 아직 없음.**
 >
-> [제품 기획](docs/portfolio/product-positioning.md) · [근거 매트릭스](docs/portfolio/claims-evidence-matrix.md) · [Issues](https://github.com/Junebooky/semi_fab/issues)
+> [제품 기획](https://github.com/Junebooky/semi_fab/blob/a05/issue-5-portfolio-foundation/docs/portfolio/product-positioning.md) · [근거 매트릭스](https://github.com/Junebooky/semi_fab/blob/a05/issue-5-portfolio-foundation/docs/portfolio/claims-evidence-matrix.md) · [Issues](https://github.com/Junebooky/semi_fab/issues)
 
 이 문구 역시 최종 승인이 아니라 **A01 검토 대상**이다.
+
+**예시 링크 점검: 2026-10-15 (KST).** 위 링크는 이 문서가 `docs/portfolio/`에서 열려도 정상적으로 이동하도록 **현재 PR #6의 작업 브랜치에 대한 GitHub 절대 URL**을 사용한다. 실제 루트 `README.md`에 적용할 때는 **별도 A01·사용자 승인 후** 병합된 파일의 `main` 경로로 바꿀 수 있다. 이번 PR에서는 실제 README를 수정하지 않는다.
 
 ## 4. 구현 현황 표 (README 공개 템플릿)
 
@@ -82,6 +84,8 @@
 ## 6. 단계별 README 갱신 및 게이트
 
 ### Phase 0 — 지금: 근거 기반 기획 소개
+
+**2026-10-15 갱신 주의:** [A02 PR #10](https://github.com/Junebooky/semi_fab/pull/10)의 아키텍처/데이터 계약 문서와 [A03 PR #11](https://github.com/Junebooky/semi_fab/pull/11)의 hi-fi HTML 프로토타입은 새로 **제출된 검토 중 산출물**이다. 이들의 제출 자체를 앱의 실제 구현 완료나 A04 QA PASS로 표현하지 않는다. 아래 Phase/기능 상태 표는 **기준일 당시 공개 앱의 검증 수준**이며, 이후 기능 SHA와 실행/QA 자료가 확인될 때만 [주장·증거 매트릭스](./claims-evidence-matrix.md)를 먼저 갱신한다.
 
 - 본 [Issue #5](https://github.com/Junebooky/semi_fab/issues/5)의 3개 문서를 별도 PR로 제출한다.
 - README 본문 변경 보류. A01·사용자에게 핵심 문구 및 변경 범위를 승인 요청.
