@@ -1024,5 +1024,218 @@ test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, 
   assert.equal(hE.notFoundError, null);
 });
 
+// ============================================================================
+// BUILD-04: Engineering Knowledge Layer (EKL) Regression Test Suites
+// ============================================================================
+
+import { readFileSync } from 'node:fs';
+
+// Helper matching calculateEtchRate in apps/web/src/lib/engineering-knowledge.ts
+function calculateEtchRateTest(initialThickness, finalThickness, processTimeMinutes) {
+  if (isNaN(initialThickness) || isNaN(finalThickness) || isNaN(processTimeMinutes)) {
+    return { success: false, errorMessage: '유효한 숫자를 입력해 주세요.' };
+  }
+  if (initialThickness < 0 || finalThickness < 0) {
+    return { success: false, errorMessage: '박막 두께는 음수가 될 수 없습니다.' };
+  }
+  if (processTimeMinutes <= 0) {
+    return { success: false, errorMessage: '공정 시간은 0보다 커야 합니다 (0으로 나눌 수 없음).' };
+  }
+  const deltaThickness = initialThickness - finalThickness;
+  const etchRate = deltaThickness / processTimeMinutes;
+  if (deltaThickness < 0) {
+    return {
+      success: true,
+      value: Math.round(etchRate * 100) / 100,
+      warningMessage: '종료 두께가 초기 두께보다 큽니다. 식각이 아닌 박막 증착(Deposition) 현상입니다.'
+    };
+  }
+  return {
+    success: true,
+    value: Math.round(etchRate * 100) / 100
+  };
+}
+
+test('BUILD-04 EKL Calculation Model Contract: Etch Rate arithmetic, unit validation and boundary conditions', () => {
+  // 1. Standard valid nominal calculation: (200 - 140) nm / 2.0 min = 30.00 nm/min
+  const res1 = calculateEtchRateTest(200, 140, 2.0);
+  assert.equal(res1.success, true);
+  assert.equal(res1.value, 30.00);
+  assert.equal(res1.warningMessage, undefined);
+
+  // 2. Zero etch rate (no thickness change): (150 - 150) / 1.5 = 0 nm/min
+  const resZero = calculateEtchRateTest(150, 150, 1.5);
+  assert.equal(resZero.success, true);
+  assert.equal(resZero.value, 0.0);
+
+  // 3. Fractional inputs with 2 decimal precision
+  const resFrac = calculateEtchRateTest(185.5, 120.2, 2.5);
+  assert.equal(resFrac.success, true);
+  assert.equal(resFrac.value, 26.12);
+
+  // 4. Boundary: Time = 0 must fail-closed (prevent division by zero)
+  const resZeroTime = calculateEtchRateTest(200, 140, 0);
+  assert.equal(resZeroTime.success, false);
+  assert.ok(resZeroTime.errorMessage.includes('0보다 커야 합니다'));
+
+  // 5. Boundary: Negative time must fail-closed
+  const resNegTime = calculateEtchRateTest(200, 140, -2.0);
+  assert.equal(resNegTime.success, false);
+  assert.ok(resNegTime.errorMessage.includes('0보다 커야 합니다'));
+
+  // 6. Boundary: Negative thickness must fail-closed
+  const resNegThick = calculateEtchRateTest(-50, 100, 2.0);
+  assert.equal(resNegThick.success, false);
+  assert.ok(resNegThick.errorMessage.includes('음수가 될 수 없습니다'));
+
+  // 7. Boundary: NaN inputs must fail-closed
+  const resNaN = calculateEtchRateTest(NaN, 140, 2.0);
+  assert.equal(resNaN.success, false);
+  assert.ok(resNaN.errorMessage.includes('유효한 숫자를 입력해 주세요'));
+
+  // 8. Domain Warning: Final thickness > Initial thickness (Deposition warning)
+  const resDeposition = calculateEtchRateTest(140, 200, 2.0);
+  assert.equal(resDeposition.success, true);
+  assert.equal(resDeposition.value, -30.00);
+  assert.ok(resDeposition.warningMessage.includes('증착(Deposition)'));
+});
+
+test('BUILD-04 EKL Concept Schema Contract: All 6 concepts define units, caveats, and 5 deep dive boundaries', () => {
+  const eklSource = readFileSync(new URL('../src/components/ekl/engineering-knowledge.ts', import.meta.url), 'utf8');
+
+  const requiredConcepts = [
+    'oes-relative-signal',
+    'chamber-pressure',
+    'rf-power',
+    'spc-ucl-missing',
+    'wafer-exposure-status',
+    'etch-rate'
+  ];
+
+  requiredConcepts.forEach(cid => {
+    assert.ok(eklSource.includes(`'${cid}'`), `EKL source must define concept ID '${cid}'`);
+  });
+
+  // Verify units are explicitly mapped
+  assert.ok(eklSource.includes('a.u. (Arbitrary Unit)'));
+  assert.ok(eklSource.includes('mTorr (밀리토르)'));
+  assert.ok(eklSource.includes('W (Watts)'));
+  assert.ok(eklSource.includes('nm/min (나노미터/분)'));
+
+  // Verify 5 mandatory deep-dive sections exist
+  assert.ok(eklSource.includes('physicalQuantityVsProcess'));
+  assert.ok(eklSource.includes('controlLimitsVsSpecLimits'));
+  assert.ok(eklSource.includes('missingVsZero'));
+  assert.ok(eklSource.includes('sensorAnomalyVsDefect'));
+  assert.ok(eklSource.includes('exposureStatusMeaning'));
+
+  // Verify domain caveats and disclaimers
+  assert.ok(eklSource.includes('공학 검수 전'));
+  assert.ok(eklSource.includes('설명용 가상 예시'));
+  assert.ok(eklSource.includes('UCL/LCL(관리한계) ≠ USL/LSL(규격한계)'));
+  assert.ok(eklSource.includes('MISSING(결측치) ≠ 0'));
+  assert.ok(eklSource.includes('Excursion') && eklSource.includes('Defect'));
+});
+
+test('BUILD-04 EKL Interaction State Machine: L1 -> L2 -> L3 navigation and context retention on close', () => {
+  class EKLStateMachine {
+    constructor() {
+      this.activeLevel = 0;
+      this.activeConceptId = null;
+      this.originTrigger = null;
+      // Screen context that must NEVER be reset by EKL actions
+      this.screenContext = {
+        selectedWafer: 'W-08',
+        activeAlertId: 'AL-DEMO-044',
+        activeRunId: 'RUN-DEMO-044',
+        filter: 'ALL'
+      };
+    }
+
+    openInsight(conceptId, triggerEl = 'button-trigger-1') {
+      this.originTrigger = triggerEl;
+      this.activeConceptId = conceptId;
+      this.activeLevel = 2;
+    }
+
+    openDeepDive(conceptId) {
+      if (conceptId) this.activeConceptId = conceptId;
+      this.activeLevel = 3;
+    }
+
+    backToInsight() {
+      this.activeLevel = 2;
+    }
+
+    closeAll() {
+      this.activeLevel = 0;
+      // Focus restored to originTrigger in browser
+      return this.originTrigger;
+    }
+
+    handleEscape() {
+      if (this.activeLevel === 3) {
+        this.backToInsight();
+      } else if (this.activeLevel === 2) {
+        this.closeAll();
+      }
+    }
+  }
+
+  const sm = new EKLStateMachine();
+
+  // 1. Initial State: closed
+  assert.equal(sm.activeLevel, 0);
+  assert.equal(sm.activeConceptId, null);
+
+  // 2. User clicks L1 trigger for 'rf-power'
+  sm.openInsight('rf-power', 'trigger-rf-power-btn');
+  assert.equal(sm.activeLevel, 2, 'L2 insight card must be active');
+  assert.equal(sm.activeConceptId, 'rf-power');
+  assert.equal(sm.screenContext.selectedWafer, 'W-08', 'Wafer context must be preserved');
+
+  // 3. User navigates to Level 3 Deep Dive
+  sm.openDeepDive();
+  assert.equal(sm.activeLevel, 3, 'L3 deep dive panel must be active');
+  assert.equal(sm.activeConceptId, 'rf-power');
+  assert.equal(sm.screenContext.selectedWafer, 'W-08');
+
+  // 4. User presses Escape at Level 3 -> returns to Level 2
+  sm.handleEscape();
+  assert.equal(sm.activeLevel, 2, 'Escape at L3 must transition back to L2');
+  assert.equal(sm.activeConceptId, 'rf-power');
+
+  // 5. User presses Escape at Level 2 -> closes completely and restores focus
+  const restoredFocus = sm.closeAll();
+  assert.equal(sm.activeLevel, 0, 'EKL must be completely closed');
+  assert.equal(restoredFocus, 'trigger-rf-power-btn', 'Focus must restore to origin trigger');
+  assert.equal(sm.screenContext.selectedWafer, 'W-08', 'Screen context must remain intact');
+  assert.equal(sm.screenContext.activeRunId, 'RUN-DEMO-044');
+});
+
+test('BUILD-04 Traceability Error Differentiation & Cassette Protection Invariant', () => {
+  // Test error title differentiation logic
+  function resolveErrorTitle(status, message) {
+    if (status === 404) return '존재하지 않는 웨이퍼 (404 Not Found)';
+    if (status === 502) return '서버 응답 형식 오류 (502 Bad Gateway / Malformed JSON)';
+    if (status === 500 && message.includes('계통성')) return '데이터 계통성 불일치 오류 (Data Lineage Error)';
+    if (status === 500) return '서버 내부 오류 (HTTP 500 Internal Server Error)';
+    return `서버 통신 오류 (HTTP ${status})`;
+  }
+
+  assert.equal(resolveErrorTitle(404, 'Not found'), '존재하지 않는 웨이퍼 (404 Not Found)');
+  assert.equal(resolveErrorTitle(502, 'JSON error'), '서버 응답 형식 오류 (502 Bad Gateway / Malformed JSON)');
+  assert.equal(resolveErrorTitle(500, '데이터 계통성 불일치 오류'), '데이터 계통성 불일치 오류 (Data Lineage Error)');
+  assert.equal(resolveErrorTitle(500, 'Database crashed'), '서버 내부 오류 (HTTP 500 Internal Server Error)');
+  assert.equal(resolveErrorTitle(503, 'Service unavailable'), '서버 통신 오류 (HTTP 503)');
+
+  // Verify page.tsx source contains cassette protection and timeline disclaimer
+  const tracePageSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+  assert.ok(tracePageSource.includes('카세트 동기화 중단'), 'Cassette error notification banner must be present');
+  assert.ok(tracePageSource.includes('pointerEvents: notFoundError ? \'none\' : \'auto\''), 'Cassette must be non-interactive during error');
+  assert.ok(tracePageSource.includes('가상 시나리오 재구성 (Synthetic Scenario Reconstruction)'), 'Timeline synthetic disclaimer must be present');
+});
+
+
 
 

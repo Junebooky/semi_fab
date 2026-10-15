@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import {
+  EngineeringKnowledgeProvider,
+  EngineeringInsightCard,
+  EngineeringDeepDivePanel
+} from "@/components/ekl";
 
 export const metadata: Metadata = {
   title: "FAB ONE - Etch Chamber Live Simulation Demo",
@@ -13,7 +18,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        <EngineeringKnowledgeProvider>
+          {children}
+          <EngineeringInsightCard />
+          <EngineeringDeepDivePanel />
+        </EngineeringKnowledgeProvider>
+      </body>
     </html>
   );
 }
+

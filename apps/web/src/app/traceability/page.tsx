@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { EngineeringTermTrigger } from '@/components/ekl';
 
 // Domain Interfaces
 interface WaferItem {
@@ -309,10 +310,12 @@ function TraceabilityContent() {
     let wafersRes: Response;
     let summaryRes: Response;
 
+    const runParam = activeRunId ? `?run_id=${encodeURIComponent(activeRunId)}` : '';
+
     try {
       [traceRes, wafersRes, summaryRes] = await Promise.all([
-        fetch(`http://localhost:8000/api/v1/demo/wafers/${targetWafer}/trace`, { cache: 'no-store' }),
-        fetch('http://localhost:8000/api/v1/demo/wafers', { cache: 'no-store' }),
+        fetch(`http://localhost:8000/api/v1/demo/wafers/${targetWafer}/trace${runParam}`, { cache: 'no-store' }),
+        fetch(`http://localhost:8000/api/v1/demo/wafers${runParam}`, { cache: 'no-store' }),
         fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' })
       ]);
     } catch {
@@ -598,8 +601,34 @@ function TraceabilityContent() {
               </button>
             </div>
 
+            {/* Error Notification for Cassette */}
+            {notFoundError && (
+              <div
+                style={{
+                  background: '#FEF2F2',
+                  border: '1px solid #FECACA',
+                  borderRadius: '8px',
+                  padding: '8px 10px',
+                  marginBottom: '12px',
+                  fontSize: '11px',
+                  color: '#991B1B',
+                  lineHeight: 1.4,
+                }}
+              >
+                <strong>⚠️ 카세트 동기화 중단:</strong><br />
+                서버 오류로 인해 최신 25매 카세트 목록을 반영하지 못했습니다. 아래 슬롯은 이전 데이터(비활성 상태)입니다.
+              </div>
+            )}
+
             {/* 5x5 Cassette Matrix */}
-            <div className="wafer-matrix-grid" style={{ marginBottom: '16px' }}>
+            <div
+              className="wafer-matrix-grid"
+              style={{
+                marginBottom: '16px',
+                opacity: notFoundError ? 0.45 : 1,
+                pointerEvents: notFoundError ? 'none' : 'auto'
+              }}
+            >
               {wafers.map(w => {
                 let statusClass = "unexposed";
                 let statusLabel = "미노출";
@@ -630,7 +659,13 @@ function TraceabilityContent() {
             </div>
 
             {/* Scrollable Wafer List */}
-            <div className="trace-wafer-list-scroll">
+            <div
+              className="trace-wafer-list-scroll"
+              style={{
+                opacity: notFoundError ? 0.45 : 1,
+                pointerEvents: notFoundError ? 'none' : 'auto'
+              }}
+            >
               {filteredWafers.map(w => {
                 const isSelected = selectedWaferId === w.wafer_id;
                 let badgeColor = "#64748B";
@@ -696,13 +731,31 @@ function TraceabilityContent() {
             </div>
           ) : notFoundError ? (
             <div className="trace-not-found-card" role="alert">
-              <div className="not-found-icon" aria-hidden="true">⚠️</div>
-              <h2 className="not-found-title">존재하지 않는 웨이퍼 (404 Not Found)</h2>
-              <div className="not-found-badge">요청 ID: {notFoundError.waferId}</div>
+              <div className="not-found-icon" aria-hidden="true">
+                {notFoundError.status === 404 ? '🔍' : '⚠️'}
+              </div>
+              <h2 className="not-found-title">
+                {notFoundError.status === 404
+                  ? '존재하지 않는 웨이퍼 (404 Not Found)'
+                  : notFoundError.status === 502
+                  ? '서버 응답 형식 오류 (502 Bad Gateway / Malformed JSON)'
+                  : notFoundError.status === 500 && notFoundError.message.includes('계통성')
+                  ? '데이터 계통성 불일치 오류 (Data Lineage Error)'
+                  : notFoundError.status === 500
+                  ? '서버 내부 오류 (HTTP 500 Internal Server Error)'
+                  : `서버 통신 오류 (HTTP ${notFoundError.status})`}
+              </h2>
+              <div className="not-found-badge">
+                {notFoundError.status === 404
+                  ? `요청 웨이퍼: ${notFoundError.waferId}`
+                  : `오류 코드: HTTP ${notFoundError.status}`}
+              </div>
               <p className="not-found-desc">{notFoundError.message}</p>
               <div className="not-found-disclaimer">
                 <strong>※ FAB ONE 도메인 무결성 규약:</strong><br />
-                서버에서 HTTP 404로 응답되었거나 25매 카세트 규격(W-01 ~ W-25)에 존재하지 않는 웨이퍼에 대해서는 임의의 가상 공정 이력(Synthetic Process Timeline)을 생성하지 않고 조회를 즉시 차단(Fail-Closed)합니다.
+                {notFoundError.status === 404
+                  ? '서버에서 HTTP 404로 응답되었거나 25매 카세트 규격(W-01 ~ W-25)에 존재하지 않는 웨이퍼에 대해서는 임의의 가상 공정 이력(Synthetic Process Timeline)을 생성하지 않고 조회를 즉시 차단(Fail-Closed)합니다.'
+                  : '서버 오류(HTTP 500/502 등) 또는 데이터 계통성 위반 발생 시, 이전 데이터와 신규 데이터를 혼합하거나 임의의 합성 이력으로 대체하지 않고 안전하게 조회를 차단(Fail-Closed)합니다.'}
               </div>
               <div className="not-found-actions">
                 <button
@@ -722,7 +775,7 @@ function TraceabilityContent() {
               {/* Header Banner */}
               <div className="trace-header-banner">
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <h1 style={{ fontSize: '20px', fontWeight: 850, margin: 0, color: '#17263B' }}>
                       웨이퍼 {trace.wafer_id} 이력 추적
                     </h1>
@@ -741,6 +794,7 @@ function TraceabilityContent() {
                       {trace.exposure_status === 'CANDIDATE_EXPOSED' && '잠재 영향군 (CANDIDATE_EXPOSED)'}
                       {trace.exposure_status === 'NOT_EXPOSED' && '미노출 (NOT_EXPOSED)'}
                     </span>
+                    <EngineeringTermTrigger conceptId="wafer-exposure-status" label="노출 판정 기준" showBadge />
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
                     FOUP 카세트 슬롯 #{trace.slot_number} · 투입 시퀀스 #{trace.sequence}
@@ -814,12 +868,17 @@ function TraceabilityContent() {
               )}
 
               {/* Vertical Chronological Process Timeline */}
-              <div className="timeline-section-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B9F78" strokeWidth="2.5">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                공정 이력 시간순 타임라인 (Chronological Process Timeline)
+              <div className="timeline-section-title" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0B9F78" strokeWidth="2.5">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                  <span>공정 이력 시간순 타임라인 (Chronological Process Timeline)</span>
+                </div>
+                <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 500 }}>
+                  ※ 가상 시나리오 재구성 (Synthetic Scenario Reconstruction): 아래 5단계 공정 이벤트 로그는 공학 시뮬레이션용 합성 데이터이며 실제 장비 원시 로그가 아닙니다.
+                </span>
               </div>
 
               <div className="timeline-v-container">
@@ -851,6 +910,28 @@ function TraceabilityContent() {
                         <div className="timeline-v-desc">
                           {event.description}
                         </div>
+
+                        {/* Step-specific EKL Engineering Knowledge triggers */}
+                        {event.step_index === 3 && (
+                          <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 700 }}>공학 개념 (EKL):</span>
+                            <EngineeringTermTrigger conceptId="rf-power" label="RF Power 전력 원리" showBadge />
+                            <EngineeringTermTrigger conceptId="etch-rate" label="식각 속도 (Etch Rate) 계산 예제" showBadge />
+                          </div>
+                        )}
+                        {event.step_index === 4 && (
+                          <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 700 }}>공학 개념 (EKL):</span>
+                            <EngineeringTermTrigger conceptId="spc-ucl-missing" label="UCL 관리한계 및 결측" showBadge />
+                            <EngineeringTermTrigger conceptId="oes-relative-signal" label="OES 상대 신호 해석" showBadge />
+                          </div>
+                        )}
+                        {event.step_index === 5 && (
+                          <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 700 }}>공학 개념 (EKL):</span>
+                            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="노출 확정 vs 잠재 후보" showBadge />
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -860,10 +941,11 @@ function TraceabilityContent() {
               {/* Synthetic Data Disclaimer Footer */}
               <div style={{ marginTop: '24px', padding: '12px 14px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '11px', color: '#64748B', lineHeight: '1.6' }}>
                 <strong>※ [가상 시나리오 추적성 데이터 안내]</strong><br />
-                본 웨이퍼의 공정 이력과 시계열 타임라인은 시뮬레이션 합성(Synthetic, Seed: {seed}) 계약에 기반하여 생성된 데이터입니다.
+                본 웨이퍼의 공정 이력과 시계열 타임라인은 {mode === 'A' ? `시뮬레이션 합성(Synthetic, Seed: ${seed})` : '시뮬레이션 합성(Synthetic Live API)'} 계약에 기반하여 생성된 데이터입니다.
                 실제 공정 DB에 존재하지 않는 공정 이력은 사실로 가장하여 생성되지 않으며, 모든 레코드는 <code>data_origin: synthetic</code> 속성을 보존합니다.
               </div>
             </section>
+
           ) : null}
         </div>
       </main>
