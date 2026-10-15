@@ -128,6 +128,7 @@ table button{background:transparent;border:0;color:var(--action);font-weight:750
 .term-wrap{position:relative;display:inline-block}
 .tooltip{display:none;position:absolute;left:0;bottom:calc(100% + 10px);width:278px;max-width:85vw;background:#1C2938;color:#fff;border-radius:10px;box-shadow:0 8px 26px #17263B33;padding:12px 14px;z-index:20;font-size:12px;line-height:1.55;text-align:left}
 .term-wrap:hover .tooltip,.term-wrap:focus-within .tooltip{display:block}
+.term-wrap[data-tooltip-dismissed=true] .tooltip{display:none!important}
 .knowledge-term:focus-visible{border-radius:2px;outline:2px solid var(--action)}
 .panel-overlay{position:fixed;inset:0;background:rgba(16,29,44,.36);z-index:38}
 .knowledge-popup{position:fixed;right:23px;top:108px;width:min(395px,calc(100vw - 46px));max-height:calc(100vh - 130px);overflow:auto;z-index:41;border:1px solid var(--line);border-radius:18px;background:#fff;box-shadow:0 22px 70px rgba(17,37,59,.18);padding:25px}
@@ -273,7 +274,7 @@ table button{background:transparent;border:0;color:var(--action);font-weight:750
           </section>
           <aside class="card block side-card" aria-label="지식 레이어 소개">
             <p class="overline">ENGINEERING KNOWLEDGE LAYER</p><h2>개념을 바로 이해하기</h2>
-            <p class="muted">분석 중 모르는 용어가 나와도 화면을 떠나지 않아도 됩니다. <span class="term-wrap"><button class="knowledge-term" type="button" data-open-ekl="etch-rate" aria-label="식각 속도 공학 설명 열기">식각 속도</button><span class="tooltip" role="tooltip">단위 시간 동안 제거된 막 두께를 나타내는 개념입니다. 계산 조건은 공학 검수 전입니다.</span></span>에 대한 예시를 열어보세요.</p>
+            <p class="muted">분석 중 모르는 용어가 나와도 화면을 떠나지 않아도 됩니다. <span class="term-wrap"><button class="knowledge-term" type="button" data-open-ekl="etch-rate" aria-label="식각 속도 공학 설명 열기" aria-describedby="tooltip-etch">식각 속도</button><span class="tooltip" id="tooltip-etch" role="tooltip">단위 시간 동안 제거된 막 두께를 나타내는 개념입니다. 계산 조건은 공학 검수 전입니다.</span></span>에 대한 예시를 열어보세요.</p>
             <div class="note"><strong>데이터 해석 원칙</strong><br>이상 징후만으로 원인·불량·폐기를 확정하지 않습니다.</div>
             <button class="alert-link" type="button" data-open-ekl="etch-rate">계산 예시 및 공학 전제 보기 →</button>
           </aside>
@@ -336,7 +337,7 @@ table button{background:transparent;border:0;color:var(--action);font-weight:750
               <div class="kv"><span>알람 규칙</span><b>계약 검토 중</b></div>
               <button class="primary" type="button" data-go="trace">연관 Lot 후보 확인 →</button>
             </aside>
-            <aside class="note"><strong>공학 용어 도우미</strong><br><span class="term-wrap"><button class="knowledge-term" type="button" data-open-ekl="control-limit">UCL / LCL이란?</button><span class="tooltip" role="tooltip">SPC 관리한계는 공정 변동 신호 확인용 기준이며 제품 규격한계와 다릅니다. 실제 관리한계 계산 방식은 검수 전입니다.</span></span><br>모의 알람은 실제 불량이나 인과관계의 증거가 아닙니다.</aside>
+            <aside class="note"><strong>공학 용어 도우미</strong><br><span class="term-wrap"><button class="knowledge-term" type="button" data-open-ekl="control-limit" aria-describedby="tooltip-spc">UCL / LCL이란?</button><span class="tooltip" id="tooltip-spc" role="tooltip">SPC 관리한계는 공정 변동 신호 확인용 기준이며 제품 규격한계와 다릅니다. 실제 관리한계 계산 방식은 검수 전입니다.</span></span><br>모의 알람은 실제 불량이나 인과관계의 증거가 아닙니다.</aside>
           </div>
         </div>
       </section>
@@ -469,6 +470,10 @@ function backToInsight(){
   document.getElementById("insight-title").focus();
 }
 document.querySelectorAll("[data-open-ekl]").forEach(btn=>btn.addEventListener("click",()=>openInsight(btn,btn.dataset.openEkl)));
+document.querySelectorAll(".term-wrap").forEach(term=>{
+  term.addEventListener("pointerenter",()=>delete term.dataset.tooltipDismissed);
+  term.addEventListener("focusin",()=>delete term.dataset.tooltipDismissed);
+});
 document.getElementById("close-insight").addEventListener("click",()=>closeAll());
 document.getElementById("go-deep").addEventListener("click",openDeep);
 document.getElementById("close-deep").addEventListener("click",()=>closeAll());
@@ -479,12 +484,13 @@ document.addEventListener("keydown",e=>{
   if(e.key==="Escape"){
     if(!deep.hidden){e.preventDefault();backToInsight();}
     else if(!insight.hidden){e.preventDefault();closeAll();}
+    else {const tooltipOwner=document.activeElement.closest(".term-wrap");if(tooltipOwner){e.preventDefault();tooltipOwner.dataset.tooltipDismissed="true";}}
   }
   if(e.key==="Tab"&&narrow()&&(!deep.hidden||!insight.hidden)){
     const active=!deep.hidden?deep:insight, items=focusable(active);
     if(!items.length)return;
     const first=items[0],last=items[items.length-1];
-    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    if(e.shiftKey&&(document.activeElement===first||document.activeElement===active.querySelector("h2"))){e.preventDefault();last.focus();}
     else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
   }
 });
