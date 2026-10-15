@@ -230,7 +230,7 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
 
        - **단일 UTC 리스 시각 형식·사전순 비교 규약 ([F04-P0-1]):**
          - 모든 시각 컬럼(`started_at_utc`, `lease_expires_at_utc`, `committed_at_utc`, `updated_at_utc`, `heartbeat_at_utc`) 및 쿼리 바인딩 파라미터(`:now`)는 `domain-data-contract-v0.1.md` §4.2에 정의된 **엄격한 ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SS.sssZ`)** 형식(단일 시계 소스 UTC, 밀리초 3자리, `T` 구분자, 후행 `Z`)으로 통일한다.
-         - SQLite 함수 사용 시 `strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+30 seconds')`의 공백 구분 형식(`YYYY-MM-DD HH:MM:SS`)을 절대 금지하고, 반드시 `strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+30 seconds')`를 사용하여 생성한다. (또는 애플리케이션 계층에서 시스템 UTC 시계 기반으로 포맷팅된 문자열 바인딩).
+         - SQLite 기본 `datetime('now', '+30 seconds')`가 생성하는 공백 구분 형식(`YYYY-MM-DD HH:MM:SS`)을 절대 금지하고, 반드시 `strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+30 seconds')`를 사용하여 생성한다. (또는 애플리케이션 계층에서 시스템 UTC 시계 기반으로 포맷팅된 문자열 바인딩).
          - **사전식 문자열 비교(Lexicographical Comparison) 불변식:**
            ISO 8601 UTC 문자열은 사전순 비교가 실제 시간 순서와 1:1로 일치하므로, `lease_expires_at_utc >= :now` (활성 상태)와 `lease_expires_at_utc < :now` (만료/stale 상태)가 전체 시간 축에 대해 빈틈(Gap)이나 중복(Overlap)이 없는 완벽한 상호 배타적 분할(Mutually Exclusive Partition)을 이룬다.
          - **시간 형식 불일치 반례 및 교정 기대값 (Specification Counterexample Benchmark):**
@@ -367,7 +367,7 @@ IndexedDB는 Mode A 및 Mode B 공통으로 사용자의 개인 학습 메모, U
                AND status = 'PENDING';
 
             -- [애플리케이션 계층 영향 행 수 검증 (changes == 1 필수)]
-            -- IF (cursor.rowcount == 1 OR sqlite3_changes() == 1) THEN
+            -- IF (cursor.rowcount == 1 AND sqlite3_changes() == 1) THEN
             --     COMMIT;   -- PENDING -> FAILED 단조 종결 성공
             -- ELSE
             --     ROLLBACK; -- 이미 CANCELLED 또는 COMMITTED로 선행 종결되었거나 리스를 상실함. 기존 종결 상태 원천 보존!
