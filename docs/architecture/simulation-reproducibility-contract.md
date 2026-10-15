@@ -180,7 +180,7 @@ $$\text{SortKey} = (\text{sim\_timestamp\_epoch\_ms}, \text{event\_phase}, \text
   - 동일 `event_id`에 서로 다른 페이로드가 감지되어 `EVENT_PAYLOAD_CONFLICT`가 발생하면:
     1. 현재 진행 중인 트랜잭션은 즉시 `ROLLBACK`된다.
     2. 충돌이 발생한 이벤트뿐 아니라 연관된 어떠한 계측치(`sensor_measurement`), 공정 실행(`process_run`), 알람(`fdc_alert`)도 데이터베이스나 스테이징 영역에 **부분적으로 저장(Partial Persistence)되거나 고아 레코드로 남지 않는다** (0 rows written).
-    3. 이미 이전 트랜잭션에서 영속화 완료된 선행 이벤트가 존재하는 상태에서 동일한 `event_id`에 다른 페이로드를 가진 후행 이벤트가 도착한 경우: 후행 이벤트 트랜잭션은 즉시 거부(0 rows)되고, 도메인 불변식 위반으로 간주하여 해당 시뮬레이션 세션은 `INTEGRITY_COMPROMISED`로 플래그되어 이후의 모든 쓰기 작업이 전면 차단된다. 이로써 이벤트 도착 순서가 뒤바뀌더라도 불완전한 상태 전이가 영속화되는 것을 방지한다.
+    3. 이미 이전 트랜잭션에서 영속화 완료된 선행 이벤트가 존재하는 상태에서 동일한 `event_id`에 다른 페이로드를 가진 후행 이벤트가 도착한 경우: 이전 트랜잭션의 커밋 완료 데이터는 RDBMS 특성상 물리적 롤백이 불가능하므로, 후행 이벤트 트랜잭션에서 **새로운 커밋 행을 일체 추가하지 않고(0 new committed rows)** 즉시 거부하며, 해당 시뮬레이션 세션 전체를 `INTEGRITY_COMPROMISED`로 플래그하여 기존 데이터 또한 무효/격리 처리하고 이후의 모든 쓰기 작업을 영구 차단한다. 이로써 이벤트 도착 순서가 뒤바뀌더라도 불완전한 상태 전이가 영속화되는 것을 방지한다.
 
 ---
 
@@ -311,7 +311,7 @@ def quantize_value(val: float | str | None, precision: int) -> str:
      ```
      - *가드레일:* 브라우저 시크릿 모드나 용량 제한 등으로 `localStorage.setItem` 실패 시, 서버 요청을 일체 전송하지 않고 즉시 **Fail-Closed로 중단**한다.
 
-  2. **2단계 (백엔드 파괴적 실행 및 내구적 저널 기록):**
+  2. **2단계 (백엔드 파괴적 실행 및 2단계 내구적 저널 기록):**
      클라이언트는 표준 API 엔드포인트 `POST /api/v1/admin/factory-wipe`로 삭제를 요청한다:
      ```json
      {
@@ -320,7 +320,7 @@ def quantize_value(val: float | str | None, precision: int) -> str:
        "confirmationPhrase": "FACTORY-WIPE-CONFIRM"
      }
      ```
-     백엔드는 삭제 대상 외부에 보존되는 내구적 작업 저널(`system_operation_journal`)과 함께 단일 트랜잭션(`BEGIN IMMEDIATE ... COMMIT`)으로 실행한다:
+     백엔드는 삭제 대상 외부에 영구 보존되는 내구적 작업 저널(`system_operation_journal`)을 관리한다:
      ```sql
      CREATE TABLE IF NOT EXISTS system_operation_journal (
          operation_id TEXT PRIMARY KEY,
@@ -332,15 +332,48 @@ def quantize_value(val: float | str | None, precision: int) -> str:
          error_message TEXT
      );
      ```
-     - **원자적 실행 및 멱등성 보장:**
-       - 저널에 `(operation_id, status='PENDING')` 기록 $\to$ 외래키 역순 삭제 실행 $\to$ 저널을 `(status='COMMITTED')`로 갱신 후 최종 `COMMIT`.
-       - 동일한 `operationId`로 중복 호출 시, 이미 `COMMITTED` 상태이면 재삭제를 수행하지 않고 기존 커밋 결과를 즉시 200 OK로 반환(멱등성 보장).
-       - 성공 응답: `{ "operationId": "...", "status": "COMMITTED", "wipeOption": "OPTION_1", "committedAtUtc": "..." }`.
+     - **2단계 저널링(Two-Phase Journaling) 및 독립 연결 가시성 보장:**
+       단일 트랜잭션 내부에서만 `PENDING`을 기록하고 커밋하지 않으면 SQLite WAL 격리로 인해 독립 조회 연결에서는 트랜잭션 완료 전까지 레코드가 보이지 않는 현상(`UNKNOWN`)이 발생한다. 이를 원천 방지하기 위해 저널 기록을 분리하여 내구성을 확보한다:
+       1. **트랜잭션 1 (작업 예약 원자적 커밋):**
+          ```sql
+          BEGIN IMMEDIATE;
+          INSERT INTO system_operation_journal (operation_id, operation_type, wipe_option, status, started_at_utc)
+          VALUES (:operation_id, 'FACTORY_WIPE', :wipe_option, 'PENDING', :now);
+          COMMIT;
+          ```
+          *(이제 외부 독립 조회 연결에서도 `status: 'PENDING'`이 즉시 가시화됨)*
+       2. **트랜잭션 2 (실제 파괴적 역순 삭제 및 완료 커밋):**
+          ```sql
+          BEGIN IMMEDIATE;
+          DELETE FROM case_action_log;
+          DELETE FROM investigation_case;
+          DELETE FROM fdc_alert;
+          DELETE FROM sensor_measurement;
+          DELETE FROM process_run_wafer;
+          DELETE FROM wafer_defect_map;
+          DELETE FROM process_run;
+          DELETE FROM simulation_session;
+          UPDATE system_operation_journal
+          SET status = 'COMMITTED', committed_at_utc = :now
+          WHERE operation_id = :operation_id;
+          COMMIT;
+          ```
+       3. **예외/오류 시 처리 (트랜잭션 3):**
+          트랜잭션 2 도중 오류 발생 시 해당 트랜잭션은 즉시 `ROLLBACK`되며, 별도 에러 핸들러 트랜잭션에서 저널에 `(status = 'FAILED', error_message = :err)`를 독립 커밋한다.
+     - **동일 `operationId` 중복 요청 처리 및 멱등성 규칙:**
+       - 저널 조회 결과 `status == 'PENDING'`: 이미 다른 스레드/프로세스에서 처리 중이므로 HTTP 409 Conflict (`OPERATION_IN_PROGRESS`) 반환.
+       - 저널 조회 결과 `status == 'COMMITTED'`: 재삭제를 수행하지 않고 기존 커밋 결과 레코드를 즉시 HTTP 200 OK로 반환(멱등성 보장).
+       - 저널 조회 결과 `status == 'FAILED'`: 이전 실패 이력이 존재하므로 HTTP 400 Bad Request (`OPERATION_ALREADY_FAILED`) 반환 및 신규 `operationId` 발급 요구.
 
-  3. **3단계 (서버 커밋 확인 후 클라이언트 상태 승격 및 IndexedDB 안전 게이트):**
+  3. **3단계 (서버 커밋 확인 후 클라이언트 상태 승격 및 `UNKNOWN` 안전 정책):**
      - **핵심 안전 불변식 (Crucial Safety Invariant):**
        **서버의 커밋 결과가 `COMMITTED`로 공식 확인되기 전에는 어떠한 경우에도 클라이언트 IndexedDB 삭제를 진행하지 않는다.**
-     - HTTP 응답(200 OK) 수신 또는 재기동 시 상태 조회(`GET /api/v1/admin/factory-wipe/status?operationId={operationId}`)를 통해 서버 상태가 `COMMITTED`임이 입증된 경우에만 클라이언트 인텐트 상태를 `"SERVER_COMMITTED"`로 승격한다:
+     - **`UNKNOWN`에 대한 엄격한 해석 및 인텐트 유지 규약:**
+       `GET /api/v1/admin/factory-wipe/status?operationId={operationId}` 조회 결과가 `UNKNOWN`인 것은 **"서버 트랜잭션이 실패했거나 롤백되었음"을 의미하지 않는다.** 서버가 트랜잭션 1 커밋 전 락 획득 대기 중이거나 요청이 지연 중일 수 있으므로:
+       1. 클라이언트는 **로컬 인텐트(`status: INTENT_RECORDED`)를 절대 폐기하지 않고 유지**한다.
+       2. 최대 3회 점진적 지수 백오프(500ms, 1s, 2s)로 재조회를 수행한다.
+       3. 재조회 후에도 `UNKNOWN`이 지속될 경우, 사용자에게 수동 복구 모달("서버 처리 결과를 확인할 수 없습니다. 메모를 보존한 채 재조회하거나 신규 요청으로 재시도하세요")을 노출하여 사용자가 명시적으로 취소하지 않는 한 인텐트를 삭제하지 않는다.
+     - 서버 상태가 `COMMITTED`로 공식 확인된 경우에만 클라이언트 인텐트를 `"SERVER_COMMITTED"`로 승격한다:
        ```javascript
        const intent = JSON.parse(localStorage.getItem('fab_factory_wipe_intent'));
        intent.status = 'SERVER_COMMITTED';
@@ -354,13 +387,16 @@ def quantize_value(val: float | str | None, precision: int) -> str:
 - **장애 시퀀스 및 복구 상태 전이 매트릭스 (Crash & Recovery Specification Vectors):**
   | 시나리오 ID | 장애 및 비정상 중단 시점 | 서버 상태 (`system_operation_journal`) | 클라이언트 영속 상태 (`fab_factory_wipe_intent`) | 재기동/재시도 시 복구 절차 | 최종 기대 결과 |
   |---|---|---|---|---|---|
-  | **WIPE-CRASH-01** (Vector a) | 인텐트 기록 후 서버 호출 전 탭 닫힘 | 기록 없음 (`UNKNOWN`) | `status: INTENT_RECORDED` | 재기동 시 `GET /status?operationId` 조회 $\to$ 서버 미실행(`UNKNOWN`) 확인 $\to$ 사용자에게 "미전송 초기화 취소/재시도" 모달 노출 $\to$ 취소 시 인텐트 삭제. | 작업 미시작, 서버 데이터 및 IndexedDB 메모 온전 보존 |
+  | **WIPE-CRASH-01** (Vector a) | 인텐트 기록 후 서버 호출 전 탭 닫힘 (실제 미실행) | 기록 없음 (`UNKNOWN`) | `status: INTENT_RECORDED` | 재기동 시 `GET /status?operationId` 조회 $\to$ `UNKNOWN` 반환. 클라이언트는 실패로 단정하지 않고 3회 재조회 후에도 미실행 확인 $\to$ 사용자에게 "미전송 초기화 취소/재시도" 모달 노출 $\to$ 취소 선택 시에만 인텐트 삭제. | 작업 미시작, 서버 데이터 및 IndexedDB 메모 온전 보존 |
   | **WIPE-CRASH-02** (Vector b-1) | 네트워크 타임아웃 중 **서버 실제 COMMIT 성공** | `status: COMMITTED` | `status: INTENT_RECORDED` (타임아웃 에러 수신) | 클라이언트가 `GET /status?operationId` 조회 $\to$ 서버 실제 `COMMITTED` 확인 $\to$ 로컬 인텐트 `SERVER_COMMITTED` 승격 $\to$ `purgeIndexedDbRequested` 값에 따라 후속 처리. | 서버 동적 이력 정상 초기화, IndexedDB 안전 삭제 진행 |
-  | **WIPE-CRASH-03** (Vector b-2) | 네트워크 타임아웃 중 **서버 실제 ROLLBACK/실패** | `status: FAILED` 또는 기록 없음(`UNKNOWN`) | `status: INTENT_RECORDED` (타임아웃 에러 수신) | 클라이언트가 `GET /status?operationId` 조회 $\to$ 서버 미커밋 확인 $\to$ **IndexedDB 절대 삭제 금지** $\to$ "서버 초기화 실패: 데이터 보존됨" 안내 노출 및 인텐트 폐기. | 서버 데이터 무결성 보존, IndexedDB 메모 100% 보존 |
+  | **WIPE-CRASH-03** (Vector b-2) | 네트워크 타임아웃 중 **서버 실제 롤백/실패** | `status: FAILED` | `status: INTENT_RECORDED` (타임아웃 에러 수신) | 클라이언트가 `GET /status?operationId` 조회 $\to$ 서버 실패(`FAILED`) 확인 $\to$ **IndexedDB 절대 삭제 금지** $\to$ "서버 초기화 실패: 데이터 보존됨" 안내 노출 및 인텐트 유지 후 새 요청 유도. | 서버 데이터 무결성 보존, IndexedDB 메모 100% 보존 |
+  | **WIPE-CRASH-03-RACE** (Vector b-3) | 타임아웃 직후 1차 조회 시 일시적 `UNKNOWN`/`PENDING`이나 잠시 후 서버가 COMMIT 완료 | 트랜잭션 1 직후 `PENDING` $\to$ 잠시 후 `COMMITTED` | `status: INTENT_RECORDED` | 1차 조회 시 `UNKNOWN` 또는 `PENDING` 반환 $\to$ 클라이언트는 인텐트를 폐기하지 않고 대기 루프(지수 백오프)로 재조회 $\to$ 서버 트랜잭션 2 커밋 후 후속 조회에서 `COMMITTED` 확인 $\to$ 정상 승격 및 동기화 완료. | 경합 상황에서도 인텐트 유실 및 고아 데이터 없이 최종 정합성 완벽 보장 |
   | **WIPE-CRASH-04** (Vector c) | 서버 COMMIT 완료 직후, 클라이언트 응답 수신 전 크래시 | `status: COMMITTED` | `status: INTENT_RECORDED` | 재기동 시 `GET /status?operationId` 조회 $\to$ `COMMITTED` 확인 $\to$ `SERVER_COMMITTED` 승격 $\to$ `purgeIndexedDbRequested`에 따라 후속 처리. | 고아 데이터 방지, 서버-클라이언트 상태 완전 일치 |
   | **WIPE-CRASH-05** (Vector d) | 브라우저 저장소 접근 불가 (Private 모드 / Quota 에러) | 호출 없음 (`UNKNOWN`) | `localStorage.setItem` 실패 예외 발생 | 인텐트 기록 실패 시 서버 파괴 요청을 일체 전송하지 않고 즉시 **Fail-Closed 차단** ("저장소 접근 불가로 초기화 중단"). | 파괴적 작업 미실행, 비가역 데이터 유실 방지 |
   | **WIPE-CRASH-06** (Vector e) | IndexedDB 삭제 도중 브라우저 탭 강제 종료 | `status: COMMITTED` | `status: SERVER_COMMITTED` (잔여 메모 존재 가능) | 재기동 시 `SERVER_COMMITTED` 감지 $\to$ 서버 재호출 없이 `indexedDB.deleteDatabase` 재호출(멱등성) $\to$ 성공 시 `localStorage.removeItem`. | 자가 복구 완료, 클린 초기 상태 환원 |
   | **WIPE-CRASH-07** (Vector f) | **IndexedDB 삭제 미동의 케이스** (`purgeIndexedDbRequested: false`) | `status: COMMITTED` | `status: INTENT_RECORDED` $\to$ `SERVER_COMMITTED` | 서버 `COMMITTED` 확인 후 `SERVER_COMMITTED` 승격 즉시 **IndexedDB 삭제 단계를 완전히 건너뛰고(Bypass)** $\to$ `localStorage.removeItem`. | 서버 이력 초기화 완료, **IndexedDB 메모 100% 온전 보존** |
+  | **WIPE-CRASH-08** (Vector g) | 동일 `operationId` 중복 요청 전송 (네트워크 재전송) | `PENDING` 또는 `COMMITTED` | 클라이언트 재요청 | 서버는 `PENDING` 시 409 Conflict 반환하여 중복 파괴 차단, `COMMITTED` 시 재삭제 없이 200 OK 반환하여 멱등성 보장. | 다중 호출 경합 시 중복 삭제 방지 및 안전한 멱등성 보장 |
+  | **WIPE-CRASH-09** (Vector h) | 네트워크 영구 단절 / 상태 조회 불능 상태 지속 | 상태 확인 불가 | `status: INTENT_RECORDED` 유지 | 상태 조회가 실패(네트워크 에러)하면 클라이언트는 인텐트를 영구 보존하고 IndexedDB 삭제를 일체 시도하지 않으며 오프라인 경고 모달 표시. | 네트워크 단절 상황에서 데이터 임의 삭제 방지 |
 
 ---
 
