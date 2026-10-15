@@ -190,7 +190,7 @@ interface KnowledgeViewState {
 - Export is user-initiated and visibly names content scope, version and timestamp. Keep text sanitized/escaped; never embed secrets. If CSV export is later offered, neutralize formula-injection cells.
 - Import preview lists number of valid notes, unsupported versions, conflict count and destination (**this browser only**); choose skip/replace/duplicate for conflicts, with confirmation. Parse/validate schema and lengths before any writes; use transactional staging to avoid partial import.
 - **Deletion:** '이 브라우저의 개인 메모 삭제' is a separate danger action requiring confirmation of destructive scope and no auto recovery. Show relevant warning and export option before deleting.
-- **Simulator reset policy: OPEN A01 / project-owner decision.** Conservative proposed default: '시뮬레이션 다시 시작' resets synthetic run/fixture only, **preserves notes**, and presents a separate explicit notes deletion option. Do **not** ship this rule as decided policy until approved. Never silently delete notes on generic reset.
+- **Simulator reset policy: A01 provisional UX direction recorded in PR #7 comment #6184007944.** '시뮬레이션 다시 시작' resets synthetic scenario/run/fixture only and **preserves IndexedDB personal notes**. Separate '이 브라우저의 개인 메모 삭제' must communicate irreversible scope, offer export, and require confirmation. **Architecture/ADR and exact reset semantics still await owner approval**; do not falsely label them shipped product behavior.
 - If browser storage is not available in privacy mode, L1/L2/L3 still work read-only; show nonblocking note-disabled message.
 
 ## 6. Error, loading, offline, reduced motion and screen reader
@@ -236,7 +236,7 @@ interface KnowledgeViewState {
 ## 8. Outstanding decision register
 
 - **EKL-D01 (A01):** Canonical `conceptId`, formulas, estimator/method assumptions, scientific caveats, content review sign-off.
-- **EKL-D02 (A01/owner):** Whether sim reset ever removes notes and what exact warning text must accompany deletion.
+- **EKL-D02 (A01/owner):** Provisional direction is to **preserve** notes on ordinary simulation reset, delete only via separate explicit confirmation/export opportunity; exact implementation/storage policy awaits ADR sign-off.
 - **EKL-D03 (A02):** Selected operating mode and persistence adapter, import schema/validation and error handling contract.
 - **EKL-D04 (A03/A04):** Focus transition acceptance on target browsers, reader order and preferred card/modal breakpoints after prototype test.
 - **EKL-D05 (A01):** Which parts of 'case notes' and 'personal knowledge notes' are separate, to avoid implied shared audit.
