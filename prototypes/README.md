@@ -159,3 +159,15 @@ The two empty config entries in `ASSET_OVERRIDES` intentionally render green sta
 7. A01 confirms all domain terminology and placeholder policy; A02 assures future sample source and persistence boundaries.
 
 **Status evidence:** source-level corrections are committed to PR #11. **Browser UI tests, assisted technology tests, actual image load measurements and statistical rule validation have not been run or claimed as PASS.** A04 owns independent execution/results and A01/project owner authorizes merge.
+
+## 8. Dependency-free contract regression (A03)
+
+A minimal source/logic regression suite is now included: [prototype-contract.test.mjs](prototype-contract.test.mjs). Run from the repository root with **Node.js 20+**:
+
+```sh
+node --test prototypes/prototype-contract.test.mjs
+```
+
+The four groups validate: (a) CH-A missing fixture does not become CH-B evidence, (b) all T0–T7 values including two nulls appear in the table and break the SVG into two segments, (c) concept-specific L3 body/formula/cautions/source swap correctly, and (d) white/emerald asset slots remain independent and replaceable.
+
+**A03 verification recorded 2026-10-15:** JavaScript source parsed, then these same four test bodies were executed using an isolated JavaScript function environment and mocked DOM; **4/4 passed**. This confirms deterministic prototype *function logic only*. The `node --test` command itself, real DOM/browser/keyboard/screen reader, screen sizes, actual image load/CLS and system-level QA **remain NOT_RUN** pending A04 independent validation.
