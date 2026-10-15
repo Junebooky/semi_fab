@@ -1,4 +1,4 @@
-# FAB ONE — 시뮬레이션 재현성 및 결정론적 실행 계약서 v0.7
+# FAB ONE — 시뮬레이션 재현성 및 결정론적 실행 계약서 v0.8
 
 - **문서 ID:** ARCH-DOC-003
 - **상태:** PROPOSED (A01 기획자 및 프로젝트 오너 승인 대기)
@@ -26,6 +26,11 @@
     - [F04] 저널 종결 원자성 및 1행 갱신 강제: `UPDATE ... WHERE status='PENDING'`의 `rowcount == 1` 확인 필수, 미달 시 전체 `DELETE` 강제 `ROLLBACK` 및 0행 삭제 불변식 확립 (지연 워커의 FAILED/CANCELLED 후 무단 삭제 반례 원천 차단)
     - [F04] `POST /cancel` 원자적 CAS(`changes == 1`) 및 트랜잭션 2와의 상호 배타성 명문화, 전역 단일 와이프 가드(`GLOBAL_WIPE_IN_PROGRESS`) 및 MVP 와이프 기본 비활성화 선언
     - [F04] 기존 13종 복구 매트릭스(`WIPE-CRASH-01` ~ `13`) 유지 및 WIPE-CRASH-10/11/13에 지연 워커 반례 기대값(삭제 0행, 원상 보존) 보강, 미검증 단정 표현 교정
+  - v0.8 (2026-10-15): A01 공식 수정 지시(#6186862769) 및 A04 독립 QA(#6186816576) 결과 반영 (F04 리스 시간 포맷 P0 및 Phase 3 종결 CAS 최소 보완)
+    - [F04-P0-1] SQLite 리스 시각 ISO 8601 UTC(`YYYY-MM-DDTHH:MM:SS.sssZ`) 포맷 정규화(`strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+30 seconds')`) 및 동일 `:now` 문자열 사전순 비교(`>=` 활성, `<` 만료) 일원화, 시간 형식 반례 검증 표 추가
+    - [F04-S1] Phase 3 FAILED 오류 핸들러 단조 종결 CAS(`status = 'PENDING' AND worker_id = :my_worker_id` 및 `rowcount == 1`) 명시, 기 확정된 CANCELLED/COMMITTED 종결 상태 불변성 보장 및 Pre-Delete 거부 예외 우회(Bypass) 격리
+    - [F04] 실제 역순 DELETE 실행 전 4대 조건(operationId, status='PENDING', worker_id, 유효 리스) 원자적 선행 검증 가드레일(Pre-Delete Guardrail) 및 종결 1행 강제 롤백 불변식 유지
+    - [F04] 13종 장애 복구 매트릭스에 리스 시간 정합성 및 Phase 3 CAS 불변성 기대 결과 반영, 두 F04 문서 간 100% 동기화
 - **작성자:** A02 (수석 소프트웨어 개발 에이전트)
 - **관련 Issue / PR:** Issue [#1](https://github.com/Junebooky/semi_fab/issues/1), Issue [#8](https://github.com/Junebooky/semi_fab/issues/8), Issue [#12](https://github.com/Junebooky/semi_fab/issues/12), Draft PR [#2](https://github.com/Junebooky/semi_fab/pull/2), QA PR [#3](https://github.com/Junebooky/semi_fab/pull/3), Design PR [#7](https://github.com/Junebooky/semi_fab/pull/7), PR [#10](https://github.com/Junebooky/semi_fab/pull/10)
 
@@ -347,19 +352,33 @@ def quantize_value(val: float | str | None, precision: int) -> str:
          wipe_option TEXT NOT NULL,            -- 'OPTION_1' | 'OPTION_2' | 'UNKNOWN'
          status TEXT NOT NULL,                 -- 'PENDING', 'COMMITTED', 'FAILED', 'CANCELLED'
          worker_id TEXT,                       -- 처리 워커 인스턴스 식별자
-         lease_expires_at_utc TEXT NOT NULL,   -- 워커 실행 리스 만료 시각 (started_at + 30s)
+         lease_expires_at_utc TEXT NOT NULL,   -- 워커 실행 리스 만료 시각 (엄격한 ISO 8601 UTC: YYYY-MM-DDTHH:MM:SS.sssZ)
          heartbeat_at_utc TEXT,                -- 워커 하트비트 시각
          started_at_utc TEXT NOT NULL,
          committed_at_utc TEXT,
+         updated_at_utc TEXT,
          error_message TEXT
      );
      ```
 
+     - **단일 UTC 리스 시각 형식·사전순 비교 규약 ([F04-P0-1]):**
+       - 모든 시각 컬럼(`started_at_utc`, `lease_expires_at_utc`, `committed_at_utc`, `updated_at_utc`, `heartbeat_at_utc`) 및 쿼리 바인딩 파라미터(`:now`)는 `domain-data-contract-v0.1.md` §4.2에 정의된 **엄격한 ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SS.sssZ`)** 형식(단일 시계 소스 UTC, 밀리초 3자리, `T` 구분자, 후행 `Z`)으로 통일한다.
+       - SQLite 함수 사용 시 `strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+30 seconds')`의 공백 구분 형식(`YYYY-MM-DD HH:MM:SS`)을 절대 금지하고, 반드시 `strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+30 seconds')`를 사용하여 생성한다. (또는 애플리케이션 계층에서 시스템 UTC 시계 기반으로 포맷팅된 문자열 바인딩).
+       - **사전식 문자열 비교(Lexicographical Comparison) 불변식:**
+         ISO 8601 UTC 문자열은 사전순 비교가 실제 시간 순서와 1:1로 일치하므로, `lease_expires_at_utc >= :now` (활성 상태)와 `lease_expires_at_utc < :now` (만료/stale 상태)가 전체 시간 축에 대해 빈틈(Gap)이나 중복(Overlap)이 없는 완벽한 상호 배타적 분할(Mutually Exclusive Partition)을 이룬다.
+       - **시간 형식 불일치 반례 및 교정 기대값 (Specification Counterexample Benchmark):**
+         | 시각 저장 형식 | :now 바인딩 (UTC) | 비교식 | 결과 | 동작 영향 및 시스템 평가 |
+         |---|---|---|:---:|---|
+         | `2026-10-15 16:17:30` (기존 공백 포맷) | `2026-10-15T16:17:10.000Z` (20초 잔여) | `lease >= :now` | `0` (False) | 20초 잔여한 유효 리스를 만료로 오판하여 활성 가드 누락 $\to$ 타 작업 동시 PENDING 허용 결함 (`' '` < `'T'`) |
+         | `2026-10-15 16:17:30` (기존 공백 포맷) | `2026-10-15T16:17:10.000Z` (20초 잔여) | `lease < :now` | `1` (True) | 유효한 활성 리스를 stale 만료로 오판하여 무단 FAILED 종결 시도 |
+         | **`2026-10-15T16:17:30.000Z` (교정 포맷)** | `2026-10-15T16:17:10.000Z` (20초 잔여) | `lease >= :now` | **`1` (True)** | **정상 활성 리스 판정 $\to$ 전역 가드 정상 작동(HTTP 409 차단), 정당한 워커 Phase 2 진행 허용** |
+         | **`2026-10-15T16:17:30.000Z` (교정 포맷)** | `2026-10-15T16:17:10.000Z` (20초 잔여) | `lease < :now` | **`0` (False)** | **stale 복구 대상에서 정확히 제외 $\to$ 실행 중인 작업 보호** |
+         | **`2026-10-15T16:17:30.000Z` (교정 포맷)** | `2026-10-15T16:17:30.000Z` (동률 경계) | `lease >= :now` | **`1` (True)** | **동률 경계 시 유효(Active) 인정** |
+         | **`2026-10-15T16:17:30.000Z` (교정 포맷)** | `2026-10-15T16:17:30.001Z` (1ms 경과) | `lease < :now` | **`1` (True)** | **만료 즉시 stale 판정 $\to$ 안전한 복구 대상 식별** |
+
      - **MVP 운영 환경 한계 및 파괴적 공장 초기화 기본 비활성화 선언:**
        - FAB ONE MVP (Mode B)는 **로컬 단일 사용자(Single-User Local Desktop)** 환경으로 한정된다.
        - 파괴적 공장 초기화(Factory Wipe) 기능은 데이터 안전을 위해 **기본 비활성화(Disabled by default)** 상태로 봉인되며, 프로젝트 오너의 명시적 승인 전까지는 UI 및 실행 API 엔드포인트가 비활성화 상태를 유지한다.
-
-     - **F04-P0 단일 UTC 리스 TEXT 계약:** `started_at_utc`, `lease_expires_at_utc`, `heartbeat_at_utc`, `committed_at_utc` 및 모든 비교 파라미터 `:now`는 **`YYYY-MM-DDTHH:MM:SS.sssZ`(UTC 고정 3자리 밀리초)**로 생성·저장한다. `:now`는 각 트랜잭션의 판정 시점마다 단일 SQLite UTC 시계 `strftime('%Y-%m-%dT%H:%M:%fZ','now')`로 새로 생성·바인딩한다(Phase 1 시각을 Phase 2/3에 재사용하지 않음). Phase 1 리스 만료는 같은 `:now`에 `+30 seconds`를 더해 **동일 형식**으로 기록한다. `datetime()` 공백형, 타임존 오프셋, 초 정밀도 시각 등 혼합 포맷 행은 비교 전에 정규화 검증되지 않으면 실행 fail-closed; TEXT 사전식 비교에 혼합 금지. `lease >= :now`이면 아직 유효(동률 포함), `lease < :now`이면 만료로 간주한다. 반례: `'2026-10-15 16:17:30' >= '2026-10-15T16:17:10.000Z'`는 `0`이나, 정규화한 `'2026-10-15T16:17:30.000Z' >= '2026-10-15T16:17:10.000Z'`는 `1`, 이 경우 `<`는 `0`이다. 이 동일 경계를 전역 가드/stale CAS/pre-delete/COMMITTED CAS/취소 경합 모두에 적용한다.
 
      - **전역 단일 활성 와이프 가드 (Global Active Wipe Guard):**
        - 서로 다른 `operationId`를 가진 파괴 요청이 동시에 유입되어 경합하는 것을 차단하기 위해, 서버는 트랜잭션 1(`BEGIN IMMEDIATE`)에서 현재 유효한 리스를 가진 `PENDING` 작업이 존재하는지 전역 검사한다:
@@ -389,7 +408,8 @@ def quantize_value(val: float | str | None, precision: int) -> str:
            BEGIN IMMEDIATE;
            UPDATE system_operation_journal
            SET status = 'FAILED',
-               error_message = 'WORKER_CRASH_LEASE_EXPIRED: Worker lease expired without completion'
+               error_message = 'WORKER_CRASH_LEASE_EXPIRED: Worker lease expired without completion',
+               updated_at_utc = :now
            WHERE operation_id = :operation_id
              AND status = 'PENDING'
              AND lease_expires_at_utc < :now;
@@ -401,7 +421,7 @@ def quantize_value(val: float | str | None, precision: int) -> str:
        1. **트랜잭션 1 (작업 예약 및 리스 할당 원자적 커밋):**
           ```sql
           BEGIN IMMEDIATE;
-          -- 전역 단일 작업 검사
+          -- 전역 단일 작업 검사 (엄격한 ISO 8601 UTC 사전순 비교)
           SELECT operation_id FROM system_operation_journal
           WHERE status = 'PENDING' AND lease_expires_at_utc >= :now;
           -- (활성 PENDING 존재 시 ROLLBACK 및 409 GLOBAL_WIPE_IN_PROGRESS 반환)
@@ -432,6 +452,8 @@ def quantize_value(val: float | str | None, precision: int) -> str:
           -- 판정 실패 시 (예: 이미 FAILED/CANCELLED 전이됨, 리스 만료됨, 워커 소유권 상실):
           -- -> 즉시 ROLLBACK 실행! (*** 단 1건의 DELETE도 실행하지 않고 롤백하여 데이터 완전 원상 보존 (Zero Rows Deleted) ***)
           -- -> StaleWorkerExecutionError 발생 및 Phase 2 즉각 종료.
+           -- ※ 중요: Pre-Delete Guardrail 거부로 인한 예외는 기 확정된 최종 상태(CANCELLED/FAILED)를 보존해야 하므로,
+           --         아래 Phase 3 에러 핸들러(FAILED 갱신)를 일체 호출하지 않고 우회(Bypass)하여 즉시 종료한다.
 
           -- [실행 단계 2-2: 역순 의존성 데이터 삭제 (가드레일 통과 시에만 실행)]
           DELETE FROM case_action_log;
@@ -459,19 +481,39 @@ def quantize_value(val: float | str | None, precision: int) -> str:
           --     COMMIT;   -- 정확히 1행 갱신 성공이 확인된 경우에만 최종 커밋
           -- END IF;
           ```
-       3. **예외/오류 시 처리 (트랜잭션 3):**
-          트랜잭션 2의 **실제 실행 오류** 발생 시 먼저 `ROLLBACK`하고, 별도 `BEGIN IMMEDIATE`에서 **현재 워커가 소유한 `PENDING`만** `FAILED`로 전이한다. Pre-Delete 거부, 취소 확정, 리스 상실 및 확정 종결 상태는 Phase 3의 강제 FAILED 대상이 아니다. `COMMITTED/CANCELLED/FAILED` 종결은 단조·불변이다.
+       3. **예외/오류 시 처리 (트랜잭션 3: Phase 3 저널 FAILED 단조 종결 및 CAS 보호, [F04-S1]):**
+          트랜잭션 2 본체(데이터 역순 DELETE 도중 DB I/O 장애 등)에서 예기치 못한 오류 발생 시 해당 트랜잭션은 즉시 `ROLLBACK`되며, 에러 핸들러는 별도 트랜잭션에서 조건부 CAS 구문으로 저널을 종결 처리한다:
           ```sql
+          -- [Phase 3: 트랜잭션 2 본체 실행 오류 시 저널 FAILED 단조 종결 트랜잭션]
+          -- ※ 필수 격리 규칙:
+          --    1. Pre-Delete Guardrail(2-1)에서 이미 'CANCELLED' 또는 'FAILED' 또는 리스 만료가 감지되어
+          --       ROLLBACK된 경우, 이미 확정된 최종 상태를 유지해야 하므로 Phase 3를 절대 호출하지 않는다 (Bypass).
+          --    2. Phase 3는 트랜잭션 2의 데이터 DELETE 도중 예기치 못한 DB 오류(I/O, 디스크 풀 등)로 ROLLBACK된 경우에만 진입한다.
+
           BEGIN IMMEDIATE;
           UPDATE system_operation_journal
-          SET status = 'FAILED', error_message = :err
-          WHERE operation_id = :operation_id
-            AND status = 'PENDING'
-            AND worker_id = :my_worker_id;
-          -- cursor.rowcount == 1: COMMIT, FAILED 확정
-          -- cursor.rowcount == 0: ROLLBACK 후 현재 상태 재조회; 종결 상태 절대 덮어쓰기 금지
+             SET status = 'FAILED',
+                 error_message = :err_message,
+                 updated_at_utc = :now
+           WHERE operation_id = :operation_id
+             AND worker_id = :my_worker_id
+             AND status = 'PENDING';
+
+          -- [애플리케이션 계층 영향 행 수 검증 (changes == 1 필수)]
+          -- IF (cursor.rowcount == 1 OR sqlite3_changes() == 1) THEN
+          --     COMMIT;   -- PENDING -> FAILED 단조 종결 성공
+          -- ELSE
+          --     ROLLBACK; -- 이미 CANCELLED 또는 COMMITTED로 선행 종결되었거나 리스를 상실함. 기존 종결 상태 원천 보존!
+          --     -- SELECT status FROM system_operation_journal WHERE operation_id = :operation_id;
+          --     -- 조회된 기존 최종 상태(COMMITTED / CANCELLED / FAILED)를 불변 유지하고 임의 변조하지 않는다.
+          -- END IF;
           ```
-          별도 오류 처리 COMMIT 자체가 실패/불명확하면 서버는 `UNKNOWN`으로 처리하고 재조회·복구한다. 만료 `PENDING`은 오직 기존 stale lease CAS로 회수한다.
+          - **종결 상태 단조성(Terminal State Monotonicity) 불변식:**
+            `COMMITTED`, `CANCELLED`, `FAILED` 3대 상태는 비가역적 최종 상태(Terminal States)이다.
+            `WHERE status = 'PENDING' AND worker_id = :my_worker_id` CAS 제약을 통해:
+            - 사용자가 취소하여 이미 `CANCELLED`된 레코드는 `rowcount == 0`이 되어 `FAILED`로 오염되지 않고 `ROLLBACK;`으로 안전 방어된다.
+            - Phase 2가 정상 커밋되어 이미 `COMMITTED`된 레코드는 `FAILED`로 번복되지 않는다.
+            - 리스 만료로 백그라운드 복구에 의해 이미 `FAILED` 종결된 레코드 또한 지연 워커에 의해 임의 수정되지 않는다.
 
   3. **3단계 (서버 커밋 확인 후 클라이언트 상태 승격 및 `UNKNOWN` 취소 안전성):**
      - **핵심 안전 불변식 (Crucial Safety Invariant):**
@@ -546,10 +588,10 @@ def quantize_value(val: float | str | None, precision: int) -> str:
   | **WIPE-CRASH-07** (Vector e) | IndexedDB 삭제 도중 브라우저 탭 강제 종료 | `status: COMMITTED` | `status: SERVER_COMMITTED` (잔여 메모 존재 가능) | 재기동 시 `SERVER_COMMITTED` 감지 $\to$ 서버 재호출 없이 `indexedDB.deleteDatabase` 재호출(멱등성) $\to$ 성공 시 `localStorage.removeItem`. | 자가 복구 완료, 클린 초기 상태 환원 |
   | **WIPE-CRASH-08** (Vector f) | **IndexedDB 삭제 미동의 케이스** (`purgeIndexedDbRequested: false`) | `status: COMMITTED` | `status: INTENT_RECORDED` $\to$ `SERVER_COMMITTED` | 서버 `COMMITTED` 확인 후 `SERVER_COMMITTED` 승격 즉시 **IndexedDB 삭제 단계를 완전히 건너뛰고(Bypass)** $\to$ `localStorage.removeItem`. | 서버 이력 초기화 완료, **IndexedDB 메모 안전 보존** |
   | **WIPE-CRASH-09** (Vector g) | 네트워크 영구 단절 / 상태 조회 불능 상태 지속 | 상태 확인 불가 | `status: INTENT_RECORDED` 유지 | 상태 조회가 실패(네트워크 에러)하면 클라이언트는 인텐트를 영구 보존하고 IndexedDB 삭제를 일체 시도하지 않으며 오프라인 경고 모달 표시. | 네트워크 단절 상황에서 데이터 임의 삭제 방지 |
-  | **WIPE-CRASH-10** (Vector h) | **Stale PENDING 복구 및 지연 워커 Phase 2 진입 반례 1** (트랜잭션 1 `PENDING` 커밋 후 워커 지연 $\to$ 리스 만료로 저널이 `FAILED` 전이된 후 지연 워커가 뒤늦게 Phase 2 실행 시도) | `status: FAILED (WORKER_CRASH_LEASE_EXPIRED)` | `status: INTENT_RECORDED` | 지연 워커가 Phase 2 진입 시 **Pre-Delete Guardrail**(`SELECT status, worker_id, lease_expires_at_utc`)을 먼저 실행 $\to$ `status != 'PENDING'` 및 리스 만료 감지 $\to$ **모든 DELETE 실행 없이 즉시 `ROLLBACK;` (0건 삭제)**. 설령 실행하더라도 종결 UPDATE `rowcount == 0` 감지 시 강제 `ROLLBACK;`. 클라이언트는 `GET /status`로 `FAILED` 확인 후 IndexedDB 메모 보존 및 신규 `operationId` 안내. | **서버 데이터 삭제 0건 (Zero Rows Deleted, 기존 데이터 완전 보존)**, 무한 409 락 해소, 지연 워커 무단 삭제 원천 차단 |
-  | **WIPE-CRASH-11** (Vector i) | **UNKNOWN 취소 경합 - 서버 선행 커밋 케이스** (취소 요청과 지연된 서버 트랜잭션 2의 커밋 경합) | 지연된 원본 트랜잭션 2 선행 완료 (`status: COMMITTED`) | `UNKNOWN` 판정 후 `POST /cancel` 호출 | 서버는 취소 CAS 구문(`UPDATE ... WHERE status='PENDING'`)에서 `rowcount == 0` 및 현재 상태 `COMMITTED` 확인 $\to$ `CANNOT_CANCEL_ALREADY_COMMITTED` (409) 응답 $\to$ 클라이언트는 취소 실패 확인 즉시 로컬 인텐트를 `SERVER_COMMITTED`로 승격 $\to$ `purgeIndexedDbRequested` 설정에 따른 후속 동기화 완결. | 경합 발생 시에도 사용자 취소 의도 및 IndexedDB 메모 보존 규칙 준수, 비정상 부분 커밋 배제 |
+  | **WIPE-CRASH-10** (Vector h) | **Stale PENDING 복구 및 지연 워커 Phase 2 진입 반례 1** (트랜잭션 1 `PENDING` 커밋 후 워커 지연 $\to$ ISO 8601 UTC 리스 만료로 저널이 `FAILED` 전이된 후 지연 워커가 뒤늦게 Phase 2 실행 시도) | `status: FAILED (WORKER_CRASH_LEASE_EXPIRED)` | `status: INTENT_RECORDED` | `lease_expires_at_utc < :now` (ISO 8601 UTC) 정합 비교로 stale 워커 식별 $\to$ `FAILED` 전이. 지연 워커가 Phase 2 진입 시 Pre-Delete Guardrail(`SELECT status, worker_id, lease_expires_at_utc`)을 먼저 실행 $\to$ `status != 'PENDING'` 및 리스 만료 감지 $\to$ **모든 DELETE 실행 없이 즉시 `ROLLBACK;` (0건 삭제)**. Pre-Delete 거부 예외는 Phase 3 저널 수정을 호출하지 않으므로 기존 `FAILED` 종결 상태 불변 보존. 클라이언트는 `GET /status`로 `FAILED` 확인 후 IndexedDB 메모 보존 및 신규 `operationId` 안내. | **서버 데이터 삭제 0건 (Zero Rows Deleted, 기존 데이터 완전 보존)**, 무한 409 락 해소, 지연 워커 무단 삭제 원천 차단 및 FAILED 종결 상태 불변성 보장 |
+  | **WIPE-CRASH-11** (Vector i) | **UNKNOWN 취소 경합 - 서버 선행 커밋 케이스** (취소 요청과 지연된 서버 트랜잭션 2의 커밋 경합) | 지연된 원본 트랜잭션 2 선행 완료 (`status: COMMITTED`) | `UNKNOWN` 판정 후 `POST /cancel` 호출 | 서버는 취소 CAS 구문(`UPDATE ... WHERE status='PENDING'`)에서 `rowcount == 0` 및 현재 상태 `COMMITTED` 확인 $\to$ `CANNOT_CANCEL_ALREADY_COMMITTED` (409) 응답 $\to$ 클라이언트는 취소 실패 확인 즉시 로컬 인텐트를 `SERVER_COMMITTED`로 승격 $\to$ `purgeIndexedDbRequested` 설정에 따른 후속 동기화 완결. Phase 3 CAS 역시 `status='PENDING'` 조건으로 인해 `COMMITTED` 상태를 `FAILED`로 오염시키지 못하고 롤백. | 경합 발생 시에도 사용자 취소 의도 및 IndexedDB 메모 보존 규칙 준수, 비정상 부분 커밋 배제 및 COMMITTED 종결 상태 단조성 보장 |
   | **WIPE-CRASH-12** (Vector j) | **동일 operationId 범위 불일치 재사용** (동일 ID에 서로 다른 `wipeOption` 유입) | `system_operation_journal`에 기존 옵션(`OPTION_1`) 등록됨 | 동일 `operationId`에 상이한 옵션(`OPTION_2`) 전송 | 서버는 저널의 `wipe_option`과 유입된 `wipeOption`을 비교 검증 $\to$ 불일치 확인 시 **HTTP 409 Conflict (`OPERATION_SCOPE_MISMATCH`)**로 fail-closed 즉시 거부 $\to$ 기존 트랜잭션 상태 및 DB 데이터 무변경. | 잘못된 식별자 재사용 및 파괴 범위 오적용 원천 차단 |
-  | **WIPE-CRASH-13** (Vector k) | **UNKNOWN 취소 경합 - 정상 취소 성공 및 지연 워커 차단 반례 2** (클라이언트 취소 요청으로 저널 `CANCELLED` 커밋 후, 지연된 워커가 뒤늦게 Phase 2 실행 시도) | `status: CANCELLED` | `POST /cancel` 200 OK 수신 후 `localStorage.removeItem` | 지연 워커가 Phase 2 진입 시 **Pre-Delete Guardrail**을 실행 $\to$ `status == 'CANCELLED'` 감지 $\to$ **모든 DELETE 실행 없이 즉시 `ROLLBACK;` (0건 삭제)**. 설령 실행하더라도 종결 UPDATE `rowcount == 0` 감지 시 강제 `ROLLBACK;`. 추후 지연 도착한 원본 트랜잭션 1 또한 PK 충돌/톰스톤으로 차단. | **서버 데이터 삭제 0건 (Zero Rows Deleted, 기존 데이터 완전 보존)**, 취소된 작업의 지연 파괴 원천 차단, 클라이언트 인텐트 클린 제거 |
+  | **WIPE-CRASH-13** (Vector k) | **UNKNOWN 취소 경합 - 정상 취소 성공 및 지연 워커 차단 반례 2** (클라이언트 취소 요청으로 저널 `CANCELLED` 커밋 후, 지연된 워커가 뒤늦게 Phase 2 실행 시도) | `status: CANCELLED` | `POST /cancel` 200 OK 수신 후 `localStorage.removeItem` | 지연 워커가 Phase 2 진입 시 Pre-Delete Guardrail을 실행 $\to$ `status == 'CANCELLED'` 감지 $\to$ **모든 DELETE 실행 없이 즉시 `ROLLBACK;` (0건 삭제)**. Pre-Delete 거절 예외는 Phase 3를 우회(Bypass)하며, 설령 진입하더라도 `WHERE status='PENDING'` CAS에 의해 `rowcount == 0` 감지 $\to$ 즉시 `ROLLBACK;`하여 기존 `CANCELLED` 종결 상태가 `FAILED`로 오염되는 것을 원천 차단. 추후 지연 도착한 원본 트랜잭션 1 또한 PK 충돌/톰스톤으로 차단. | **서버 데이터 삭제 0건 (Zero Rows Deleted, 기존 데이터 완전 보존)**, 취소된 작업의 지연 파괴 원천 차단, CANCELLED 종결 상태 불변성 보장, 클라이언트 인텐트 클린 제거 |
 
 ---
 
