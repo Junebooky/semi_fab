@@ -447,6 +447,18 @@ function CommandCenterContent() {
           </div>
         </div>
 
+        {/* The selected investigation comes before KPI statistics: user-facing priority. */}
+        {selectedAlert && (
+          <section className="ux-spotlight" aria-label="현재 살펴볼 알람">
+            <div>
+              <p className="ux-spotlight__eyebrow">{selectedAlert.severity === 'CRITICAL' ? '위험 신호 · 먼저 확인해 보세요' : selectedAlert.severity === 'WARNING' ? '주의할 신호가 있어요' : '참고할 신호가 있어요'}</p>
+              <h2 className="ux-spotlight__title">{selectedAlert.equipment_id} · {selectedAlert.chamber_id}에서 신호가 감지됐어요</h2>
+              <p className="ux-spotlight__description">알람 {selectedAlert.alert_id}의 Run과 근거를 먼저 확인해요. 경고는 물리적 불량이나 원인이 확인됐다는 뜻이 아니에요.</p>
+            </div>
+            <a className="ux-btn ux-btn--primary" href="#cc-selected-alarm-detail">선택한 알람 자세히 보기 →</a>
+          </section>
+        )}
+
         {/* Global Statistics Bar (KPI Badges) */}
         <div className="cc-kpi-bar">
           <div className="cc-kpi-item">
@@ -725,7 +737,7 @@ function CommandCenterContent() {
 
           {/* Right Column: Selected Alarm Engineering Detail Card */}
           {selectedAlert ? (
-            <section className="cc-detail-card" aria-label="선택 알람 상세">
+            <section id="cc-selected-alarm-detail" className="cc-detail-card" aria-label="선택 알람 상세">
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #EDF1F5', paddingBottom: '14px', marginBottom: '18px' }}>
                 <div>
