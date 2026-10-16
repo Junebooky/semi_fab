@@ -48,6 +48,10 @@ function EquipmentIntelligenceContent() {
   // Default seed synchronized with Home and Command Center (20261015 -> RUN-DEMO-015)
   const seedQuery = searchParams.get('seed');
   const queryTourStep = searchParams.get('tourStep');
+  const queryMode = searchParams.get('mode');
+  const queryRunId = searchParams.get('run_id');
+  const isExplicitModeB = queryMode === 'B' || !!queryRunId;
+
   const initialSeed = seedQuery && !isNaN(Number(seedQuery)) && Number.isInteger(Number(seedQuery)) && Number(seedQuery) > 0 && Number(seedQuery) < 1000000000
     ? Number(seedQuery)
     : 20261015;
@@ -95,13 +99,8 @@ function EquipmentIntelligenceContent() {
 
     const activeSeed = forceSeed !== undefined ? forceSeed : seed;
 
-    // Phase 1: Initial Discovery Fetch
-    // ONLY genuine network failure at initial server reach triggers Mode A fallback.
-    let summaryRes: Response;
-    try {
-      summaryRes = await fetch(`${API_BASE}/api/v1/demo/summary`, { cache: 'no-store' });
-    } catch (netErr: any) {
-      if (currentToken !== requestTokenRef.current) return;
+    // Mode A branch: When not explicitly Mode B
+    if (!isExplicitModeB) {
       const fixture = generateModeAEquipmentSamples(activeSeed);
       setMode('A');
       setActiveRunId(fixture.summary.run_id);
@@ -109,9 +108,24 @@ function EquipmentIntelligenceContent() {
       setSamples(fixture.samples);
       setAlerts(fixture.alerts);
       setNoticeMessage(
-        `Mode A (오프라인 합성 시뮬레이션): API 서버 미연결 상태로 난수 시드(Seed: ${activeSeed}) 기반 결정론적 합성 데이터를 표출합니다.`
+        `Mode A (오프라인 합성 시뮬레이션): 난수 시드(Seed: ${activeSeed}) 기반 결정론적 합성 데이터를 표출합니다.`
       );
       setErrorMessage(null);
+      setLoading(false);
+      return;
+    }
+
+    // Phase 1: Initial Discovery Fetch
+    // ONLY genuine network failure at initial server reach triggers Mode A fallback.
+    let summaryRes: Response;
+    try {
+      summaryRes = await fetch(`${API_BASE}/api/v1/demo/summary`, { cache: 'no-store' });
+    } catch (netErr: any) {
+      if (currentToken !== requestTokenRef.current) return;
+      setMode('B');
+      setSamples([]);
+      setAlerts([]);
+      setErrorMessage('Mode B API 서버 연결 실패: FastAPI 서버(http://localhost:8000)와 통신할 수 없습니다 (Fail-closed).');
       setLoading(false);
       return;
     }

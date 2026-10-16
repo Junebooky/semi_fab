@@ -60,6 +60,23 @@ class SummaryResponse(BaseModel):
     mode: str = "B"
     data_origin: str = "synthetic"
 
+class CasebookRunItem(BaseModel):
+    run_id: str
+    session_id: str
+    seed: int
+    is_active: bool
+    equipment_id: str
+    chamber_id: str
+    recipe_id: str
+    lot_id: str
+    start_time_utc: str
+    run_status: str
+    alert_id: Optional[str] = None
+    alert_severity: Optional[str] = None
+    alert_rule_code: Optional[str] = None
+    data_origin: str = "synthetic"
+
+
 class SensorEvidence(BaseModel):
     sensor_id: str
     sensor_name: str

@@ -4168,6 +4168,191 @@ test('BUILD-12 (e) Engineering Workspace Mode B Loader & Fail-Closed Boundary Co
   assert.ok(wsPageSource.includes('인메모리'), 'Workspace must display in-memory volatile caveat');
 });
 
+// ============================================================================
+// BUILD-13: Connected Run Casebook, Mode B Run Integrity & Truth Contract Suites
+// ============================================================================
+
+test('BUILD-13 (a) Casebook Storage Helper & Schema Contract', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Storage function exports
+  assert.ok(contextSource.includes('export function saveCasebookRecordToStorage'), 'Must export saveCasebookRecordToStorage');
+  assert.ok(contextSource.includes('export function loadSavedCasebookRecords'), 'Must export loadSavedCasebookRecords');
+  assert.ok(contextSource.includes('export function deleteCasebookRecordFromStorage'), 'Must export deleteCasebookRecordFromStorage');
+  assert.ok(contextSource.includes("export const FAB_ONE_CASEBOOK_STORAGE_KEY = 'fab_one_casebook_records_v1'"), 'Must define FAB_ONE_CASEBOOK_STORAGE_KEY');
+
+  // 2. Storage helper simulation
+  let mockStorage = {};
+  const mockLocalStorage = {
+    getItem: (key) => mockStorage[key] || null,
+    setItem: (key, val) => { mockStorage[key] = val; },
+    removeItem: (key) => { delete mockStorage[key]; }
+  };
+
+  const sampleRecord1 = {
+    id: 'CASE-RUN-01-20261016',
+    savedAtUtc: '2026-10-16T08:00:00.000Z',
+    runId: 'RUN-DEMO-015',
+    alertId: 'AL-DEMO-015',
+    equipmentId: 'ETCH-02',
+    chamberId: 'CH-B',
+    recipeId: 'RCP-ETCH-POLY-04',
+    hypothesesCount: 4,
+    actionsCount: 5,
+    hypotheses: [{ id: 'HYPO-01', title: 'RF Matcher', status: 'SUPPORTED_FOR_REVIEW', domain: 'RF 전력', linkedEvidenceIds: ['EVI-02'], engineeringRationale: 'T7 surge' }],
+    actions: [{ id: 'ACTION-01', title: 'Check logs', assigneeRole: '장비 엔지니어', priority: 'HIGH', completed: true, targetSystem: 'EI', detail: 'Check log' }],
+    userNotes: '엔지니어 1차 점검 완료',
+    sourceMode: 'B'
+  };
+
+  const sampleRecord2 = {
+    id: 'CASE-RUN-02-20261016',
+    savedAtUtc: '2026-10-16T08:15:00.000Z',
+    runId: 'RUN-DEMO-016',
+    alertId: 'AL-DEMO-016',
+    equipmentId: 'ETCH-02',
+    chamberId: 'CH-B',
+    recipeId: 'RCP-ETCH-POLY-04',
+    hypothesesCount: 2,
+    actionsCount: 3,
+    hypotheses: [],
+    actions: [],
+    userNotes: '2차 점검',
+    sourceMode: 'B'
+  };
+
+  function saveToStorage(rec, storage) {
+    const raw = storage.getItem('fab_one_casebook_records_v1');
+    let list = raw ? JSON.parse(raw) : [];
+    const existingIndex = list.findIndex(r => r.id === rec.id);
+    if (existingIndex >= 0) {
+      list[existingIndex] = rec;
+    } else {
+      list.unshift(rec);
+    }
+    storage.setItem('fab_one_casebook_records_v1', JSON.stringify(list));
+    return list;
+  }
+
+  function loadFromStorage(storage) {
+    const raw = storage.getItem('fab_one_casebook_records_v1');
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  function deleteFromStorage(id, storage) {
+    const raw = storage.getItem('fab_one_casebook_records_v1');
+    if (!raw) return [];
+    const list = JSON.parse(raw).filter(r => r.id !== id);
+    storage.setItem('fab_one_casebook_records_v1', JSON.stringify(list));
+    return list;
+  }
+
+  saveToStorage(sampleRecord1, mockLocalStorage);
+  assert.equal(loadFromStorage(mockLocalStorage).length, 1);
+  assert.equal(loadFromStorage(mockLocalStorage)[0].id, 'CASE-RUN-01-20261016');
+
+  saveToStorage(sampleRecord2, mockLocalStorage);
+  assert.equal(loadFromStorage(mockLocalStorage).length, 2);
+  assert.equal(loadFromStorage(mockLocalStorage)[0].id, 'CASE-RUN-02-20261016', 'Newest saved item must be at index 0');
+
+  // Deletion test
+  deleteFromStorage('CASE-RUN-01-20261016', mockLocalStorage);
+  assert.equal(loadFromStorage(mockLocalStorage).length, 1);
+  assert.equal(loadFromStorage(mockLocalStorage)[0].id, 'CASE-RUN-02-20261016');
+});
+
+test('BUILD-13 (b) Case Report Truth Contract & Physical Sensors Isolation', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+  const wsContractSource = readFileSync(
+    new URL('../src/components/engineering-workspace/engineering-workspace-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  // 1. KNOWN_PHYSICAL_SENSORS invariant
+  assert.ok(contextSource.includes('KNOWN_PHYSICAL_SENSORS'), 'investigation-context.ts must define KNOWN_PHYSICAL_SENSORS');
+  assert.ok(contextSource.includes("'RELATIVE_SIGNAL'"), 'KNOWN_PHYSICAL_SENSORS must include RELATIVE_SIGNAL');
+  assert.ok(contextSource.includes("'CHAMBER_PRESSURE'"), 'KNOWN_PHYSICAL_SENSORS must include CHAMBER_PRESSURE');
+  assert.ok(contextSource.includes("'RF_POWER'"), 'KNOWN_PHYSICAL_SENSORS must include RF_POWER');
+
+  // 2. Truth Contract in generateCaseReportMarkdown:
+  assert.ok(contextSource.includes('### 실제 공정 센서 계측치 분석표 (Physical Sensor Measurements Only)'), 'Case report must isolate real physical sensors');
+  assert.ok(contextSource.includes('Strictly separates physical sensors from alert/wafer evidence'), 'Must document separation of physical sensors and alert/wafer');
+  assert.ok(contextSource.includes('미제공 (N/A)'), 'Missing sensor metrics must render 미제공 (N/A) and avoid fake numbers');
+
+  // 3. Truth Contract in mapInvestigationDetailToEvidence:
+  assert.ok(!wsContractSource.includes("observedValue: 80.0"), 'mapInvestigationDetailToEvidence must NOT hardcode 80.0');
+  assert.ok(!wsContractSource.includes("observedValue: 168.5"), 'mapInvestigationDetailToEvidence must NOT hardcode 168.5');
+  assert.ok(!wsContractSource.includes("observedValue: 1820"), 'mapInvestigationDetailToEvidence must NOT hardcode 1820');
+});
+
+test('BUILD-13 (c) Mode B Run Lineage Mismatch (409) & Disconnect (503) Fail-Closed Contract', () => {
+  const wsPageSource = readFileSync(
+    new URL('../src/app/engineering-workspace/page.tsx', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Lineage mismatch check (409)
+  assert.ok(wsPageSource.includes('queryRunId && queryRunId.trim() !== currentRunId.trim()'), 'Must check requested run_id against server active run_id');
+  assert.ok(wsPageSource.includes('status: 409'), 'Must return status 409 on lineage mismatch');
+  assert.ok(wsPageSource.includes('공정 Run 불일치 (Run Lineage Mismatch)'), 'Must title mismatch as Run Lineage Mismatch');
+  assert.ok(wsPageSource.includes('id="ws-run-mismatch-banner"'), 'Must define #ws-run-mismatch-banner');
+
+  // 2. Disconnect fail-closed (503) without Mode A fallback
+  assert.ok(wsPageSource.includes('status: 503'), 'Must return status 503 on Mode B fetch failure');
+  assert.ok(wsPageSource.includes('FastAPI 서버(http://localhost:8000)와 통신할 수 없습니다'), 'Must provide clear 503 error message');
+
+  // 3. No initial flash of Mode A
+  assert.ok(wsPageSource.includes("const isExplicitModeB = queryMode === 'B' || !!queryRunId;"), 'Must detect initial Mode B before state effects');
+  assert.ok(wsPageSource.includes("const [isLoading, setIsLoading] = useState<boolean>(isExplicitModeB);"), 'Must initialize loading state to true for Mode B to prevent Mode A synthetic flash');
+  assert.ok(wsPageSource.includes("isExplicitModeB ? [] : generateDefaultEvidenceItems(seed)"), 'Evidence must not prefill Mode A defaults when loading Mode B');
+});
+
+test('BUILD-13 (d) Investigation Casebook UI & Selectors Contract', () => {
+  const wsPageSource = readFileSync(
+    new URL('../src/app/engineering-workspace/page.tsx', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Tab Navigation
+  assert.ok(wsPageSource.includes('id="ws-tab-active-investigation"'), 'Workspace must define #ws-tab-active-investigation');
+  assert.ok(wsPageSource.includes('id="ws-tab-casebook"'), 'Workspace must define #ws-tab-casebook');
+
+  // 2. Save Button
+  assert.ok(wsPageSource.includes('id="ws-btn-save-casebook"'), 'Workspace must define #ws-btn-save-casebook');
+
+  // 3. Casebook Panel & Lists
+  assert.ok(wsPageSource.includes('id="ws-casebook-panel"'), 'Workspace must define #ws-casebook-panel');
+  assert.ok(wsPageSource.includes('id="ws-casebook-records-list"'), 'Workspace must define #ws-casebook-records-list');
+  assert.ok(wsPageSource.includes('id="ws-casebook-server-runs-list"'), 'Workspace must define #ws-casebook-server-runs-list');
+
+  // 4. Mode B dynamic alert switch
+  assert.ok(wsPageSource.includes('id="ws-btn-switch-active-alert"'), 'Workspace must define #ws-btn-switch-active-alert');
+  assert.ok(wsPageSource.includes('serverActiveAlertId'), 'Alert switch button must bind to serverActiveAlertId');
+});
+
+test('BUILD-13 (e) Historical Process Run API Endpoint Contract (GET /api/v1/demo/runs)', () => {
+  const mainPySource = readFileSync(
+    new URL('../../../services/api/main.py', import.meta.url),
+    'utf8'
+  );
+  const modelsPySource = readFileSync(
+    new URL('../../../services/api/models.py', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(mainPySource.includes('@app.get("/api/v1/demo/runs"'), 'FastAPI main.py must define GET /api/v1/demo/runs');
+  assert.ok(modelsPySource.includes('class CasebookRunItem(BaseModel):'), 'models.py must define CasebookRunItem schema');
+  assert.ok(mainPySource.includes('is_active=bool(row["is_active"])'), 'Must mark is_active correctly');
+  assert.ok(mainPySource.includes('FROM process_run r'), 'Query must select from process_run');
+});
+
+
 
 
 

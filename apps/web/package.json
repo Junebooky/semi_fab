@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start -p 3000",
     "test": "node --test tests/*.test.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:mode-b": "playwright test mode-b-connected-investigation"
   },
   "keywords": [],
   "author": "",

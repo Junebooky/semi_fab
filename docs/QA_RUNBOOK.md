@@ -40,11 +40,11 @@ python3 -m uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --reload
 
 ### 2.4 테스트 실행 명령어
 ```bash
-# 1. 프론트엔드 계약 및 컴포넌트 단위/통합 테스트 (Node test runner, 76 tests)
+# 1. 프론트엔드 계약 및 컴포넌트 단위/통합 테스트 (Node test runner, 81 tests)
 cd apps/web
 npm test
 
-# 2. 백엔드 API 단위 테스트 (Python unittest, 14 tests)
+# 2. 백엔드 API 단위 테스트 (Python unittest, 15 tests)
 cd ../..
 python3 -m unittest services/api/tests/test_api.py
 
@@ -52,9 +52,12 @@ python3 -m unittest services/api/tests/test_api.py
 cd apps/web
 npm run build
 
-# 4. Playwright 실제 브라우저 E2E 스모크 테스트 (BUILD-11 + BUILD-12, 9 tests)
+# 4. Playwright 실제 브라우저 E2E 스모크 테스트 (전체 E2E)
 cd apps/web
 npm run test:e2e
+
+# 5. Playwright Mode B 통합 조사 및 Casebook 전용 E2E 테스트
+npm run test:e2e:mode-b
 ```
 
 ### 2.5 Playwright 브라우저 E2E 실행 환경 안내
@@ -224,5 +227,48 @@ BUILD-12는 화면 간 단절 없는 조사 흐름(Connected Investigation), Fas
 - **Case Report Export:** 워크스페이스에서 가설 상태 변경, 체크리스트 선택, 메모 작성 후 리포트 다운로드 및 파일 내용(도메인 불변식, 런 ID, 알람 ID 등) 검증.
 - **Standby Alert Lock 반례:** `AL-STANDBY-001` 인입 시 리포트 다운로드 버튼 및 조사 보드 잠금 확인.
 - **Cross-Screen Deep Links:** 커맨드 센터, 설비 인텔리전스, 웨이퍼 추적성 각 화면의 워크스페이스 바로가기 버튼 클릭 후 워크스페이스 정상 진입 및 컨텍스트 연계 검증.
+
+---
+
+## 11. BUILD-13: Connected Run Casebook, Mode B Run 무결성, Case Report Truth Contract 및 GitHub Actions CI
+
+BUILD-13에서는 엔지니어링 워크스페이스의 실제 Mode B 무결성 보장, 조사 사례 보관소(Casebook), Case Report 물리 센서 진실 계약(Truth Contract), 그리고 FastAPI/Next.js 통합 Playwright E2E 및 GitHub Actions CI 워크플로우를 완성했습니다.
+
+### 11.1 Workstream A: Mode B Run 무결성 (Run Lineage Integrity)
+1. **URL `run_id` vs 서버 `active_run_id` 일치성 검증 (HTTP 409 Fail-Closed):**
+   - 워크스페이스 진입 시 URL에 명시된 `run_id`와 `/api/v1/demo/summary`의 `active_run_id`를 상호 검증합니다.
+   - 불일치 시 허위 데이터를 표시하지 않고 HTTP 409 Run Lineage Mismatch 오류 배너(`#ws-run-mismatch-banner` / `#ws-mode-b-error-banner`)를 표출하고 3단 보드를 데이터 격리 잠금(Board Lock) 처리합니다.
+2. **명시적 Mode B 연결 실패 시 Mode A 사일런트 폴백 제거 (HTTP 503 Fail-Closed):**
+   - 사용자가 `mode=B` 또는 `run_id`를 명시했을 때 백엔드 통신 실패 시 Mode A 합성 데이터로 몰래 대체(Silent Fallback)하지 않고, 명시적 HTTP 503 오류 배너를 띄우며 조회를 차단합니다.
+3. **Mode B 초기 합성 데이터 플래시 방지:**
+   - URL 쿼리에 `mode=B`가 지정된 경우 초기 상태부터 `isExplicitModeB` 플래그를 평가하여 합성 기본값이 순간적으로 노출되는 플래시 현상을 원천 차단합니다.
+4. **실시간 활성 알람 복구 버튼 동적 바인딩:**
+   - 대기 상태(Standby) 또는 비정상 알람 유입 시 복구 버튼(`#ws-btn-switch-active-alert`, `#ws-btn-switch-active-alert-lock`)이 하드코딩된 `AL-DEMO-015` 대신 서버의 실제 활성 알람 ID(`serverActiveAlertId`)를 동적으로 타겟팅합니다.
+
+### 11.2 Workstream B: Connected Run Casebook & Case Report Truth Contract
+1. **사건 기록 보관소 탭 및 UI 구성:**
+   - 워크스페이스 상단에 `#ws-tab-active-investigation`(실시간 분석) 및 `#ws-tab-casebook`(사례 보관소 📚) 탭 분리.
+   - `#ws-btn-save-casebook` 클릭 시 엔지니어의 판단 결과(가설 상태, 체크리스트, 사용자 메모)를 브라우저 `localStorage` 키 `fab_one_casebook_records_v1`에 독립 보관합니다 (도메인 원천 이벤트 로그 오염 방지).
+   - `#ws-casebook-panel` 내 `#ws-casebook-records-list`를 통해 보관된 사례 조회, 워크스페이스로 재로드(`casebook-btn-load-*`), 삭제(`casebook-btn-delete-*`), JSON 백업 내보내기/불러오기 지원.
+2. **서버 공정 Run 이력 연동 (`GET /api/v1/demo/runs`):**
+   - SQLite DB의 `process_run` 테이블에서 단일 공정 런 레코드를 중복(카르테시안 곱) 없이 조회하여 `#ws-casebook-server-runs-list`에 `CURRENT LIVE ACTIVE` vs `HISTORICAL SNAPSHOT`으로 구분 표시합니다.
+3. **Case Report 물리 센서 진실 계약 (Truth Contract):**
+   - FDC Alert 및 웨이퍼 노출 현황을 물리 센서 목록에 혼입하지 않고 독립 섹션으로 분리.
+   - 물리 센서 분석표는 오직 실제 물리 센서(`RELATIVE_SIGNAL`, `CHAMBER_PRESSURE`, `RF_POWER`)만 포함.
+   - 백엔드 미관측 센서 항목에 대해 가상의 80.0, 168.5, 1820 수치를 위조하지 않고 `미제공 (N/A)`으로 정직하게 표기.
+
+### 11.3 Workstream C: FastAPI 통합 Playwright E2E & GitHub Actions CI
+1. **Playwright 다중 웹서버 자동 구동 (`playwright.config.ts`):**
+   - Next.js 개발 서버(`:3000`)와 FastAPI API 서버(`:8000`)를 Playwright가 동시에 기동하고 헬스체크 완료 후 E2E 테스트를 수행합니다.
+2. **Mode B 통합 E2E 테스트 슈트 (`apps/web/e2e/mode-b-connected-investigation.spec.ts`):**
+   - Test 1: Full Mode B connected flow (Summary 조회 → CC → EI → Traceability → Workspace → Case Report 내보내기 검증)
+   - Test 2: Casebook Save, Reload, and Persistence flow (메모 작성 → 저장 → 목록 확인 → 메모 변경 → 재로드 후 복원 검증)
+   - Test 3: Counterexample - Run Lineage Mismatch (409 에러 배너 및 보드 잠금 검증)
+   - Test 4: Counterexample - Standby Alert Isolation (데이터 격리, 리포트 비활성화, 활성 알람 복구 검증)
+3. **GitHub Actions CI 워크플로우 (`.github/workflows/ci.yml`):**
+   - `backend-test`: Python 3.10 환경에서 API 단위 테스트 (15 tests) 자동 검증.
+   - `web-test-and-build`: Node.js 20 환경에서 프론트엔드 계약 테스트 (81 tests) 및 프로덕션 정적 빌드 검증.
+   - `e2e-smoke-test`: Python 백엔드와 Next.js 프론트엔드를 동시 기동하여 Playwright 브라우저 E2E 테스트 자동 완주.
+
 
 

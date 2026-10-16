@@ -532,7 +532,48 @@ class TestEtchDemoAPI(unittest.TestCase):
         res_invalid_run = self.client.get("/api/v1/demo/wafers/W-01/trace?run_id=RUN-NONEXISTENT")
         self.assertEqual(res_invalid_run.status_code, 404)
 
+    def test_15_casebook_runs(self):
+        # 1. Fetch runs list
+        res = self.client.get("/api/v1/demo/runs")
+        self.assertEqual(res.status_code, 200)
+        runs = res.json()
+        self.assertIsInstance(runs, list)
+        self.assertGreaterEqual(len(runs), 1)
+
+        # 2. Check active run properties
+        active_runs = [r for r in runs if r["is_active"]]
+        self.assertEqual(len(active_runs), 1)
+        active_run = active_runs[0]
+        self.assertIn("RUN-DEMO", active_run["run_id"])
+        self.assertEqual(active_run["equipment_id"], "ETCH-02")
+        self.assertEqual(active_run["chamber_id"], "CH-B")
+        self.assertEqual(active_run["data_origin"], "synthetic")
+
+        # 3. Start a new run and verify both old and new runs are in Casebook
+        start_res = self.client.post("/api/v1/demo/runs", json={
+            "seed": 20261016,
+            "scenario_id": "ETH-SYN-01",
+            "equipment_id": "ETCH-02",
+            "chamber_id": "CH-B"
+        })
+        self.assertEqual(start_res.status_code, 201)
+        new_active_run_id = start_res.json()["active_run_id"]
+
+        res2 = self.client.get("/api/v1/demo/runs")
+        self.assertEqual(res2.status_code, 200)
+        runs2 = res2.json()
+        self.assertGreaterEqual(len(runs2), 2)
+        
+        # New run is active, old run is inactive historical snapshot
+        new_run_item = [r for r in runs2 if r["run_id"] == new_active_run_id][0]
+        self.assertTrue(new_run_item["is_active"])
+        self.assertEqual(new_run_item["seed"], 20261016)
+
+        old_run_item = [r for r in runs2 if r["run_id"] == active_run["run_id"]][0]
+        self.assertFalse(old_run_item["is_active"])
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

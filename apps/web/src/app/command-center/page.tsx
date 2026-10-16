@@ -21,6 +21,10 @@ function CommandCenterContent() {
   const queryAlert = searchParams.get('alert');
   const querySeed = searchParams.get('seed');
   const queryTourStep = searchParams.get('tourStep');
+  const queryMode = searchParams.get('mode');
+  const queryRunId = searchParams.get('run_id');
+
+  const isExplicitModeB = queryMode === 'B' || !!queryRunId;
 
   const initialSeed = useMemo(() => {
     if (querySeed) {
@@ -32,11 +36,16 @@ function CommandCenterContent() {
     return 20261015;
   }, [querySeed]);
 
-  const [mode, setMode] = useState<'A' | 'B'>('A');
+  const [mode, setMode] = useState<'A' | 'B'>(isExplicitModeB ? 'B' : 'A');
   const [seed, setSeed] = useState<number>(initialSeed);
-  const [activeRunId, setActiveRunId] = useState<string | null>(() => `RUN-DEMO-${String(initialSeed % 1000).padStart(3, '0')}`);
-  const [alarms, setAlarms] = useState<FdcAlert[]>(() => generateModeACommandCenterAlarms(initialSeed));
+  const [activeRunId, setActiveRunId] = useState<string | null>(() =>
+    queryRunId || (isExplicitModeB ? null : `RUN-DEMO-${String(initialSeed % 1000).padStart(3, '0')}`)
+  );
+  const [alarms, setAlarms] = useState<FdcAlert[]>(() =>
+    isExplicitModeB ? [] : generateModeACommandCenterAlarms(initialSeed)
+  );
   const [selectedAlertId, setSelectedAlertId] = useState<string | null>(() => {
+    if (isExplicitModeB) return queryAlert || null;
     const initialAlarms = generateModeACommandCenterAlarms(initialSeed);
     return queryAlert || (initialAlarms.length > 0 ? initialAlarms[0].alert_id : null);
   });
@@ -47,7 +56,7 @@ function CommandCenterContent() {
   const [equipmentFilter, setEquipmentFilter] = useState<string>('ALL');
   const [sortOrder, setSortOrder] = useState<'NEWEST' | 'OLDEST'>('NEWEST');
 
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(isExplicitModeB);
   const [errorState, setErrorState] = useState<ErrorState | null>(null);
   const [notice, setNotice] = useState<string>('FDC 알람 커맨드 센터 준비 완료');
 
@@ -61,13 +70,8 @@ function CommandCenterContent() {
     setIsLoading(true);
     setErrorState(null);
 
-    // Step 1: Query summary first to discover active_run_id
-    let summaryRes: Response;
-    try {
-      summaryRes = await fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' });
-    } catch {
-      // Genuine network disconnect -> Mode A fallback
-      if (reqId !== activeReqIdRef.current) return;
+    // Mode A branch: When not explicitly Mode B
+    if (!isExplicitModeB) {
       setMode('A');
       const fixtureAlarms = generateModeACommandCenterAlarms(seed);
       setAlarms(fixtureAlarms);
@@ -79,7 +83,27 @@ function CommandCenterContent() {
         return fixtureAlarms[0]?.alert_id ?? null;
       });
       setIsLoading(false);
-      setNotice(`Mode A: 백엔드 미연결(오프라인)에 따른 로컬 합성 픽스처 알람 큐(${fixtureAlarms.length}건) 표시.`);
+      setNotice(`Mode A: 로컬 합성 픽스처 알람 큐(${fixtureAlarms.length}건) 표시.`);
+      return;
+    }
+
+    // Step 1: Query summary first to discover active_run_id
+    let summaryRes: Response;
+    try {
+      summaryRes = await fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' });
+    } catch {
+      // Genuine network disconnect to API server fails closed in Mode B
+      if (reqId !== activeReqIdRef.current) return;
+      setAlarms([]);
+      setSelectedAlertId(null);
+      setErrorState({
+        status: 503,
+        title: 'Mode B API 서버 연결 실패 (HTTP 503 / Backend Disconnected)',
+        message: 'FastAPI 서버(http://localhost:8000)와 통신할 수 없습니다. 요청된 모드가 Mode B이므로 합성 데이터로 자동 대체하지 않고 조회를 차단합니다 (Fail-closed).'
+      });
+      setMode('B');
+      setNotice('서버 연결 실패: Mode B 백엔드에 연결할 수 없습니다.');
+      setIsLoading(false);
       return;
     }
 
@@ -222,7 +246,7 @@ function CommandCenterContent() {
     });
     setNotice(`Mode B (Live API): 활성 공정 Run (${currentRunId}) FDC 알람 큐(${alertsData.length}건) 동기화 완료.`);
     setIsLoading(false);
-  }, [seed]);
+  }, [seed, isExplicitModeB, queryAlert, queryMode, queryRunId]);
 
   // Initial data load (runs once on mount or seed change only)
   useEffect(() => {
@@ -368,10 +392,18 @@ function CommandCenterContent() {
         </nav>
 
         <div className="top-status-pills">
-          <span className="pill" style={{ background: '#ECFDF5', color: '#047857', borderColor: '#A7F3D0' }}>
+          <span
+            id={mode === 'B' ? 'cc-mode-b-badge' : 'cc-mode-a-badge'}
+            className="pill"
+            style={{ background: '#ECFDF5', color: '#047857', borderColor: '#A7F3D0' }}
+          >
             {mode === 'A' ? 'Mode A (합성 픽스처)' : 'Mode B (FastAPI 연동)'}
           </span>
-          <span className="pill" style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE' }}>
+          <span
+            id="cc-run-id-badge"
+            className="pill"
+            style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE' }}
+          >
             Run: {activeRunId || '미가동'}
           </span>
         </div>
