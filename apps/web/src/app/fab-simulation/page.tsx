@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import Link from 'next/link';
+import { FriendlyPageIntro } from '@/components/ux/FriendlyPageIntro';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
 import {
@@ -162,7 +163,7 @@ function FabSimulationContent() {
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
-            홈 (FDC 모니터링)
+            홈
           </Link>
           <Link href={buildCrossNavUrl('/traceability', { mode: searchParams.get('mode') === 'B' ? 'B' : 'A', seed, runId: searchParams.get('run_id') || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -170,27 +171,27 @@ function FabSimulationContent() {
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            웨이퍼 이력 추적성 (Traceability)
+            웨이퍼 확인
           </Link>
           <Link href={buildCrossNavUrl('/command-center', { mode: searchParams.get('mode') === 'B' ? 'B' : 'A', seed, runId: searchParams.get('run_id') || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
-            FDC 커맨드 센터 (Command Center)
+            알람 확인
           </Link>
           <Link href={buildCrossNavUrl('/equipment-intelligence', { mode: searchParams.get('mode') === 'B' ? 'B' : 'A', seed, runId: searchParams.get('run_id') || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
             </svg>
-            설비 인텔리전스 (Equipment)
+            설비 살펴보기
           </Link>
           <Link href={buildCrossNavUrl('/fab-simulation', { mode: searchParams.get('mode') === 'B' ? 'B' : 'A', seed, runId: searchParams.get('run_id') || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            FAB 시뮬레이션 (Simulation)
+            공정 체험
           </Link>
           <Link href={buildCrossNavUrl('/engineering-workspace', { mode: searchParams.get('mode') === 'B' ? 'B' : 'A', seed, runId: searchParams.get('run_id') || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -199,21 +200,21 @@ function FabSimulationContent() {
               <path d="M9 12h6" />
               <path d="M9 16h6" />
             </svg>
-            엔지니어링 워크스페이스 (Workspace)
+            조사 노트
           </Link>
           <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: queryTourStep || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
             </svg>
-            가이드 투어 (Demo Tour)
+            처음 둘러보기
           </Link>
         </nav>
 
         {/* Status Pills */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span className="pill" style={{ background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
-            Mode A (합성 시뮬레이션)
+            연습용 시뮬레이션 · Mode A
           </span>
           <span className="pill" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700 }}>
             Run: {navLinks.runId}
@@ -226,13 +227,22 @@ function FabSimulationContent() {
             onClick={handleResynthesize}
             title="난수 시드를 변경하여 새로운 합성 시나리오를 생성합니다"
           >
-            시드 변경 (Seed: {seed}) ⟳
+            다른 연습 데이터로 바꾸기 (Seed: {seed}) ⟳
           </button>
         </div>
       </header>
 
       {/* Main Container */}
       <main style={{ maxWidth: '1440px', margin: '0 auto', padding: '20px' }}>
+        <FriendlyPageIntro
+  eyebrow="가상 공정 체험"
+  title="웨이퍼가 공정을 지나는 과정을 따라가 볼까요?"
+  description="첫 단계부터 마지막 T7까지 하나씩 넘겨 보세요. 지금 어떤 일이 일어나는지, 다음에 어떤 신호를 확인해야 하는지 알려 드려요."
+  primaryLabel="공정 단계 살펴보기"
+  primaryHref="#sim-step-heading"
+  detail={<p>8단계 가상 시나리오와 Seed {seed}에 연결된 예시예요. T7 알람과 W-08~W-12는 추가 확인 후보일 뿐 실제 검사·Hold·Release 명령을 수행하지 않아요.</p>}
+/>
+
         {/* BUILD-10 Tour Return Banner */}
         <TourReturnBanner tourStep={queryTourStep} seed={seed} />
 
@@ -252,8 +262,8 @@ function FabSimulationContent() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#166534' }}>
-            <span style={{ fontWeight: 800 }}>가상 FAB 엔드투엔드 시연:</span>
-            <span>FOUP 입고 → 로드포트 도킹 → 진공 이송 → ETCH-02 식각(T0~T7) → T7 공정 일탈 → 품질 Hold 및 이력 추적성 연계</span>
+            <span style={{ fontWeight: 800 }}>지금 살펴볼 공정</span>
+            <span>웨이퍼 이동과 식각, T7의 이상 신호까지 단계별로 살펴볼 수 있어요.</span>
           </div>
           <span style={{ fontSize: '11px', color: '#15803D', fontWeight: 600 }}>
             {DOMAIN_DISCLAIMERS.simulationMode}
@@ -323,7 +333,7 @@ function FabSimulationContent() {
                   gap: '6px',
                 }}
               >
-                {isPlaying ? '일시정지 ❚❚' : '자동 진행 ▶'}
+                {isPlaying ? '잠시 멈추기' : '자동으로 다음 단계 보기'}
               </button>
 
               <button
@@ -730,7 +740,7 @@ function FabSimulationContent() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '14px', fontWeight: 800, color: currentStepMeta.alarmTriggered ? '#991B1B' : '#0F172A' }}>
-                    {currentStepMeta.alarmTriggered ? '🚨 FDC 일탈 감지 및 품질 보류 (Hold)' : '🛡️ FDC 감시 센티넬'}
+                    {currentStepMeta.alarmTriggered ? '이상 신호 감지 · 추가 확인 필요' : '센서 상태 살펴보기'}
                   </span>
                   <span
                     className="pill"
@@ -793,7 +803,7 @@ function FabSimulationContent() {
                     <strong>규칙 코드:</strong> <code>FDC-RULE-SPC-UCL-01</code> · <strong>영향 호기:</strong> ETCH-02 / CH-B (Run: {navLinks.runId})
                   </p>
                   <p style={{ margin: '0 0 6px 0' }}>
-                    <strong>품질 조치:</strong> 타겟 웨이퍼(W-08) 및 잠재 노출 영향군 5매(W-08~W-12)에 대해 <code>DEFECT_REVIEW_HOLD</code> 격리 조치 실행.
+                    <strong>검토 대상:</strong> 타겟 웨이퍼(W-08) 및 잠재 노출 영향군 5매(W-08~W-12)에 대해 <code>DEFECT_REVIEW_HOLD</code> 격리 조치 실행.
                   </p>
                   <div style={{ fontSize: '11px', color: '#991B1B', fontWeight: 600, background: '#FFFFFF', padding: '6px 10px', borderRadius: '6px', border: '1px solid #FCA5A5' }}>
                     ⚠️ {DOMAIN_DISCLAIMERS.excursionVsDefect}
@@ -828,7 +838,7 @@ function FabSimulationContent() {
             <EngineeringTermTrigger conceptId="oes-relative-signal" label="OES 상대 신호 원리" showBadge />
             <EngineeringTermTrigger conceptId="rf-power" label="RF Power 전력 제어" showBadge />
             <EngineeringTermTrigger conceptId="spc-ucl-missing" label="SPC 관리한계 및 결측치" showBadge />
-            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="노출 확정 vs 잠재 후보" showBadge />
+            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="공정 이력과 영향 가능성" showBadge />
           </div>
         </section>
 
