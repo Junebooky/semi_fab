@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react';
 import Link from 'next/link';
+import { FriendlyPageIntro } from '@/components/ux/FriendlyPageIntro';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { buildCrossNavUrl } from '@/lib/investigation-context';
 import {
@@ -310,7 +311,7 @@ function EquipmentIntelligenceContent() {
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
               <polyline points="9 22 9 12 15 12 15 22"></polyline>
             </svg>
-            홈 (FDC 모니터링)
+            홈
           </Link>
           <Link href={buildCrossNavUrl('/traceability', { mode, seed, runId: activeRunId || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -318,27 +319,27 @@ function EquipmentIntelligenceContent() {
               <line x1="12" y1="8" x2="12" y2="12"></line>
               <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            웨이퍼 이력 추적성 (Traceability)
+            웨이퍼 확인
           </Link>
           <Link href={buildCrossNavUrl('/command-center', { mode, seed, runId: activeRunId || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
-            FDC 커맨드 센터 (Command Center)
+            알람 확인
           </Link>
           <Link href={buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId: activeRunId || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
             </svg>
-            설비 인텔리전스 (Equipment)
+            설비 살펴보기
           </Link>
           <Link href={buildCrossNavUrl('/fab-simulation', { mode, seed, runId: activeRunId || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            FAB 시뮬레이션 (Simulation)
+            공정 체험
           </Link>
           <Link href={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId: activeRunId || undefined, alertId: searchParams.get('alert') || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -347,14 +348,14 @@ function EquipmentIntelligenceContent() {
               <path d="M9 12h6" />
               <path d="M9 16h6" />
             </svg>
-            엔지니어링 워크스페이스 (Workspace)
+            조사 노트
           </Link>
           <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: queryTourStep || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
             </svg>
-            가이드 투어 (Demo Tour)
+            처음 둘러보기
           </Link>
         </nav>
 
@@ -381,6 +382,15 @@ function EquipmentIntelligenceContent() {
 
       {/* Main Content Area */}
       <main className="main-content">
+        <FriendlyPageIntro
+  eyebrow="설비 데이터 살펴보기"
+  title="센서 값이 어디서 달라졌을까요?"
+  description="광학 신호·챔버 압력·RF 전력을 비교해 보세요. T7의 변화는 추가 조사가 필요한 신호이며, 이것만으로 불량이나 원인을 확정하지 않아요."
+  primaryLabel="관련 웨이퍼 확인하기"
+  primaryHref={buildCrossNavUrl('/traceability', { mode, seed, runId: activeRunId || undefined })}
+  detail={<p>그래프의 UCL은 통계적 공정 관리(SPC) 설명을 위한 합성 관리한계예요. 제품 규격(USL/LSL)과 다르며, T4·T5의 MISSING은 수치 0이 아니에요. 선택한 센서: {selectedSensor}</p>}
+/>
+
         {/* BUILD-10 Tour Return Banner */}
         <TourReturnBanner tourStep={queryTourStep} seed={seed} />
 
@@ -411,7 +421,7 @@ function EquipmentIntelligenceContent() {
                   }}
                   title="난수 시드를 변경하여 새로운 합성 계측값을 생성합니다"
                 >
-                  시드 변경 재합성 (Seed: {seed})
+                  새 연습 데이터 만들기 (Seed: {seed})
                 </button>
               )}
             </div>
@@ -432,7 +442,7 @@ function EquipmentIntelligenceContent() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: '#1E293B', marginBottom: '4px' }}>
-            <span>📐 공학적 기준 및 제품 경계 고지 (Engineering Standards Notice):</span>
+            <span>데이터를 해석할 때 기억해 주세요</span>
           </div>
           <div>
             본 화면의 <strong>UCL(상한 관리한계 65.0 a.u. / 140 mTorr / 1650 W)</strong> 및 Target은 통계적 공정 관리(SPC) 설명용 가상 기준값이며, 소자 고객의 <strong>물리적 제품 규격한계(USL/LSL)</strong>와 엄격히 구별됩니다.
@@ -446,7 +456,7 @@ function EquipmentIntelligenceContent() {
           <div className="ei-card" style={{ borderLeft: '4px solid #DC2626' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#DC2626', marginBottom: '8px' }}>
               <span style={{ fontSize: '20px' }}>⚠️</span>
-              <strong style={{ fontSize: '16px' }}>설비 계측 텔레메트리 로드 실패 (Fail-closed)</strong>
+              <strong style={{ fontSize: '16px' }}>센서 데이터를 가져오지 못했어요</strong>
             </div>
             <p style={{ color: '#64748B', fontSize: '13px', lineHeight: 1.6 }}>{errorMessage}</p>
             <div style={{ marginTop: '16px', display: 'flex', gap: '10px' }}>
@@ -454,7 +464,7 @@ function EquipmentIntelligenceContent() {
                 다시 시도
               </button>
               <Link href={`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`} className="btn-secondary" style={{ textDecoration: 'none' }}>
-                FDC 커맨드 센터로 복귀
+                알람 화면으로 돌아가기
               </Link>
             </div>
           </div>
@@ -512,7 +522,7 @@ function EquipmentIntelligenceContent() {
                       </p>
                     </div>
                     <span className="pill" style={{ background: '#F8FAFC', color: '#475569' }}>
-                      {metadata.measurementType === 'DISCONTINUOUS' ? '비연속 계측 (결측 구간 존재)' : '연속 계측 (결측 없음)'}
+                      {metadata.measurementType === 'DISCONTINUOUS' ? '중간에 수집되지 않은 값이 있어요' : '전 구간 수집된 값이에요'}
                     </span>
                   </div>
 
@@ -649,7 +659,7 @@ function EquipmentIntelligenceContent() {
                   {/* Step Timeline Selection Buttons */}
                   <div style={{ marginTop: '16px' }}>
                     <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '8px' }}>
-                      공정 단계별 계측 선택 (T0 ~ T7 Time Step Timeline):
+                      시간을 선택해 변화를 살펴보세요
                     </div>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                       {chartCoordinates.map((pt) => {
@@ -694,7 +704,7 @@ function EquipmentIntelligenceContent() {
                 {/* Table View of Samples */}
                 <div className="ei-card">
                   <h4 style={{ fontSize: '14px', fontWeight: 800, color: '#17263B', marginBottom: '8px' }}>
-                    📋 {metadata.name.split(' (')[0]} 단계별 계측 데이터 테이블
+                    📋 {metadata.name.split(' (')[0]} 시간별 센서 원본값
                   </h4>
                   <table className="ei-table">
                     <thead>
@@ -703,7 +713,7 @@ function EquipmentIntelligenceContent() {
                         <th>센서 ID</th>
                         <th>계측값</th>
                         <th>단위</th>
-                        <th>품질 플래그 (Quality)</th>
+                        <th>센서 데이터 상태</th>
                         <th>SPC 상태</th>
                         <th>수집 시각 (UTC)</th>
                       </tr>
