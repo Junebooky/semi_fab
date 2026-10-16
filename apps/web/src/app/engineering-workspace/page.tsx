@@ -23,6 +23,12 @@ import {
   generateCaseReportFilename,
   isCaseReportExportable,
   CaseReportPayload,
+  CaseReportSensorEvidence,
+  CasebookRecord,
+  loadSavedCasebookRecords,
+  saveCasebookRecordToStorage,
+  deleteCasebookRecordFromStorage,
+  FAB_ONE_CASEBOOK_STORAGE_KEY,
 } from '@/components/engineering-workspace/engineering-workspace-contract';
 import { TourReturnBanner } from '@/components/guided-demo';
 
@@ -39,6 +45,20 @@ interface WorkspaceErrorState {
   message: string;
 }
 
+function getHypothesisStatusLabel(status: HypothesisStatus): string {
+  switch (status) {
+    case 'SUPPORTED_FOR_REVIEW':
+      return '검토 지지 (SUPPORTED_FOR_REVIEW)';
+    case 'NEEDS_MORE_DATA':
+      return '추가 데이터 필요 (NEEDS_MORE_DATA)';
+    case 'RULED_OUT':
+      return '배제 (RULED_OUT)';
+    case 'UNVERIFIED':
+    default:
+      return '미검증 (UNVERIFIED)';
+  }
+}
+
 function EngineeringWorkspaceContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -49,26 +69,39 @@ function EngineeringWorkspaceContent() {
   const queryTourStep = searchParams.get('tourStep');
   const queryMode = searchParams.get('mode');
   const queryRunId = searchParams.get('run_id');
+  const queryTab = searchParams.get('tab');
 
   const seed = useMemo(() => parseSafeWorkspaceSeed(querySeed), [querySeed]);
   const expectedAlertId = useMemo(() => `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`, [seed]);
 
+  const isExplicitModeB = queryMode === 'B' || !!queryRunId;
+
+  // Active Tab: Investigation vs Casebook
+  const [activeTab, setActiveTab] = useState<'INVESTIGATION' | 'CASEBOOK'>(() => {
+    return queryTab === 'casebook' ? 'CASEBOOK' : 'INVESTIGATION';
+  });
+
   // Mode and Data States
-  const [mode, setMode] = useState<'A' | 'B'>('A');
-  const [runId, setRunId] = useState<string>(() => `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`);
+  const [mode, setMode] = useState<'A' | 'B'>(isExplicitModeB ? 'B' : 'A');
+  const [runId, setRunId] = useState<string>(() => queryRunId || `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`);
   const [sessionId, setSessionId] = useState<string>('SES-SYN-01');
   const [lotId, setLotId] = useState<string>(() => `LOT-DEMO-${800 + (seed % 50)}`);
   const [alertId, setAlertId] = useState<string>(() => queryAlert || expectedAlertId);
+  const [serverActiveAlertId, setServerActiveAlertId] = useState<string | null>(null);
   const [equipmentId, setEquipmentId] = useState<string>('ETCH-02');
   const [chamberId, setChamberId] = useState<string>('CH-B');
   const [recipeId, setRecipeId] = useState<string>('RCP-ETCH-POLY-04');
   const [severity, setSeverity] = useState<string>('CRITICAL');
   const [ruleCode, setRuleCode] = useState<string>('FDC-RULE-SPC-UCL-01');
 
-  const [evidence, setEvidence] = useState<EvidenceItem[]>(() => generateDefaultEvidenceItems(seed));
-  const [isSupportedAlert, setIsSupportedAlert] = useState<boolean>(() =>
-    isWorkspaceAlertSupported(queryAlert, expectedAlertId)
+  // Evidence list: if explicit Mode B, initial evidence is empty to prevent flash of Mode A
+  const [evidence, setEvidence] = useState<EvidenceItem[]>(() =>
+    isExplicitModeB ? [] : generateDefaultEvidenceItems(seed)
   );
+  const [isSupportedAlert, setIsSupportedAlert] = useState<boolean>(() =>
+    isExplicitModeB ? false : isWorkspaceAlertSupported(queryAlert, expectedAlertId)
+  );
+  const [rawInvestigationDetail, setRawInvestigationDetail] = useState<any>(null);
 
   const [wafersSummary, setWafersSummary] = useState<WaferCassetteSummary>({
     total: 25,
@@ -77,22 +110,51 @@ function EngineeringWorkspaceContent() {
     unexposedCount: 13,
   });
 
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(isExplicitModeB);
   const [errorState, setErrorState] = useState<WorkspaceErrorState | null>(null);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [casebookNotice, setCasebookNotice] = useState<string | null>(null);
 
-  // In-memory UI states (volatile on refresh)
+  // In-memory UI states (volatile until saved in Casebook)
   const [selectedEvidenceId, setSelectedEvidenceId] = useState<string>('EVI-02');
   const [hypotheses, setHypotheses] = useState<HypothesisItem[]>(() => generateDefaultHypotheses());
   const [actions, setActions] = useState<ActionItem[]>(() => generateDefaultActions());
   const [selectedHypothesisId, setSelectedHypothesisId] = useState<string>('HYPO-01');
   const [notes, setNotes] = useState<string>('');
 
+  // Casebook state
+  const [savedCaseRecords, setSavedCaseRecords] = useState<CasebookRecord[]>([]);
+  const [serverRuns, setServerRuns] = useState<Array<any>>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Nav links preserving active context
   const navLinks = useMemo(
     () => getWorkspaceNavLinks(seed, alertId, mode, runId),
     [seed, alertId, mode, runId]
   );
+
+  // Load saved Casebook records from localStorage
+  useEffect(() => {
+    setSavedCaseRecords(loadSavedCasebookRecords());
+  }, []);
+
+  // Fetch recent server runs for Casebook history in Mode B
+  useEffect(() => {
+    async function fetchServerRuns() {
+      try {
+        const res = await fetch('http://localhost:8000/api/v1/demo/runs', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setServerRuns(data);
+          }
+        }
+      } catch {
+        // Backend not reachable, ignore
+      }
+    }
+    fetchServerRuns();
+  }, [mode]);
 
   // Request counter to guard against race conditions
   const activeReqIdRef = useRef<number>(0);
@@ -104,13 +166,8 @@ function EngineeringWorkspaceContent() {
     setErrorState(null);
     setExportNotice(null);
 
-    // Step 1: Initial Discovery Fetch
-    let summaryRes: Response;
-    try {
-      summaryRes = await fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' });
-    } catch {
-      // Genuine network disconnect to API server -> Fallback to Mode A
-      if (reqId !== activeReqIdRef.current) return;
+    // Mode A branch: When not explicitly Mode B
+    if (!isExplicitModeB) {
       setMode('A');
       const safeSeed = parseSafeWorkspaceSeed(querySeed);
       const modeARunId = `RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
@@ -137,6 +194,26 @@ function EngineeringWorkspaceContent() {
       } else {
         setEvidence([]);
       }
+      setIsLoading(false);
+      return;
+    }
+
+    // Mode B branch: Real backend API communication
+    // Step 1: Initial Discovery Fetch
+    let summaryRes: Response;
+    try {
+      summaryRes = await fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' });
+    } catch {
+      // Genuine network disconnect to API server fails closed in Mode B
+      if (reqId !== activeReqIdRef.current) return;
+      setMode('B');
+      setEvidence([]);
+      setIsSupportedAlert(false);
+      setErrorState({
+        status: 503,
+        title: 'Mode B API 서버 연결 실패 (Backend Disconnected)',
+        message: 'FastAPI 서버(http://localhost:8000)와 통신할 수 없습니다. 요청된 모드가 Mode B이므로 합성 데이터로 자동 대체하지 않고 조회를 차단합니다 (Fail-closed).',
+      });
       setIsLoading(false);
       return;
     }
@@ -189,6 +266,19 @@ function EngineeringWorkspaceContent() {
       return;
     }
 
+    // Lineage check: If query specifies run_id, verify it matches active_run_id!
+    if (queryRunId && queryRunId.trim() !== currentRunId.trim()) {
+      setEvidence([]);
+      setIsSupportedAlert(false);
+      setErrorState({
+        status: 409,
+        title: '공정 Run 불일치 (Run Lineage Mismatch)',
+        message: `요청된 Run ID (${queryRunId})가 서버의 현재 활성 Run ID (${currentRunId})와 일치하지 않습니다. 데이터 교차 오염을 방지하기 위해 조회를 차단했습니다 (Fail-closed).`,
+      });
+      setIsLoading(false);
+      return;
+    }
+
     const trimmedQueryAlert = queryAlert ? queryAlert.trim() : null;
 
     // Check if requested alert is an unsupported standby alert
@@ -198,6 +288,19 @@ function EngineeringWorkspaceContent() {
       setAlertId(trimmedQueryAlert);
       setIsSupportedAlert(false);
       setEvidence([]);
+
+      try {
+        const activeInvRes = await fetch('http://localhost:8000/api/v1/demo/investigation', { cache: 'no-store' });
+        if (activeInvRes.ok) {
+          const activeInvData = await activeInvRes.json();
+          if (activeInvData.alert_id) {
+            setServerActiveAlertId(activeInvData.alert_id);
+          }
+        }
+      } catch {
+        // ignore background discovery error
+      }
+
       setIsLoading(false);
       return;
     }
@@ -279,6 +382,7 @@ function EngineeringWorkspaceContent() {
     setSessionId(summaryData.active_session_id || 'SES-SYN-01');
     setLotId(invData.lot_id);
     setAlertId(invData.alert_id);
+    setServerActiveAlertId(invData.alert_id);
     setEquipmentId(invData.equipment_id);
     setChamberId(invData.chamber_id);
     setRecipeId(invData.recipe_id);
@@ -286,6 +390,7 @@ function EngineeringWorkspaceContent() {
     setRuleCode(invData.rule_code);
     setIsSupportedAlert(true);
     setErrorState(null);
+    setRawInvestigationDetail(invData);
 
     const mappedEvidence = mapInvestigationDetailToEvidence(invData, seed);
     setEvidence(mappedEvidence);
@@ -299,18 +404,20 @@ function EngineeringWorkspaceContent() {
     });
 
     setIsLoading(false);
-  }, [querySeed, queryAlert, seed]);
+  }, [querySeed, queryAlert, queryMode, queryRunId, isExplicitModeB, seed]);
 
   // Initial load on mount or parameter changes
   useEffect(() => {
     loadWorkspaceData();
   }, [loadWorkspaceData]);
 
-  // Re-synchronize hypothesis and actions defaults if seed changes
+  // Re-synchronize hypothesis and actions defaults if seed changes in Mode A
   useEffect(() => {
-    setHypotheses(generateDefaultHypotheses());
-    setActions(generateDefaultActions());
-  }, [seed]);
+    if (mode === 'A') {
+      setHypotheses(generateDefaultHypotheses());
+      setActions(generateDefaultActions());
+    }
+  }, [seed, mode]);
 
   // Selected Evidence Item
   const selectedEvidence = useMemo(() => {
@@ -374,9 +481,14 @@ function EngineeringWorkspaceContent() {
   // Switch to supported active alert
   const handleSwitchToActiveAlert = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set('alert', expectedAlertId);
+    const targetAlert = mode === 'B' && serverActiveAlertId ? serverActiveAlertId : expectedAlertId;
+    params.set('alert', targetAlert);
+    if (mode === 'B') {
+      params.set('mode', 'B');
+      if (runId) params.set('run_id', runId);
+    }
     router.replace(`/engineering-workspace?${params.toString()}`);
-  }, [searchParams, expectedAlertId, router]);
+  }, [searchParams, mode, serverActiveAlertId, expectedAlertId, runId, router]);
 
   // Re-synthesis (advance seed)
   const handleResynthesize = useCallback(() => {
@@ -392,18 +504,64 @@ function EngineeringWorkspaceContent() {
     return isCaseReportExportable(isSupportedAlert, errorState !== null, isLoading, runId);
   }, [isSupportedAlert, errorState, isLoading, runId]);
 
-  // Handle Case Report Export (Markdown Download)
+  // Handle Case Report Export (Markdown Download adhering to Truth Contract)
   const handleExportCaseReport = useCallback(() => {
     if (!isExportable) return;
 
-    const sensorEvidenceList = evidence.map((evi) => ({
-      sensorId: evi.id,
-      sensorName: evi.title,
-      observedValue: evi.observedValue,
-      unit: evi.unit,
-      qualityFlag: evi.qualityFlag,
-      details: evi.summary,
-    }));
+    // Filter strictly physical sensors (No FDC alert or wafer items in sensors table)
+    const physicalSensorList: CaseReportSensorEvidence[] = [];
+
+    if (rawInvestigationDetail?.evidence_sensors && Array.isArray(rawInvestigationDetail.evidence_sensors)) {
+      for (const s of rawInvestigationDetail.evidence_sensors) {
+        physicalSensorList.push({
+          sensorId: s.sensor_id,
+          sensorName: s.sensor_name,
+          observedValue: s.measured_value,
+          unit: s.unit,
+          qualityFlag: s.quality_flag as any,
+          uclThreshold: s.ucl_threshold,
+          targetValue: s.target_value,
+          deviationPercent: s.deviation_percent,
+        });
+      }
+    } else {
+      // In Mode A or fallback, map ONLY physical sensors from default baseline
+      physicalSensorList.push(
+        {
+          sensorId: 'RELATIVE_SIGNAL',
+          sensorName: '광학 발광 상대 신호 (OES Relative Signal)',
+          observedValue: 80.0,
+          unit: 'a.u.',
+          qualityFlag: 'SUSPECT',
+          uclThreshold: 65.0,
+          targetValue: 50.0,
+          deviationPercent: 23.1,
+          details: 'Step T7 관리한계(UCL 65.0) 초과 계측',
+        },
+        {
+          sensorId: 'CHAMBER_PRESSURE',
+          sensorName: '챔버 공정 진공 압력 (Capacitance Manometer)',
+          observedValue: 168.5,
+          unit: 'mTorr',
+          qualityFlag: 'SUSPECT',
+          uclThreshold: 140.0,
+          targetValue: 120.0,
+          deviationPercent: 20.4,
+          details: 'Step T7 진공 압력 일탈',
+        },
+        {
+          sensorId: 'RF_POWER',
+          sensorName: 'RF 플라즈마 전원 출력 (RF Generator Forward Power)',
+          observedValue: 1820.0,
+          unit: 'W',
+          qualityFlag: 'SUSPECT',
+          uclThreshold: 1650.0,
+          targetValue: 1500.0,
+          deviationPercent: 10.3,
+          details: 'Step T7 RF 전원 서지',
+        }
+      );
+    }
 
     const payload: CaseReportPayload = {
       reportId: `INV-${alertId}`,
@@ -419,7 +577,7 @@ function EngineeringWorkspaceContent() {
       equipmentId,
       chamberId,
       recipeId,
-      sensors: sensorEvidenceList,
+      sensors: physicalSensorList,
       wafers: {
         total: wafersSummary.total,
         confirmedWafers: wafersSummary.confirmed,
@@ -431,7 +589,7 @@ function EngineeringWorkspaceContent() {
         title: h.title,
         domain: h.domain,
         status: h.status,
-        statusLabel: h.statusLabel,
+        statusLabel: getHypothesisStatusLabel(h.status),
         linkedEvidenceIds: h.linkedEvidenceIds,
         engineeringRationale: h.engineeringRationale,
       })),
@@ -447,27 +605,23 @@ function EngineeringWorkspaceContent() {
       userNotes: notes,
     };
 
-    const markdownContent = generateCaseReportMarkdown(payload);
+    const markdown = generateCaseReportMarkdown(payload);
     const filename = generateCaseReportFilename(runId);
 
-    try {
-      const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 
-      setExportNotice(`보고서가 성공적으로 다운로드되었습니다: ${filename} (합성 데이터 기반 시연 보고서/비공식)`);
-    } catch {
-      setExportNotice('브라우저 파일 생성 중 오류가 발생했습니다.');
-    }
+    setExportNotice(`사건 조사 보고서(${filename})가 성공적으로 다운로드되었습니다.`);
   }, [
     isExportable,
-    evidence,
+    rawInvestigationDetail,
     alertId,
     mode,
     runId,
@@ -484,18 +638,146 @@ function EngineeringWorkspaceContent() {
     notes,
   ]);
 
+  // Save current active investigation to Casebook
+  const handleSaveCurrentToCasebook = useCallback(() => {
+    if (!isExportable) return;
+
+    const recordId = `CASE-${runId}-${Date.now()}`;
+    const record: CasebookRecord = {
+      id: recordId,
+      runId,
+      sessionId,
+      alertId,
+      seed,
+      mode,
+      dataOrigin: 'synthetic',
+      equipmentId,
+      chamberId,
+      lotId,
+      savedAtUtc: new Date().toISOString(),
+      status: 'REVIEWED',
+      hypotheses: hypotheses.map((h) => ({
+        id: h.id,
+        title: h.title,
+        domain: h.domain,
+        status: h.status,
+        statusLabel: getHypothesisStatusLabel(h.status),
+        linkedEvidenceIds: h.linkedEvidenceIds,
+        engineeringRationale: h.engineeringRationale,
+      })),
+      actions: actions.map((a) => ({
+        id: a.id,
+        title: a.title,
+        assigneeRole: a.assigneeRole,
+        priority: a.priority,
+        completed: a.completed,
+        targetSystem: a.targetSystem,
+        detail: a.detail,
+      })),
+      userNotes: notes,
+      reportExported: false,
+    };
+
+    saveCasebookRecordToStorage(record);
+    setSavedCaseRecords(loadSavedCasebookRecords());
+    setCasebookNotice(`현재 사건(${runId} / ${alertId})이 Casebook에 성공적으로 저장되었습니다.`);
+  }, [isExportable, runId, sessionId, alertId, seed, mode, equipmentId, chamberId, lotId, hypotheses, actions, notes]);
+
+  // Load a saved Casebook record into Workspace
+  const handleLoadCasebookRecord = useCallback((record: CasebookRecord) => {
+    // Restore human decisions
+    setNotes(record.userNotes || '');
+    if (Array.isArray(record.hypotheses)) {
+      setHypotheses((prev) =>
+        prev.map((orig) => {
+          const matched = record.hypotheses.find((h) => h.id === orig.id);
+          if (matched) {
+            return {
+              ...orig,
+              status: matched.status as HypothesisStatus,
+              statusLabel: matched.statusLabel,
+              linkedEvidenceIds: matched.linkedEvidenceIds || [],
+            };
+          }
+          return orig;
+        })
+      );
+    }
+    if (Array.isArray(record.actions)) {
+      setActions((prev) =>
+        prev.map((orig) => {
+          const matched = record.actions.find((a) => a.id === orig.id);
+          if (matched) {
+            return { ...orig, completed: matched.completed };
+          }
+          return orig;
+        })
+      );
+    }
+    setActiveTab('INVESTIGATION');
+    setCasebookNotice(`Casebook 기록(${record.id})의 가설/조치/메모를 워크스페이스에 불러왔습니다.`);
+  }, []);
+
+  // Delete a saved Casebook record
+  const handleDeleteCasebookRecord = useCallback((id: string) => {
+    deleteCasebookRecordFromStorage(id);
+    setSavedCaseRecords(loadSavedCasebookRecords());
+    setCasebookNotice(`Casebook 사례(${id})가 삭제되었습니다.`);
+  }, []);
+
+  // Export Casebook backup as JSON
+  const handleExportCasebookJson = useCallback(() => {
+    const records = loadSavedCasebookRecords();
+    const blob = new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `casebook-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  // Import Casebook backup from JSON
+  const handleImportFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (Array.isArray(parsed)) {
+          let count = 0;
+          for (const item of parsed) {
+            if (item && item.id && item.runId) {
+              saveCasebookRecordToStorage(item);
+              count++;
+            }
+          }
+          setSavedCaseRecords(loadSavedCasebookRecords());
+          setCasebookNotice(`${count}건의 Casebook 사례를 성공적으로 가져왔습니다.`);
+        }
+      } catch {
+        setCasebookNotice('Casebook JSON 파일 파싱에 실패했습니다.');
+      }
+    };
+    reader.readAsText(file);
+  }, []);
+
   return (
-    <div className="command-center-container" style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div style={{ minHeight: '100vh', background: '#F8FAFC', color: '#1E293B', fontFamily: 'sans-serif' }}>
       {/* Top Header */}
       <header
-        className="top-nav-bar"
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 24px',
           background: '#FFFFFF',
           borderBottom: '1px solid #E2E8F0',
+          padding: '12px 24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -517,7 +799,7 @@ function EngineeringWorkspaceContent() {
               FAB ONE
             </span>
             <span className="brand-subtitle" style={{ fontSize: '13px', color: '#64748B', marginLeft: '6px' }}>
-              · Engineering Workspace (BUILD-12)
+              · Engineering Workspace & Casebook (BUILD-13)
             </span>
           </div>
         </div>
@@ -583,6 +865,7 @@ function EngineeringWorkspaceContent() {
         {/* Status Pills & Export Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span
+            id={mode === 'B' ? 'ws-mode-b-badge' : 'ws-mode-a-badge'}
             className="pill"
             style={{
               background: mode === 'B' ? '#EFF6FF' : '#ECFDF5',
@@ -686,6 +969,118 @@ function EngineeringWorkspaceContent() {
         {/* BUILD-10 Tour Return Banner */}
         <TourReturnBanner tourStep={queryTourStep} seed={seed} />
 
+        {/* Workspace vs Casebook Tab Selector & Action Buttons */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px',
+            borderBottom: '2px solid #E2E8F0',
+            paddingBottom: '8px',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+          role="tablist"
+        >
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              role="tab"
+              id="ws-tab-active-investigation"
+              aria-selected={activeTab === 'INVESTIGATION'}
+              onClick={() => setActiveTab('INVESTIGATION')}
+              style={{
+                padding: '8px 16px',
+                fontSize: '13px',
+                fontWeight: 800,
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                background: activeTab === 'INVESTIGATION' ? '#0B9F78' : '#F1F5F9',
+                color: activeTab === 'INVESTIGATION' ? '#FFFFFF' : '#475569',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              실시간 사건 분석 (Live Run Investigation)
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="ws-tab-casebook"
+              aria-selected={activeTab === 'CASEBOOK'}
+              onClick={() => setActiveTab('CASEBOOK')}
+              style={{
+                padding: '8px 16px',
+                fontSize: '13px',
+                fontWeight: 800,
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                background: activeTab === 'CASEBOOK' ? '#0B9F78' : '#F1F5F9',
+                color: activeTab === 'CASEBOOK' ? '#FFFFFF' : '#475569',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              사건 기록 보관소 (Investigation Casebook 📚)
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              type="button"
+              id="ws-btn-save-casebook"
+              onClick={handleSaveCurrentToCasebook}
+              disabled={!isExportable}
+              aria-disabled={!isExportable}
+              style={{
+                padding: '6px 14px',
+                fontSize: '12px',
+                fontWeight: 700,
+                background: isExportable ? '#3B82F6' : '#E2E8F0',
+                color: isExportable ? '#FFFFFF' : '#94A3B8',
+                border: isExportable ? '1px solid #2563EB' : '1px solid #CBD5E1',
+                borderRadius: '6px',
+                cursor: isExportable ? 'pointer' : 'not-allowed',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+              title="현재 조사 중인 가설 판정, 조치 체크, 엔지니어링 메모를 Casebook에 저장합니다"
+            >
+              Casebook에 현재 사례 저장 💾
+            </button>
+          </div>
+        </div>
+
+        {/* Casebook Notice Banner */}
+        {casebookNotice && (
+          <div
+            id="ws-casebook-notice-banner"
+            style={{
+              background: '#EFF6FF',
+              border: '1px solid #BFDBFE',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '12px',
+              color: '#1D4ED8',
+            }}
+          >
+            <span>ℹ️ {casebookNotice}</span>
+            <button
+              type="button"
+              onClick={() => setCasebookNotice(null)}
+              style={{ background: 'none', border: 'none', color: '#1E40AF', cursor: 'pointer', fontWeight: 700 }}
+            >
+              닫기 ✕
+            </button>
+          </div>
+        )}
+
         {/* Export Success Notice Banner */}
         {exportNotice && (
           <div
@@ -718,6 +1113,7 @@ function EngineeringWorkspaceContent() {
         {errorState && (
           <div
             id="ws-mode-b-error-banner"
+            data-status={errorState.status}
             style={{
               background: '#FEF2F2',
               border: '1px solid #FECACA',
@@ -730,6 +1126,7 @@ function EngineeringWorkspaceContent() {
               color: '#991B1B',
             }}
           >
+            {errorState.status === 409 && <div id="ws-run-mismatch-banner" style={{ display: 'none' }} />}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 800 }}>
               <span>⚠️</span>
               <span>{errorState.title}</span>
@@ -780,739 +1177,992 @@ function EngineeringWorkspaceContent() {
                 cursor: 'pointer',
               }}
             >
-              활성 알람({expectedAlertId})으로 전환 ↗
+              활성 알람({mode === 'B' && serverActiveAlertId ? serverActiveAlertId : expectedAlertId})으로 전환 ↗
             </button>
           </div>
         )}
 
-        {/* Workflow Callout Banner */}
-        <div
-          style={{
-            background: '#F0FDF4',
-            border: '1px solid #BBF7D0',
-            borderRadius: '8px',
-            padding: '12px 18px',
-            marginBottom: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '12px',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#166534' }}>
-              <span style={{ fontWeight: 800 }}>📌 엔지니어링 분석 워크스페이스 (증거·가설·조치 보드):</span>
-              <span>
-                8단계 흐름: FAB 시뮬레이션(T7) → FDC 커맨드 센터(경보) → 워크스페이스(가설/증거) → 설비 인텔리전스 →
-                웨이퍼 추적성(W-08) → EKL 용어 확인
-              </span>
-            </div>
-            <div style={{ fontSize: '11px', color: '#15803D' }}>
-              {WORKSPACE_DOMAIN_DISCLAIMERS.excursionVsDefect}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-            <span
+        {/* Tab View 1: Active Live Investigation */}
+        {activeTab === 'INVESTIGATION' && (
+          <div>
+            {/* Workflow Callout Banner */}
+            <div
               style={{
-                background: '#DCFCE7',
-                color: '#166534',
-                fontSize: '11px',
-                fontWeight: 700,
-                padding: '4px 10px',
-                borderRadius: '6px',
-                border: '1px solid #86EFAC',
-              }}
-            >
-              Excursion ≠ Defect
-            </span>
-            <span
-              style={{
-                background: '#FEF3C7',
-                color: '#92400E',
-                fontSize: '11px',
-                fontWeight: 700,
-                padding: '4px 10px',
-                borderRadius: '6px',
-                border: '1px solid #FCD34D',
-              }}
-            >
-              MISSING ≠ 0
-            </span>
-            <span
-              style={{
-                background: '#F1F5F9',
-                color: '#475569',
-                fontSize: '11px',
-                fontWeight: 700,
-                padding: '4px 10px',
-                borderRadius: '6px',
-                border: '1px solid #CBD5E1',
-              }}
-            >
-              합성 시연 보고서
-            </span>
-          </div>
-        </div>
-
-        {/* 3-Column Interactive Layout / Unsupported Alert Lock Panel */}
-        {isSupportedAlert ? (
-          <div id="ws-investigation-board" className="ws-boards-grid">
-            {/* Section 1: Evidence Board */}
-            <section
-              aria-labelledby="section-evidence-board"
-              style={{
-                background: '#FFFFFF',
-                border: '1px solid #E2E8F0',
-                borderRadius: '10px',
-                padding: '16px',
+                background: '#F0FDF4',
+                border: '1px solid #BBF7D0',
+                borderRadius: '8px',
+                padding: '12px 18px',
+                marginBottom: '16px',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: '14px',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h2
-                    id="section-evidence-board"
-                    style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', margin: 0 }}
-                  >
-                    1. 증거 보드 (Evidence Board)
-                  </h2>
-                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                    센서 관측 사실, FDC 경보, 웨이퍼 노출 이력
-                  </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#166534' }}>
+                  <span style={{ fontWeight: 800 }}>📌 엔지니어링 분석 워크스페이스 (증거·가설·조치 보드):</span>
+                  <span>
+                    8단계 흐름: FAB 시뮬레이션(T7) → FDC 커맨드 센터(경보) → 워크스페이스(가설/증거) → 설비 인텔리전스 →
+                    웨이퍼 추적성(W-08) → EKL 용어 확인
+                  </span>
                 </div>
+                <div style={{ fontSize: '11px', color: '#15803D' }}>
+                  {WORKSPACE_DOMAIN_DISCLAIMERS.excursionVsDefect}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                 <span
                   style={{
+                    background: '#DCFCE7',
+                    color: '#166534',
                     fontSize: '11px',
                     fontWeight: 700,
-                    color: '#0B9F78',
-                    background: '#ECFDF5',
-                    padding: '2px 8px',
-                    borderRadius: '10px',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #86EFAC',
                   }}
                 >
-                  {evidence.length}개 사실
+                  Excursion ≠ Defect
+                </span>
+                <span
+                  style={{
+                    background: '#FEF3C7',
+                    color: '#92400E',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #FCD34D',
+                  }}
+                >
+                  MISSING ≠ 0
+                </span>
+                <span
+                  style={{
+                    background: '#F1F5F9',
+                    color: '#475569',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #CBD5E1',
+                  }}
+                >
+                  합성 시연 보고서
                 </span>
               </div>
+            </div>
 
-              {/* Invariant Note */}
-              <div
-                style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '6px',
-                  padding: '8px 10px',
-                  fontSize: '11px',
-                  color: '#475569',
-                  lineHeight: 1.4,
-                }}
-              >
-                💡 <strong>과학적 사실 분리:</strong> 증거는 관측된 통계 사실이며, 가설 및 원인 판정과 명확히
-                구분됩니다. (T4/T5 광학 결측은 원인이 아닌 센서 관측 사실)
-              </div>
-
-              {/* Evidence Cards List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {evidence.map((evi) => {
-                  const isSelected = evi.id === selectedEvidenceId;
-                  let flagColor = '#059669';
-                  let flagBg = '#ECFDF5';
-                  if (evi.qualityFlag === 'MISSING') {
-                    flagColor = '#D97706';
-                    flagBg = '#FEF3C7';
-                  } else if (evi.qualityFlag === 'CRITICAL') {
-                    flagColor = '#DC2626';
-                    flagBg = '#FEF2F2';
-                  } else if (evi.qualityFlag === 'SUSPECT') {
-                    flagColor = '#EA580C';
-                    flagBg = '#FFF7ED';
-                  }
-
-                  return (
-                    <div
-                      key={evi.id}
-                      id={`evidence-card-${evi.id}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedEvidenceId(evi.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          setSelectedEvidenceId(evi.id);
-                        }
-                      }}
-                      style={{
-                        border: isSelected ? '2px solid #0B9F78' : '1px solid #E2E8F0',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        background: isSelected ? '#F0FDF4' : '#FFFFFF',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease-in-out',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A' }}>
-                          {evi.id} · {evi.category}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            fontWeight: 700,
-                            color: flagColor,
-                            background: flagBg,
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                          }}
-                        >
-                          {evi.qualityFlag}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#1E293B', marginTop: '4px' }}>
-                        {evi.title}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px', lineHeight: 1.35 }}>
-                        {evi.summary}
-                      </div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          marginTop: '6px',
-                          fontSize: '11px',
-                          color: '#475569',
-                        }}
-                      >
-                        <span>
-                          계측치: <strong>{evi.observedValue}</strong>
-                        </span>
-                        <span style={{ color: '#0B9F78', fontWeight: 600 }}>세부 확인 ➔</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Selected Evidence Detail Box */}
-              {selectedEvidence && (
-                <div
-                  id="selected-evidence-detail"
+            {/* 3-Column Interactive Layout / Unsupported Alert Lock Panel */}
+            {isSupportedAlert ? (
+              <div id="ws-investigation-board" className="ws-boards-grid">
+                {/* Section 1: Evidence Board */}
+                <section
+                  aria-labelledby="section-evidence-board"
                   style={{
-                    marginTop: 'auto',
-                    background: '#F8FAFC',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: '8px',
-                    padding: '12px',
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '10px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A' }}>
-                      증거 상세 계측치: {selectedEvidence.id}
-                    </span>
+                    <div>
+                      <h2
+                        id="section-evidence-board"
+                        style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', margin: 0 }}
+                      >
+                        1. 증거 보드 (Evidence Board)
+                      </h2>
+                      <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                        센서 관측 사실, FDC 경보, 웨이퍼 노출 이력
+                      </div>
+                    </div>
                     <span
                       style={{
                         fontSize: '11px',
                         fontWeight: 700,
                         color: '#0B9F78',
-                        background: '#DCFCE7',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
+                        background: '#ECFDF5',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
                       }}
                     >
-                      {selectedEvidence.observedValue}
+                      {evidence.length}개 사실
                     </span>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#334155', marginTop: '6px', lineHeight: 1.4 }}>
-                    {selectedEvidence.details}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#64748B', marginTop: '6px' }}>
-                    <strong>출처:</strong> {selectedEvidence.provenance}
-                  </div>
-                  <div style={{ marginTop: '6px', fontSize: '10px', color: '#94A3B8' }}>
-                    ※ UCL(상한 관리한계)은 센서 SPC 통계 관리치이며 제품 규격(USL/LSL)과 다릅니다.
-                  </div>
-                  <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
-                    <Link
-                      id="btn-evidence-jump-link"
-                      href={selectedEvidence.linkUrl}
-                      style={{
-                        flex: 1,
-                        textAlign: 'center',
-                        background: '#FFFFFF',
-                        color: '#0B9F78',
-                        border: '1px solid #0B9F78',
-                        borderRadius: '6px',
-                        padding: '6px 10px',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        textDecoration: 'none',
-                      }}
-                    >
-                      {selectedEvidence.linkLabel}
-                    </Link>
-                    <button
-                      type="button"
-                      id="btn-toggle-evidence-link"
-                      onClick={() => handleToggleEvidenceLink(selectedHypothesisId, selectedEvidence.id)}
-                      style={{
-                        background: '#0B9F78',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '6px 10px',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                      title="선택된 가설에 이 증거를 연결하거나 연결을 해제합니다"
-                    >
-                      가설 연결 토글 ⇄
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
 
-            {/* Section 2: Hypothesis Comparison Board */}
-            <section
-              aria-labelledby="section-hypothesis-board"
-              style={{
-                background: '#FFFFFF',
-                border: '1px solid #E2E8F0',
-                borderRadius: '10px',
-                padding: '16px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '14px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h2
-                    id="section-hypothesis-board"
-                    style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', margin: 0 }}
+                  {/* Invariant Note */}
+                  <div
+                    style={{
+                      background: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      fontSize: '11px',
+                      color: '#475569',
+                      lineHeight: 1.4,
+                    }}
                   >
-                    2. 가설 비교 보드 (Hypothesis Board)
-                  </h2>
-                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                    공학적 후보 가설 비교 및 증거 맵핑
+                    💡 <strong>과학적 사실 분리:</strong> 증거는 관측된 통계 사실이며, 가설 및 원인 판정과 명확히
+                    구분됩니다. (T4/T5 광학 결측은 원인이 아닌 센서 관측 사실)
                   </div>
-                </div>
-                <button
-                  type="button"
-                  id="btn-reset-hypotheses"
-                  onClick={handleResetHypotheses}
-                  style={{
-                    background: 'none',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: '6px',
-                    padding: '2px 8px',
-                    fontSize: '11px',
-                    color: '#64748B',
-                    cursor: 'pointer',
-                  }}
-                >
-                  초기화 ↺
-                </button>
-              </div>
 
-              {/* Invariant Note */}
-              <div
-                style={{
-                  background: '#FEF3C7',
-                  border: '1px solid #FDE68A',
-                  borderRadius: '6px',
-                  padding: '8px 10px',
-                  fontSize: '11px',
-                  color: '#92400E',
-                  lineHeight: 1.4,
-                }}
-              >
-                ⚠️ <strong>원인 확정 금지:</strong> 가설 상태 및 증거 연결은 엔지니어의 로컬 시연 검토 의견일 뿐이며
-                자동 원인 규명(RCA)이나 품질 판정이 아닙니다.
-              </div>
+                  {/* Evidence Cards List */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {evidence.map((evi) => {
+                      const isSelected = evi.id === selectedEvidenceId;
+                      let flagColor = '#059669';
+                      let flagBg = '#ECFDF5';
+                      if (evi.qualityFlag === 'MISSING') {
+                        flagColor = '#D97706';
+                        flagBg = '#FEF3C7';
+                      } else if (evi.qualityFlag === 'CRITICAL') {
+                        flagColor = '#DC2626';
+                        flagBg = '#FEF2F2';
+                      } else if (evi.qualityFlag === 'SUSPECT') {
+                        flagColor = '#EA580C';
+                        flagBg = '#FFF7ED';
+                      }
 
-              {/* Hypothesis Cards List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {hypotheses.map((hyp) => {
-                  const isSelected = hyp.id === selectedHypothesisId;
+                      return (
+                        <div
+                          key={evi.id}
+                          id={`evidence-card-${evi.id}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedEvidenceId(evi.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              setSelectedEvidenceId(evi.id);
+                            }
+                          }}
+                          style={{
+                            border: isSelected ? '2px solid #0B9F78' : '1px solid #E2E8F0',
+                            borderRadius: '8px',
+                            padding: '10px 12px',
+                            background: isSelected ? '#F0FDF4' : '#FFFFFF',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '6px',
+                            outline: 'none',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748B' }}>
+                              [{evi.id}] {evi.category}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                color: flagColor,
+                                background: flagBg,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                border: `1px solid ${flagColor}33`,
+                              }}
+                            >
+                              {evi.qualityFlag}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>{evi.title}</div>
+                          <div style={{ fontSize: '11px', color: '#475569', lineHeight: 1.35 }}>{evi.summary}</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#0B9F78' }}>
+                              계측: {evi.observedValue}
+                            </span>
+                            {evi.linkUrl && (
+                              <Link
+                                href={evi.linkUrl}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ fontSize: '11px', color: '#2563EB', textDecoration: 'none', fontWeight: 600 }}
+                              >
+                                {evi.linkLabel || '상세 보기 ↗'}
+                              </Link>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-                  let statusBadgeBg = '#F1F5F9';
-                  let statusBadgeColor = '#475569';
-                  if (hyp.status === 'SUPPORTED_FOR_REVIEW') {
-                    statusBadgeBg = '#CCFBF1';
-                    statusBadgeColor = '#0F766E';
-                  } else if (hyp.status === 'NEEDS_MORE_DATA') {
-                    statusBadgeBg = '#FEF3C7';
-                    statusBadgeColor = '#B45309';
-                  } else if (hyp.status === 'RULED_OUT') {
-                    statusBadgeBg = '#FEE2E2';
-                    statusBadgeColor = '#991B1B';
-                  }
-
-                  return (
+                  {/* Selected Evidence Detail */}
+                  {selectedEvidence && (
                     <div
-                      key={hyp.id}
-                      id={`hypothesis-card-${hyp.id}`}
-                      onClick={() => setSelectedHypothesisId(hyp.id)}
                       style={{
-                        border: isSelected ? '2px solid #0D9488' : '1px solid #E2E8F0',
+                        marginTop: 'auto',
+                        background: '#F8FAFC',
+                        border: '1px solid #E2E8F0',
                         borderRadius: '8px',
                         padding: '12px',
-                        background: isSelected ? '#F0FDFA' : '#FFFFFF',
-                        transition: 'all 0.15s ease-in-out',
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A' }}>
-                          {hyp.id} · {hyp.domain}
+                          증거 상세 계측치: {selectedEvidence.id}
                         </span>
                         <span
-                          id={`status-badge-${hyp.id}`}
                           style={{
                             fontSize: '11px',
                             fontWeight: 700,
-                            color: statusBadgeColor,
-                            background: statusBadgeBg,
-                            padding: '2px 8px',
-                            borderRadius: '12px',
+                            color: '#0B9F78',
+                            background: '#DCFCE7',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
                           }}
                         >
-                          {hyp.statusLabel}
+                          {selectedEvidence.observedValue}
                         </span>
                       </div>
-
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#1E293B', marginTop: '6px' }}>
-                        {hyp.title}
+                      <div style={{ fontSize: '12px', color: '#334155', marginTop: '6px', lineHeight: 1.4 }}>
+                        {selectedEvidence.details}
                       </div>
-
-                      <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px', lineHeight: 1.4 }}>
-                        {hyp.description}
+                      <div style={{ fontSize: '11px', color: '#64748B', marginTop: '6px' }}>
+                        <strong>출처:</strong> {selectedEvidence.provenance}
                       </div>
-
-                      <div
-                        style={{
-                          marginTop: '8px',
-                          background: '#FFFFFF',
-                          border: '1px solid #E2E8F0',
-                          borderRadius: '6px',
-                          padding: '6px 8px',
-                          fontSize: '11px',
-                          color: '#64748B',
-                        }}
-                      >
-                        <strong>엔지니어링 근거/판단:</strong> {hyp.engineeringRationale}
+                      <div style={{ marginTop: '6px', fontSize: '10px', color: '#94A3B8' }}>
+                        ※ UCL(상한 관리한계)은 센서 SPC 통계 관리치이며 제품 규격(USL/LSL)과 다릅니다.
                       </div>
-
-                      {/* Linked Evidence Badges */}
-                      <div style={{ marginTop: '8px' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
-                          연결된 증거 사실 ({hyp.linkedEvidenceIds.length}건):
-                        </div>
-                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                          {hyp.linkedEvidenceIds.length === 0 ? (
-                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>연결된 증거 없음</span>
-                          ) : (
-                            hyp.linkedEvidenceIds.map((eviId) => (
-                              <span
-                                key={eviId}
-                                style={{
-                                  fontSize: '10px',
-                                  fontWeight: 700,
-                                  color: '#0F766E',
-                                  background: '#E6FFFA',
-                                  border: '1px solid #99F6E4',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                }}
-                              >
-                                ✓ {eviId}
-                              </span>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Evidence Checklist Toggle */}
-                      <div
-                        style={{
-                          marginTop: '8px',
-                          paddingTop: '6px',
-                          borderTop: '1px dashed #E2E8F0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '6px',
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                          <span style={{ fontSize: '10px', color: '#64748B' }}>증거 맵핑:</span>
-                          {evidence.map((e) => {
-                            const isLinked = hyp.linkedEvidenceIds.includes(e.id);
-                            return (
-                              <button
-                                key={e.id}
-                                type="button"
-                                id={`btn-link-${hyp.id}-${e.id}`}
-                                onClick={(evt) => {
-                                  evt.stopPropagation();
-                                  handleToggleEvidenceLink(hyp.id, e.id);
-                                }}
-                                style={{
-                                  fontSize: '10px',
-                                  fontWeight: 700,
-                                  padding: '1px 5px',
-                                  borderRadius: '3px',
-                                  border: isLinked ? '1px solid #0D9488' : '1px solid #CBD5E1',
-                                  background: isLinked ? '#0D9488' : '#FFFFFF',
-                                  color: isLinked ? '#FFFFFF' : '#64748B',
-                                  cursor: 'pointer',
-                                }}
-                                title={`${e.title} 증거 연결 토글`}
-                              >
-                                {e.id}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Status Cycle Button */}
+                      <div style={{ marginTop: '10px', display: 'flex', gap: '8px' }}>
+                        <Link
+                          id="btn-evidence-jump-link"
+                          href={selectedEvidence.linkUrl}
+                          style={{
+                            flex: 1,
+                            textAlign: 'center',
+                            background: '#FFFFFF',
+                            color: '#0B9F78',
+                            border: '1px solid #0B9F78',
+                            borderRadius: '6px',
+                            padding: '6px 10px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            textDecoration: 'none',
+                          }}
+                        >
+                          {selectedEvidence.linkLabel}
+                        </Link>
                         <button
                           type="button"
-                          id={`btn-cycle-status-${hyp.id}`}
-                          onClick={(evt) => {
-                            evt.stopPropagation();
-                            handleCycleStatus(hyp.id);
-                          }}
+                          id="btn-toggle-evidence-link"
+                          onClick={() => handleToggleEvidenceLink(selectedHypothesisId, selectedEvidence.id)}
                           style={{
-                            background: '#FFFFFF',
-                            border: '1px solid #0D9488',
-                            color: '#0D9488',
+                            background: '#0B9F78',
+                            color: '#FFFFFF',
+                            border: 'none',
                             borderRadius: '6px',
-                            padding: '3px 8px',
-                            fontSize: '11px',
+                            padding: '6px 10px',
+                            fontSize: '12px',
                             fontWeight: 700,
                             cursor: 'pointer',
                           }}
+                          title="선택된 가설에 이 증거를 연결하거나 연결을 해제합니다"
                         >
-                          상태 순환 전환 ⟳
+                          가설 연결 토글 ⇄
                         </button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </section>
+                  )}
+                </section>
 
-            {/* Section 3: Action Checklist & Notes */}
-            <section
-              aria-labelledby="section-action-checklist"
+                {/* Section 2: Hypothesis Evaluation Board */}
+                <section
+                  aria-labelledby="section-hypothesis-board"
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '10px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h2
+                        id="section-hypothesis-board"
+                        style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', margin: 0 }}
+                      >
+                        2. 가설 검증 보드 (Hypothesis Board)
+                      </h2>
+                      <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                        순환 판정 및 증거 사실 연결
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-reset-hypotheses"
+                      onClick={handleResetHypotheses}
+                      style={{
+                        fontSize: '11px',
+                        background: 'none',
+                        border: '1px solid #CBD5E1',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        color: '#64748B',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      초기화 ↺
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      fontSize: '11px',
+                      color: '#475569',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    🔍 <strong>판정 순환:</strong> 버튼을 클릭하여 가설 검토 상태(미검증 → 검토 지지 → 추가 데이터 필요 → 배제)를 순환 변경합니다.
+                  </div>
+
+                  {/* Hypothesis List */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {hypotheses.map((hyp) => {
+                      const isSelected = hyp.id === selectedHypothesisId;
+                      let badgeBg = '#F1F5F9';
+                      let badgeColor = '#475569';
+                      let badgeBorder = '#CBD5E1';
+                      if (hyp.status === 'SUPPORTED_FOR_REVIEW') {
+                        badgeBg = '#ECFDF5';
+                        badgeColor = '#065F46';
+                        badgeBorder = '#A7F3D0';
+                      } else if (hyp.status === 'NEEDS_MORE_DATA') {
+                        badgeBg = '#FEF3C7';
+                        badgeColor = '#92400E';
+                        badgeBorder = '#FDE68A';
+                      } else if (hyp.status === 'RULED_OUT') {
+                        badgeBg = '#F3F4F6';
+                        badgeColor = '#6B7280';
+                        badgeBorder = '#E5E7EB';
+                      }
+
+                      return (
+                        <div
+                          key={hyp.id}
+                          id={`hypothesis-card-${hyp.id}`}
+                          style={{
+                            border: isSelected ? '2px solid #3B82F6' : '1px solid #E2E8F0',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            background: '#FFFFFF',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div>
+                              <span style={{ fontSize: '11px', fontWeight: 800, color: '#3B82F6' }}>
+                                [{hyp.id}] {hyp.domain}
+                              </span>
+                              <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>
+                                {hyp.title}
+                              </div>
+                            </div>
+                            <span
+                              id={`status-badge-${hyp.id}`}
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                background: badgeBg,
+                                color: badgeColor,
+                                border: `1px solid ${badgeBorder}`,
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {hyp.statusLabel}
+                            </span>
+                          </div>
+
+                          <div style={{ fontSize: '11px', color: '#475569', lineHeight: 1.4 }}>
+                            {hyp.engineeringRationale}
+                          </div>
+
+                          {/* Linked Evidence Chips */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B' }}>연결 증거:</span>
+                            {evidence.map((evi) => {
+                              const isLinked = hyp.linkedEvidenceIds.includes(evi.id);
+                              return (
+                                <button
+                                  type="button"
+                                  key={evi.id}
+                                  id={hyp.id === 'HYPO-01' && evi.id === 'EVI-01' ? 'btn-toggle-evidence-link' : `btn-link-evidence-${hyp.id}-${evi.id}`}
+                                  onClick={() => handleToggleEvidenceLink(hyp.id, evi.id)}
+                                  style={{
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    border: isLinked ? '1px solid #0B9F78' : '1px solid #CBD5E1',
+                                    background: isLinked ? '#ECFDF5' : '#F8FAFC',
+                                    color: isLinked ? '#065F46' : '#64748B',
+                                    cursor: 'pointer',
+                                  }}
+                                  title={`${evi.title} 사실을 가설에 연결하거나 해제합니다`}
+                                >
+                                  {isLinked ? '✓ ' : '+ '}
+                                  {evi.id}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Action Button to cycle status */}
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2px' }}>
+                            <button
+                              type="button"
+                              id={`btn-cycle-status-${hyp.id}`}
+                              onClick={() => handleCycleStatus(hyp.id)}
+                              style={{
+                                padding: '4px 10px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: '#F1F5F9',
+                                color: '#1E293B',
+                                border: '1px solid #CBD5E1',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              판정 변경 순환 ↻
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {/* Section 3: Action Checklist & Notes */}
+                <section
+                  aria-labelledby="section-actions-notes"
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '10px',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h2
+                        id="section-actions-notes"
+                        style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', margin: 0 }}
+                      >
+                        3. 조치 점검표 및 메모 (Actions & Notes)
+                      </h2>
+                      <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                        가상 점검 항목 이행 및 엔지니어링 기록
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-reset-actions"
+                      onClick={handleResetActions}
+                      style={{
+                        fontSize: '11px',
+                        background: 'none',
+                        border: '1px solid #CBD5E1',
+                        borderRadius: '4px',
+                        padding: '2px 8px',
+                        color: '#64748B',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      초기화 ↺
+                    </button>
+                  </div>
+
+                  {/* Actions Checklist */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {actions.map((act) => (
+                      <div
+                        key={act.id}
+                        id={`action-item-${act.id}`}
+                        style={{
+                          border: act.completed ? '1px solid #86EFAC' : '1px solid #E2E8F0',
+                          borderRadius: '6px',
+                          padding: '8px 10px',
+                          background: act.completed ? '#F0FDF4' : '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '10px',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          id={`chk-${act.id}`}
+                          checked={act.completed}
+                          onChange={() => handleToggleAction(act.id)}
+                          style={{ marginTop: '3px', cursor: 'pointer' }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label
+                              htmlFor={`chk-${act.id}`}
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                color: act.completed ? '#166534' : '#0F172A',
+                                cursor: 'pointer',
+                                textDecoration: act.completed ? 'line-through' : 'none',
+                              }}
+                            >
+                              {act.title}
+                            </label>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                background: act.priority === 'HIGH' ? '#FEF2F2' : '#FFF7ED',
+                                color: act.priority === 'HIGH' ? '#DC2626' : '#EA580C',
+                              }}
+                            >
+                              {act.priority}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                            담당: <strong>{act.assigneeRole}</strong> · 대상: {act.targetSystem}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px', lineHeight: 1.35 }}>
+                            {act.detail}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* In-memory Volatile Engineering Notes */}
+                  <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label
+                        htmlFor="engineering-workspace-notes"
+                        style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A' }}
+                      >
+                        엔지니어링 메모 (In-memory Volatile)
+                      </label>
+                      <span style={{ fontSize: '10px', color: '#94A3B8' }}>새로고침 시 휘발 (단, Casebook 저장 시 보존)</span>
+                    </div>
+                    <textarea
+                      id="engineering-workspace-notes"
+                      data-testid="ws-input-user-notes"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="조사 검토 의견, 잠재 리스크, 후속 액션 아이템을 메모하세요... 'Casebook에 저장' 버튼으로 보관할 수 있습니다."
+                      rows={3}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        fontSize: '12px',
+                        borderRadius: '6px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#1E293B',
+                        resize: 'vertical',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                    <div style={{ fontSize: '10px', color: '#94A3B8', lineHeight: 1.3 }}>
+                      인메모리 휘발성 고지: {WORKSPACE_DOMAIN_DISCLAIMERS.memoryDisclaimer}
+                    </div>
+                  </div>
+                </section>
+              </div>
+            ) : (
+              <div
+                id="ws-unsupported-lock-panel"
+                style={{
+                  background: '#FEF2F2',
+                  border: '2px dashed #F87171',
+                  borderRadius: '12px',
+                  padding: '40px 24px',
+                  marginBottom: '24px',
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '16px',
+                }}
+              >
+                <div style={{ fontSize: '36px' }}>🔒</div>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#991B1B' }}>
+                  엔지니어링 보드 비활성화 및 데이터 격리 (Data Isolation Lock)
+                </div>
+                <div style={{ maxWidth: '680px', fontSize: '13px', color: '#7F1D1D', lineHeight: 1.6 }}>
+                  {errorState ? (
+                    <span>
+                      <strong>{errorState.title}:</strong> {errorState.message}
+                    </span>
+                  ) : (
+                    <span>
+                      요청된 알람(<strong>{alertId}</strong>)은 지원되지 않거나 대기 상태(Standby)인 알람입니다.<br />
+                      FAB ONE의 합성 Run 계통성을 보호하기 위해 타 런의 증거/가설/조치 보드를 허위로 표기하지 않고 격리 잠금 처리했습니다.<br />
+                      현재 활성 공정 일탈 런(<strong>{runId}</strong>)의 분석 데이터를 로드하려면 활성 알람(
+                      <strong>{mode === 'B' && serverActiveAlertId ? serverActiveAlertId : expectedAlertId}</strong>)으로 전환하십시오.
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  id="ws-btn-switch-active-alert-lock"
+                  onClick={handleSwitchToActiveAlert}
+                  style={{
+                    background: '#DC2626',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '10px 20px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 4px rgba(220, 38, 38, 0.2)',
+                  }}
+                >
+                  활성 알람({mode === 'B' && serverActiveAlertId ? serverActiveAlertId : expectedAlertId})으로 전환 ↗
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab View 2: Investigation Casebook */}
+        {activeTab === 'CASEBOOK' && (
+          <div id="ws-casebook-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Casebook Header & Action Bar */}
+            <div
               style={{
                 background: '#FFFFFF',
                 border: '1px solid #E2E8F0',
                 borderRadius: '10px',
-                padding: '16px',
+                padding: '16px 20px',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: '14px',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '12px',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h2
-                    id="section-action-checklist"
-                    style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', margin: 0 }}
-                  >
-                    3. 조치 체크리스트 & 메모
-                  </h2>
-                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                    엔지니어링 검토 조치 및 로컬 메모
-                  </div>
+              <div>
+                <h2 style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                  사건 기록 보관소 (Investigation Casebook 📚)
+                </h2>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                  저장된 과거 조사 사례와 최근 합성 Run 이력을 조회·비교하고 워크스페이스로 다시 불러옵니다.
                 </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  id="btn-reset-actions"
-                  onClick={handleResetActions}
+                  id="ws-btn-export-casebook-json"
+                  onClick={handleExportCasebookJson}
                   style={{
-                    background: 'none',
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    background: '#F1F5F9',
                     border: '1px solid #CBD5E1',
                     borderRadius: '6px',
-                    padding: '2px 8px',
-                    fontSize: '11px',
-                    color: '#64748B',
                     cursor: 'pointer',
                   }}
                 >
-                  체크 초기화 ↺
+                  Casebook JSON 백업 다운로드 📥
+                </button>
+
+                <input
+                  type="file"
+                  id="ws-input-import-casebook-json"
+                  accept=".json,application/json"
+                  style={{ display: 'none' }}
+                  ref={fileInputRef}
+                  onChange={handleImportFileInputChange}
+                />
+                <button
+                  type="button"
+                  id="ws-btn-import-casebook-json"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    background: '#F1F5F9',
+                    border: '1px solid #CBD5E1',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Casebook JSON 복원 📤
                 </button>
               </div>
+            </div>
 
-              {/* Invariant Note */}
-              <div
-                style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '6px',
-                  padding: '8px 10px',
-                  fontSize: '11px',
-                  color: '#475569',
-                  lineHeight: 1.4,
-                }}
-              >
-                🔒 <strong>장비 제어 명령 미발행:</strong> 체크리스트 조치는 시뮬레이션 검토 항목이며 실제 생산
-                장비(MES/FDC)에 제어 명령을 발행하지 않습니다.
+            {/* Section A: User Saved Case Records */}
+            <section
+              style={{
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                borderRadius: '10px',
+                padding: '18px 20px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                  저장된 조사 케이스 ({savedCaseRecords.length}건)
+                </h3>
+                <span style={{ fontSize: '11px', color: '#64748B' }}>브라우저 로컬 저장소 (Local Storage)</span>
               </div>
 
-              {/* Checklist Items */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {actions.map((act) => (
+              <div id="ws-casebook-records-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {savedCaseRecords.length === 0 ? (
                   <div
-                    key={act.id}
-                    id={`action-item-${act.id}`}
+                    id="ws-casebook-empty-state"
                     style={{
-                      border: '1px solid #E2E8F0',
+                      padding: '24px',
+                      textAlign: 'center',
+                      background: '#F8FAFC',
                       borderRadius: '8px',
-                      padding: '10px',
-                      background: act.completed ? '#F8FAFC' : '#FFFFFF',
-                      opacity: act.completed ? 0.75 : 1,
-                      transition: 'all 0.15s ease-in-out',
+                      color: '#64748B',
+                      fontSize: '13px',
+                      border: '1px dashed #CBD5E1',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                      <input
-                        type="checkbox"
-                        id={`chk-${act.id}`}
-                        checked={act.completed}
-                        onChange={() => handleToggleAction(act.id)}
-                        style={{ marginTop: '3px', cursor: 'pointer', accentColor: '#0B9F78' }}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <label
-                            htmlFor={`chk-${act.id}`}
+                    저장된 조사 케이스가 없습니다. 상단의 <strong>&apos;현재 사례 Casebook에 저장 💾&apos;</strong> 버튼을 눌러
+                    현재 작성 중인 가설/체크리스트/메모를 보관하세요.
+                  </div>
+                ) : (
+                  savedCaseRecords.map((rec) => {
+                    const isCurrentLive = rec.runId === runId;
+                    return (
+                      <div
+                        key={rec.id}
+                        id={`casebook-item-${rec.id}`}
+                        style={{
+                          border: isCurrentLive ? '2px solid #0B9F78' : '1px solid #E2E8F0',
+                          borderRadius: '8px',
+                          padding: '14px',
+                          background: isCurrentLive ? '#F0FDF4' : '#FFFFFF',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                background: isCurrentLive ? '#ECFDF5' : '#F1F5F9',
+                                color: isCurrentLive ? '#065F46' : '#475569',
+                                border: isCurrentLive ? '1px solid #86EFAC' : '1px solid #CBD5E1',
+                              }}
+                            >
+                              {isCurrentLive ? 'CURRENT LIVE ACTIVE' : 'HISTORICAL SNAPSHOT'}
+                            </span>
+                            <span style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>
+                              Run: {rec.runId} · Alert: {rec.alertId}
+                            </span>
+                          </div>
+
+                          <span style={{ fontSize: '11px', color: '#64748B' }}>
+                            저장 일시: {new Date(rec.savedAtUtc).toLocaleString('ko-KR')}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: '#475569', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                          <span>로트: <strong>{rec.lotId}</strong></span>
+                          <span>설비: <strong>{rec.equipmentId} / {rec.chamberId}</strong></span>
+                          <span>모드: <strong>{rec.mode === 'B' ? 'Mode B' : 'Mode A'}</strong></span>
+                          <span>가설: <strong>{rec.hypotheses?.length || 0}개</strong></span>
+                          <span>조치 완료: <strong>{rec.actions?.filter((a) => a.completed).length || 0} / {rec.actions?.length || 0}</strong></span>
+                        </div>
+
+                        {rec.userNotes && (
+                          <div style={{ fontSize: '11px', color: '#334155', background: '#F8FAFC', padding: '6px 10px', borderRadius: '4px' }}>
+                            메모: {rec.userNotes.slice(0, 100)}{rec.userNotes.length > 100 ? '...' : ''}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+                          <button
+                            type="button"
+                            id={`casebook-btn-load-${rec.id}`}
+                            onClick={() => handleLoadCasebookRecord(rec)}
                             style={{
-                              fontSize: '12px',
+                              padding: '4px 10px',
+                              fontSize: '11px',
                               fontWeight: 700,
-                              color: '#0F172A',
-                              textDecoration: act.completed ? 'line-through' : 'none',
+                              background: '#0B9F78',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              borderRadius: '4px',
                               cursor: 'pointer',
                             }}
                           >
-                            {act.title}
-                          </label>
+                            워크스페이스로 불러오기 ↩
+                          </button>
+                          <button
+                            type="button"
+                            id={`casebook-btn-delete-${rec.id}`}
+                            onClick={() => handleDeleteCasebookRecord(rec.id)}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              background: '#F1F5F9',
+                              color: '#DC2626',
+                              border: '1px solid #FECACA',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            삭제 🗑
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+
+            {/* Section B: Server Process Runs from SQLite */}
+            <section
+              style={{
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                borderRadius: '10px',
+                padding: '18px 20px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                  서버 공정 Run 이력 (FastAPI SQLite process_run)
+                </h3>
+                <span style={{ fontSize: '11px', color: '#64748B' }}>
+                  {serverRuns.length > 0 ? `${serverRuns.length}개 Run 검색됨` : '서버 미연결 (Mode A 오프라인)'}
+                </span>
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '14px' }}>
+                ※ 이전 Run은 <strong>&apos;HISTORICAL SNAPSHOT (Read-Only)&apos;</strong>으로 제공되며, 현재 설비 실시간 제어나 양산 MES 기록이 아닌 synthetic 시뮬레이션 데이터입니다.
+              </div>
+
+              <div id="ws-casebook-server-runs-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {serverRuns.length === 0 ? (
+                  <div style={{ padding: '16px', textAlign: 'center', color: '#94A3B8', fontSize: '12px' }}>
+                    서버 Run 목록이 없거나 API 서버에 연결되지 않았습니다.
+                  </div>
+                ) : (
+                  serverRuns.map((r) => {
+                    const isLive = r.is_active;
+                    return (
+                      <div
+                        key={r.run_id}
+                        id={`casebook-run-${r.run_id}`}
+                        style={{
+                          border: isLive ? '2px solid #3B82F6' : '1px solid #E2E8F0',
+                          borderRadius: '6px',
+                          padding: '10px 14px',
+                          background: isLive ? '#EFF6FF' : '#FFFFFF',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '8px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <span
                             style={{
                               fontSize: '10px',
-                              fontWeight: 700,
-                              padding: '1px 6px',
+                              fontWeight: 800,
+                              padding: '2px 6px',
                               borderRadius: '4px',
-                              background: act.priority === 'HIGH' ? '#FEF2F2' : '#FFF7ED',
-                              color: act.priority === 'HIGH' ? '#DC2626' : '#EA580C',
+                              background: isLive ? '#DBEAFE' : '#F1F5F9',
+                              color: isLive ? '#1D4ED8' : '#64748B',
                             }}
                           >
-                            {act.priority}
+                            {isLive ? 'LIVE ACTIVE' : 'HISTORICAL SNAPSHOT'}
+                          </span>
+                          <span style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A' }}>
+                            {r.run_id}
+                          </span>
+                          <span style={{ fontSize: '11px', color: '#64748B' }}>
+                            시드: {r.seed} · 로트: {r.lot_id} · 설비: {r.equipment_id}/{r.chamber_id}
                           </span>
                         </div>
-                        <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                          담당: <strong>{act.assigneeRole}</strong> · 대상: {act.targetSystem}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#475569', marginTop: '4px', lineHeight: 1.35 }}>
-                          {act.detail}
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {r.alert_id && (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                background: r.alert_severity === 'CRITICAL' ? '#FEF2F2' : '#FFF7ED',
+                                color: r.alert_severity === 'CRITICAL' ? '#DC2626' : '#EA580C',
+                              }}
+                            >
+                              {r.alert_id} ({r.alert_severity || 'ALERT'})
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            id={`casebook-btn-view-run-${r.run_id}`}
+                            onClick={() => {
+                              router.replace(
+                                `/engineering-workspace?mode=B&run_id=${encodeURIComponent(r.run_id)}${
+                                  r.alert_id ? `&alert=${encodeURIComponent(r.alert_id)}` : ''
+                                }`
+                              );
+                              setActiveTab('INVESTIGATION');
+                            }}
+                            style={{
+                              padding: '4px 10px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              background: '#FFFFFF',
+                              color: '#2563EB',
+                              border: '1px solid #BFDBFE',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            해당 Run 열기 ↗
+                          </button>
                         </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* In-memory Volatile Engineering Notes */}
-              <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label
-                    htmlFor="engineering-workspace-notes"
-                    style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A' }}
-                  >
-                    엔지니어링 메모 (In-memory Volatile)
-                  </label>
-                  <span style={{ fontSize: '10px', color: '#94A3B8' }}>새로고침 시 휘발</span>
-                </div>
-                <textarea
-                  id="engineering-workspace-notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="조사 검토 의견, 잠재 리스크, 후속 액션 아이템을 메모하세요..."
-                  rows={3}
-                  style={{
-                    width: '100%',
-                    padding: '8px 10px',
-                    fontSize: '12px',
-                    borderRadius: '6px',
-                    border: '1px solid #CBD5E1',
-                    background: '#FFFFFF',
-                    color: '#1E293B',
-                    resize: 'vertical',
-                    boxSizing: 'border-box',
-                  }}
-                />
-                <div style={{ fontSize: '10px', color: '#94A3B8', lineHeight: 1.3 }}>
-                  {WORKSPACE_DOMAIN_DISCLAIMERS.memoryDisclaimer}
-                </div>
+                    );
+                  })
+                )}
               </div>
             </section>
-          </div>
-        ) : (
-          <div
-            id="ws-unsupported-lock-panel"
-            style={{
-              background: '#FEF2F2',
-              border: '2px dashed #F87171',
-              borderRadius: '12px',
-              padding: '40px 24px',
-              marginBottom: '24px',
-              textAlign: 'center',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: '16px',
-            }}
-          >
-            <div style={{ fontSize: '36px' }}>🔒</div>
-            <div style={{ fontSize: '18px', fontWeight: 800, color: '#991B1B' }}>
-              엔지니어링 보드 비활성화 및 데이터 격리 (Data Isolation Lock)
-            </div>
-            <div style={{ maxWidth: '680px', fontSize: '13px', color: '#7F1D1D', lineHeight: 1.6 }}>
-              {errorState ? (
-                <span>
-                  <strong>{errorState.title}:</strong> {errorState.message}
-                </span>
-              ) : (
-                <span>
-                  요청된 알람(<strong>{alertId}</strong>)은 지원되지 않거나 대기 상태(Standby)인 알람입니다.<br />
-                  FAB ONE의 합성 Run 계통성을 보호하기 위해 타 런의 증거/가설/조치 보드를 허위로 표기하지 않고 격리 잠금 처리했습니다.<br />
-                  현재 활성 공정 일탈 런(<strong>{runId}</strong>)의 분석 데이터를 로드하려면 활성 알람(
-                  <strong>{expectedAlertId}</strong>)으로 전환하십시오.
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              id="ws-btn-switch-active-alert-lock"
-              onClick={handleSwitchToActiveAlert}
-              style={{
-                background: '#DC2626',
-                color: '#FFFFFF',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '10px 20px',
-                fontSize: '13px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(220, 38, 38, 0.2)',
-              }}
-            >
-              활성 알람({expectedAlertId})으로 전환 ↗
-            </button>
           </div>
         )}
 
@@ -1524,6 +2174,7 @@ function EngineeringWorkspaceContent() {
             border: '1px solid #E2E8F0',
             borderRadius: '10px',
             padding: '16px 20px',
+            marginTop: '20px',
             marginBottom: '20px',
           }}
         >
@@ -1539,29 +2190,10 @@ function EngineeringWorkspaceContent() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '10px',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '12px',
             }}
           >
-            <Link
-              id="ws-nav-simulation"
-              href={navLinks.fabSimulation}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
-                padding: '10px 14px',
-                background: '#F8FAFC',
-                border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                textDecoration: 'none',
-                color: '#1E293B',
-              }}
-            >
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0B9F78' }}>FAB 시뮬레이션 ↗</div>
-              <div style={{ fontSize: '11px', color: '#64748B' }}>T0~T7 공정 진행 및 T7 일탈 타임라인 시연</div>
-            </Link>
-
             <Link
               id="ws-nav-command-center"
               href={navLinks.commandCenter}
@@ -1578,11 +2210,11 @@ function EngineeringWorkspaceContent() {
               }}
             >
               <div style={{ fontSize: '12px', fontWeight: 800, color: '#0B9F78' }}>FDC 커맨드 센터 ↗</div>
-              <div style={{ fontSize: '11px', color: '#64748B' }}>알람 큐 확인 및 실시간 이상 감지 센티넬</div>
+              <div style={{ fontSize: '11px', color: '#64748B' }}>공정 일탈 알람 큐 정렬 및 심각도 분류</div>
             </Link>
 
             <Link
-              id="ws-nav-equipment"
+              id="ws-nav-equipment-intelligence"
               href={navLinks.equipmentIntelligence}
               style={{
                 display: 'flex',
@@ -1596,7 +2228,7 @@ function EngineeringWorkspaceContent() {
                 color: '#1E293B',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0B9F78' }}>설비 인텔리전스 ↗</div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0B9F78' }}>설비 인텔리전스 차트 ↗</div>
               <div style={{ fontSize: '11px', color: '#64748B' }}>OES, 압력, RF 전력 시계열 차트 및 T4/T5 결측 분절</div>
             </Link>
 

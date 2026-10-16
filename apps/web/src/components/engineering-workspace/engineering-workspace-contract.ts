@@ -334,9 +334,11 @@ export function mapInvestigationDetailToEvidence(
   const prsSample = detail.evidence_sensors.find((s) => s.sensor_id === 'CHAMBER_PRESSURE');
   const rfSample = detail.evidence_sensors.find((s) => s.sensor_id === 'RF_POWER');
 
-  const oesVal = oesSample ? oesSample.measured_value : 80.0;
-  const prsVal = prsSample ? prsSample.measured_value : 168.5;
-  const rfVal = rfSample ? rfSample.measured_value : 1820.0;
+  const oesVal = oesSample && typeof oesSample.measured_value === 'number' ? oesSample.measured_value : '미제공 (N/A)';
+  const prsVal = prsSample && typeof prsSample.measured_value === 'number' ? prsSample.measured_value : '미제공 (N/A)';
+  const rfVal = rfSample && typeof rfSample.measured_value === 'number' ? rfSample.measured_value : '미제공 (N/A)';
+
+  const oesDisplay = typeof oesVal === 'number' ? `${oesVal} a.u. (> UCL 65.0)` : '미제공 (N/A)';
 
   return [
     {
@@ -344,12 +346,12 @@ export function mapInvestigationDetailToEvidence(
       type: 'OBSERVATION_QUALITY',
       title: 'OES 상대 신호 T4/T5 결측 (MISSING ≠ 0)',
       category: '센서 관측 품질 사실',
-      summary: '식각 진행 중 스텝 T4/T5 구간 광학 상대 신호(OES) 일시 드롭아웃 발생.',
+      summary: '식각 진행 중 스텝 T4/T5 구간 광학 상대 신호(OES) 일시 드롭아웃 (기준 합성 시나리오 설명: 동일 Run samples API에서 검증 가능).',
       observedValue: 'null (MISSING)',
       unit: 'a.u.',
       qualityFlag: 'MISSING',
       provenance: `${detail.equipment_id} / ${detail.chamber_id} (${detail.run_id}) · 광학 방출 분광 센서`,
-      details: '광학 검출기 셔터 또는 수광부 일시 결측 사실이며 0으로 변조하지 않고 엄격한 null로 처리됩니다. 이는 센서 관측 사실일 뿐 공정 일탈의 직접 원인이 아닙니다.',
+      details: '광학 검출기 셔터 또는 수광부 일시 결측 사실이며 0으로 변조하지 않고 엄격한 null로 처리됩니다. 이는 센서 관측 사실일 뿐 공정 일탈의 직접 원인이 아닙니다. 동일 Run samples API(/api/v1/demo/runs/{run_id}/samples)로 입증됩니다.',
       linkUrl: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&mode=B&run_id=${encodeURIComponent(detail.run_id)}`,
       linkLabel: '설비 센서 차트 확인 ↗',
     },
@@ -358,8 +360,8 @@ export function mapInvestigationDetailToEvidence(
       type: 'PROCESS_EXCURSION',
       title: 'Step T7 복합 센서 공정 일탈 (Excursion Spike)',
       category: '통계적 관리한계 초과',
-      summary: `식각 종점 T7 구간에서 OES(${oesVal} a.u.), 챔버 압력(${prsVal} mTorr), RF 전력(${rfVal} W) 복합 급증 (UCL 65.0 초과).`,
-      observedValue: `${oesVal} a.u. (> UCL 65.0)`,
+      summary: `식각 종점 T7 구간에서 OES(${oesVal} a.u.), 챔버 압력(${prsVal} mTorr), RF 전력(${rfVal} W) 복합 일탈 (UCL 65.0 대비).`,
+      observedValue: oesDisplay,
       unit: 'a.u. / mTorr / W',
       qualityFlag: 'SUSPECT',
       provenance: `${detail.equipment_id} / ${detail.chamber_id} (${detail.run_id}) · T7 스텝 계측 (Live API)`,

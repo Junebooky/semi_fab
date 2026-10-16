@@ -260,6 +260,9 @@ function TraceabilityContent() {
   const queryWafer = searchParams.get('wafer') || 'W-08';
   const queryTourStep = searchParams.get('tourStep');
   const querySeed = searchParams.get('seed');
+  const queryMode = searchParams.get('mode');
+  const queryRunId = searchParams.get('run_id');
+  const isExplicitModeB = queryMode === 'B' || !!queryRunId;
   const safeSeed = (querySeed && Number.isInteger(Number(querySeed)) && Number(querySeed) > 0 && Number(querySeed) < 1000000000)
     ? Number(querySeed) : 20261015;
 
@@ -310,23 +313,19 @@ function TraceabilityContent() {
     setIsLoading(true);
     setNotFoundError(null);
 
-    // 2. Fetch server summary FIRST to reliably acquire active_run_id (P1-A)
-    let summaryRes: Response;
-    try {
-      summaryRes = await fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' });
-    } catch {
-      // Genuine network connection failure (server unreachable / port 8000 down) -> Fallback to Mode A
+    // Mode A branch: When not explicitly Mode B
+    if (!isExplicitModeB) {
       if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
 
       setMode('A');
-      setWafers(generateModeAWafers(seed));
-      setActiveRunId(`RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`);
+      setWafers(generateModeAWafers(safeSeed));
+      setActiveRunId(`RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`);
 
       if (isValidWaferId(targetWafer)) {
-        const synTrace = generateModeAWaferTrace(targetWafer, seed);
+        const synTrace = generateModeAWaferTrace(targetWafer, safeSeed);
         setTrace(synTrace);
         setNotFoundError(null);
-        setNotice(`Mode A: 백엔드 미실행에 따른 로컬 합성 픽스처 웨이퍼 ${targetWafer} 이력 표시.`);
+        setNotice(`Mode A: 로컬 합성 픽스처 웨이퍼 ${targetWafer} 이력 표시.`);
       } else {
         setTrace(null);
         setNotFoundError({
@@ -336,6 +335,26 @@ function TraceabilityContent() {
         });
         setNotice(`오류 (404 Not Found): 카세트에 존재하지 않는 웨이퍼 ID '${targetWafer}' 입니다.`);
       }
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Mode B branch: Fetch server summary FIRST to reliably acquire active_run_id (P1-A)
+    let summaryRes: Response;
+    try {
+      summaryRes = await fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' });
+    } catch {
+      // Genuine network connection failure (server unreachable / port 8000 down) -> Fail-closed in Mode B
+      if (reqId !== activeTraceReqIdRef.current || targetWaferIdRef.current !== targetWafer) return;
+
+      setTrace(null);
+      setNotFoundError({
+        waferId: targetWafer,
+        status: 503,
+        message: 'Mode B API 서버 연결 실패 (HTTP 503): FastAPI 서버와 통신할 수 없습니다. 요청된 모드가 Mode B이므로 합성 데이터로 자동 대체하지 않고 조회를 차단합니다 (Fail-closed).'
+      });
+      setMode('B');
+      setNotice('서버 통신 실패: Mode B 백엔드에 연결할 수 없습니다.');
       setIsLoading(false);
       return;
     }
@@ -386,6 +405,20 @@ function TraceabilityContent() {
       });
       setMode('B');
       setNotice('서버 데이터 오류: 유효한 활성 공정 Run ID가 존재하지 않습니다.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Lineage check: If query specifies run_id, verify it matches active_run_id!
+    if (queryRunId && queryRunId.trim() !== currentRunId.trim()) {
+      setTrace(null);
+      setNotFoundError({
+        waferId: targetWafer,
+        status: 409,
+        message: `공정 Run 불일치 (Run Lineage Mismatch): 요청된 Run ID (${queryRunId})가 서버 활성 Run ID (${currentRunId})와 일치하지 않습니다.`
+      });
+      setMode('B');
+      setActiveRunId(currentRunId);
       setIsLoading(false);
       return;
     }
@@ -514,7 +547,7 @@ function TraceabilityContent() {
     setNotFoundError(null);
     setNotice(`Mode B (Live API): 웨이퍼 ${targetWafer} 공정 이력, 25매 카세트 및 Run 요약(${currentRunId}) 동기화 완료.`);
     setIsLoading(false);
-  }, [seed]);
+  }, [safeSeed, isExplicitModeB, queryRunId]);
 
   // Sync if URL search param changes
   useEffect(() => {
@@ -545,8 +578,10 @@ function TraceabilityContent() {
     activeTraceReqIdRef.current++;
     setSelectedWaferId(wId);
     const seedParam = seed !== 20261015 ? `&seed=${seed}` : '';
+    const modeParam = queryMode ? `&mode=${encodeURIComponent(queryMode)}` : '';
+    const runIdParam = queryRunId ? `&run_id=${encodeURIComponent(queryRunId)}` : '';
     const tourParam = queryTourStep ? `&tourStep=${encodeURIComponent(queryTourStep)}` : '';
-    router.replace(`/traceability?wafer=${wId}${seedParam}${tourParam}`, { scroll: false });
+    router.replace(`/traceability?wafer=${wId}${seedParam}${modeParam}${runIdParam}${tourParam}`, { scroll: false });
     loadData(wId);
   };
 

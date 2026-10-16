@@ -19,6 +19,7 @@ from .models import (
     InvestigationDetail,
     WaferTimelineEvent,
     WaferTraceDetail,
+    CasebookRunItem,
 )
 from .generator import generate_etch_demo_dataset
 
@@ -232,6 +233,63 @@ def start_demo_run(req: StartRunRequest):
             )
 
     return get_demo_summary()
+
+@app.get("/api/v1/demo/runs", response_model=List[CasebookRunItem])
+def get_demo_runs():
+    """
+    Returns list of historical and active synthetic process runs for the Investigation Casebook.
+    Explicitly distinguishes active run vs read-only historical snapshots without live equipment pretence.
+    """
+    with db_session() as conn:
+        rows = conn.execute(
+            """
+            SELECT 
+                r.run_id, r.session_id, s.seed, s.is_active,
+                r.equipment_id, r.chamber_id, r.recipe_id, r.lot_id,
+                r.start_time_utc, r.run_status, r.data_origin,
+                (
+                    SELECT alert_id FROM fdc_alert 
+                    WHERE run_id = r.run_id AND session_id = r.session_id
+                    ORDER BY CASE WHEN severity = 'CRITICAL' THEN 1 WHEN severity = 'WARNING' THEN 2 ELSE 3 END, event_time_utc DESC
+                    LIMIT 1
+                ) AS alert_id,
+                (
+                    SELECT severity FROM fdc_alert 
+                    WHERE run_id = r.run_id AND session_id = r.session_id
+                    ORDER BY CASE WHEN severity = 'CRITICAL' THEN 1 WHEN severity = 'WARNING' THEN 2 ELSE 3 END, event_time_utc DESC
+                    LIMIT 1
+                ) AS alert_severity,
+                (
+                    SELECT rule_code FROM fdc_alert 
+                    WHERE run_id = r.run_id AND session_id = r.session_id
+                    ORDER BY CASE WHEN severity = 'CRITICAL' THEN 1 WHEN severity = 'WARNING' THEN 2 ELSE 3 END, event_time_utc DESC
+                    LIMIT 1
+                ) AS alert_rule_code
+            FROM process_run r
+            JOIN simulation_session s ON r.session_id = s.session_id
+            ORDER BY r.start_time_utc DESC;
+            """
+        ).fetchall()
+        
+        runs = []
+        for row in rows:
+            runs.append(CasebookRunItem(
+                run_id=row["run_id"],
+                session_id=row["session_id"],
+                seed=row["seed"],
+                is_active=bool(row["is_active"]),
+                equipment_id=row["equipment_id"],
+                chamber_id=row["chamber_id"],
+                recipe_id=row["recipe_id"],
+                lot_id=row["lot_id"],
+                start_time_utc=row["start_time_utc"],
+                run_status=row["run_status"],
+                alert_id=row["alert_id"],
+                alert_severity=row["alert_severity"],
+                alert_rule_code=row["alert_rule_code"],
+                data_origin=row["data_origin"] or "synthetic"
+            ))
+        return runs
 
 @app.get("/api/v1/demo/runs/{run_id}/samples", response_model=List[SensorSample])
 def get_run_samples(run_id: str, sensor_id: Optional[str] = Query(default=None)):
