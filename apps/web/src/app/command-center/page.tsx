@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
+import { FriendlyPageIntro } from '@/components/ux/FriendlyPageIntro';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
 import {
@@ -344,7 +345,7 @@ function CommandCenterContent() {
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
               <polyline points="9 22 9 12 15 12 15 22"></polyline>
             </svg>
-            홈 (FDC 모니터링)
+            홈
           </Link>
           <Link href={buildCrossNavUrl('/traceability', { mode, seed, runId: activeRunId || undefined, alertId: selectedAlertId || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -352,27 +353,27 @@ function CommandCenterContent() {
               <line x1="12" y1="8" x2="12" y2="12"></line>
               <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            웨이퍼 이력 추적성 (Traceability)
+            웨이퍼 확인
           </Link>
           <Link href={buildCrossNavUrl('/command-center', { mode, seed, runId: activeRunId || undefined, alertId: selectedAlertId || undefined })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
-            FDC 커맨드 센터 (Command Center)
+            알람 확인
           </Link>
           <Link href={buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId: activeRunId || undefined, alertId: selectedAlertId || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
             </svg>
-            설비 인텔리전스 (Equipment)
+            설비 살펴보기
           </Link>
           <Link href={buildCrossNavUrl('/fab-simulation', { mode, seed, runId: activeRunId || undefined, alertId: selectedAlertId || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            FAB 시뮬레이션 (Simulation)
+            공정 체험
           </Link>
           <Link href={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId: activeRunId || undefined, alertId: selectedAlertId || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -381,14 +382,14 @@ function CommandCenterContent() {
               <path d="M9 12h6" />
               <path d="M9 16h6" />
             </svg>
-            엔지니어링 워크스페이스 (Workspace)
+            조사 노트
           </Link>
           <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: queryTourStep || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
             </svg>
-            가이드 투어 (Demo Tour)
+            처음 둘러보기
           </Link>
         </nav>
 
@@ -412,6 +413,15 @@ function CommandCenterContent() {
 
       {/* Main Content */}
       <main className="main-content">
+        <FriendlyPageIntro
+  eyebrow="알람 확인"
+  title={totalCount > 0 ? '지금 확인할 이상 신호가 있어요' : '지금은 표시할 알람이 없어요'}
+  description={totalCount > 0 ? '어떤 설비에서 신호가 달라졌는지 확인해요. 알람을 선택하면 관련 근거와 다음 조사 단계로 이어져요.' : '연습 데이터를 다시 확인하거나 공정 체험에서 새 신호를 만들어 볼 수 있어요.'}
+  primaryLabel="센서 근거 살펴보기"
+  primaryHref={activeRunId ? buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId: activeRunId, alertId: selectedAlertId || undefined }) : undefined}
+  detail={<p>심각도는 경고 우선순위를 알려 줄 뿐 불량 확정은 아니에요. 선택한 알람의 Run과 장비가 일치하지 않으면 다른 증거로 대체하지 않아요. Seed: {seed} · Run: {activeRunId || '대기 중'}</p>}
+/>
+
         {/* BUILD-10 Tour Return Banner */}
         <TourReturnBanner tourStep={queryTourStep} seed={seed} />
 
@@ -429,7 +439,7 @@ function CommandCenterContent() {
               disabled={isLoading}
               style={{ fontSize: '11px', padding: '4px 10px' }}
             >
-              {isLoading ? '동기화 중...' : '새로고침 (Refresh)'}
+              {isLoading ? '알람 확인 중...' : '알람 다시 확인하기'}
             </button>
             <span style={{ fontSize: '11px', color: '#64748B' }}>
               Seed: <strong>{seed}</strong>
@@ -437,30 +447,42 @@ function CommandCenterContent() {
           </div>
         </div>
 
+        {/* The selected investigation comes before KPI statistics: user-facing priority. */}
+        {selectedAlert && (
+          <section className="ux-spotlight" aria-label="현재 살펴볼 알람">
+            <div>
+              <p className="ux-spotlight__eyebrow">{selectedAlert.severity === 'CRITICAL' ? '위험 신호 · 먼저 확인해 보세요' : selectedAlert.severity === 'WARNING' ? '주의할 신호가 있어요' : '참고할 신호가 있어요'}</p>
+              <h2 className="ux-spotlight__title">{selectedAlert.equipment_id} · {selectedAlert.chamber_id}에서 신호가 감지됐어요</h2>
+              <p className="ux-spotlight__description">알람 {selectedAlert.alert_id}의 Run과 근거를 먼저 확인해요. 경고는 물리적 불량이나 원인이 확인됐다는 뜻이 아니에요.</p>
+            </div>
+            <a className="ux-btn ux-btn--primary" href="#cc-selected-alarm-detail">선택한 알람 자세히 보기 →</a>
+          </section>
+        )}
+
         {/* Global Statistics Bar (KPI Badges) */}
         <div className="cc-kpi-bar">
           <div className="cc-kpi-item">
-            <span className="cc-kpi-label">FDC 관제 대상</span>
+            <span className="cc-kpi-label">살펴보는 설비</span>
             <span className="cc-kpi-val">ETCH 설비군</span>
           </div>
           <div className="cc-kpi-item">
-            <span className="cc-kpi-label">전체 수집 알람</span>
+            <span className="cc-kpi-label">전체 알람</span>
             <span className="cc-kpi-val">{totalCount}건</span>
           </div>
           <div className="cc-kpi-item">
-            <span className="cc-kpi-label">CRITICAL (치명)</span>
+            <span className="cc-kpi-label">위험 · CRITICAL</span>
             <span className="cc-kpi-val" style={{ color: '#DC2626' }}>{criticalCount}건</span>
           </div>
           <div className="cc-kpi-item">
-            <span className="cc-kpi-label">WARNING (경고)</span>
+            <span className="cc-kpi-label">주의 · WARNING</span>
             <span className="cc-kpi-val" style={{ color: '#D97706' }}>{warningCount}건</span>
           </div>
           <div className="cc-kpi-item">
-            <span className="cc-kpi-label">INFO (정보)</span>
+            <span className="cc-kpi-label">정보 · INFO</span>
             <span className="cc-kpi-val" style={{ color: '#2563EB' }}>{infoCount}건</span>
           </div>
           <div className="cc-kpi-item">
-            <span className="cc-kpi-label">현재 필터 일치</span>
+            <span className="cc-kpi-label">검색된 알람</span>
             <span className="cc-kpi-val" style={{ color: '#17263B' }}>{filteredAndSortedAlarms.length}건</span>
           </div>
         </div>
@@ -472,10 +494,10 @@ function CommandCenterContent() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <div>
                 <h2 style={{ fontSize: '15px', fontWeight: 800, color: '#17263B', margin: 0 }}>
-                  🚨 가상 FDC 알람 큐 (합성 시뮬레이션)
+                  확인할 알람을 골라 주세요
                 </h2>
                 <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                  FAB ONE 반도체 식각 가상 FDC 알람 이벤트 큐 (합성 데이터 · Run 계통성 검증 완료)
+                  알람을 선택해 왜 확인이 필요한지 살펴보세요. 모든 기록은 연습용이에요.
                 </div>
               </div>
               <span className="pill" style={{ background: '#F1F5F9', color: '#475569', fontSize: '11px' }}>
@@ -487,7 +509,7 @@ function CommandCenterContent() {
             <div className="cc-filter-section">
               {/* Severity Filter */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', minWidth: '45px' }}>심각도:</span>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', minWidth: '45px' }}>중요도:</span>
                 <div className="cc-filter-group">
                   {(['ALL', 'CRITICAL', 'WARNING', 'INFO'] as const).map((sev) => (
                     <button
@@ -496,7 +518,7 @@ function CommandCenterContent() {
                       className={`cc-filter-chip ${severityFilter === sev ? 'active' : ''}`}
                       onClick={() => setSeverityFilter(sev)}
                     >
-                      {sev === 'ALL' ? '전체' : sev}
+                      {sev === 'ALL' ? '전체' : sev === 'CRITICAL' ? '위험' : sev === 'WARNING' ? '주의' : '정보'}
                     </button>
                   ))}
                 </div>
@@ -589,10 +611,10 @@ function CommandCenterContent() {
               <div className="cc-empty-box" role="status">
                 <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔍</div>
                 <div style={{ fontWeight: 800, fontSize: '14px', color: '#17263B', marginBottom: '4px' }}>
-                  일치하는 FDC 알람이 없습니다 (0건)
+                  조건에 맞는 알람이 없어요
                 </div>
                 <p style={{ fontSize: '11px', color: '#64748B', margin: '0 0 14px' }}>
-                  선택한 조건(심각도: {severityFilter}, 상태: {statusFilter})에 일치하는 알람이 없습니다.
+                  조건을 바꿔 다시 확인해 보세요. (중요도: {severityFilter}, 상태: {statusFilter})
                 </p>
                 <button
                   type="button"
@@ -715,7 +737,7 @@ function CommandCenterContent() {
 
           {/* Right Column: Selected Alarm Engineering Detail Card */}
           {selectedAlert ? (
-            <section className="cc-detail-card" aria-label="선택 알람 상세">
+            <section id="cc-selected-alarm-detail" className="cc-detail-card" aria-label="선택 알람 상세">
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #EDF1F5', paddingBottom: '14px', marginBottom: '18px' }}>
                 <div>
@@ -953,7 +975,7 @@ function CommandCenterContent() {
             <div className="trace-loading-card">
               <div style={{ fontSize: '20px' }}>📋</div>
               <div style={{ fontWeight: 700, fontSize: '14px', color: '#64748B', marginTop: '8px' }}>
-                선택된 알람이 없습니다. 좌측 큐에서 알람을 선택해 주세요.
+                아직 선택한 알람이 없어요. 목록에서 확인할 신호를 골라 주세요.
               </div>
             </div>
           )}

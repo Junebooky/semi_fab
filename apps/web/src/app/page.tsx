@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
+import { FriendlyPageIntro } from '@/components/ux/FriendlyPageIntro';
 import { useSearchParams } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
 import { TourReturnBanner, getModeAT7ExcursionValues } from '@/components/guided-demo';
@@ -738,7 +739,7 @@ function FabOneDemoContent() {
           <div className="logo-badge" aria-hidden="true">F1</div>
           <div>
             <span className="brand-title">FAB ONE</span>
-            <span className="brand-subtitle">· Semiconductor Etch Intelligence Demo</span>
+            <span className="brand-subtitle">· 반도체 공정을 쉽게 이해하는 공간</span>
           </div>
         </div>
 
@@ -751,34 +752,34 @@ function FabOneDemoContent() {
               <rect x="14" y="14" width="7" height="7"></rect>
               <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
-            식각 챔버 시뮬레이터 (Home)
+            홈
           </Link>
           <Link href={buildCrossNavUrl('/traceability', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            웨이퍼 이력 추적성 (Traceability)
+            웨이퍼 확인
           </Link>
           <Link href={buildCrossNavUrl('/command-center', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
-            FDC 커맨드 센터 (Command Center)
+            알람 확인
           </Link>
           <Link href={buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
             </svg>
-            설비 인텔리전스 (Equipment)
+            설비 살펴보기
           </Link>
           <Link href={buildCrossNavUrl('/fab-simulation', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            FAB 시뮬레이션 (Simulation)
+            공정 체험
           </Link>
           <Link href={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -787,14 +788,14 @@ function FabOneDemoContent() {
               <path d="M9 12h6" />
               <path d="M9 16h6" />
             </svg>
-            엔지니어링 워크스페이스 (Workspace)
+            조사 노트
           </Link>
           <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: tourStepParam || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
             </svg>
-            가이드 투어 (Demo Tour)
+            처음 둘러보기
           </Link>
         </nav>
 
@@ -802,7 +803,7 @@ function FabOneDemoContent() {
           {mode === 'B' ? (
             <span className="pill pill-mode-b" title="FastAPI + SQLite 백엔드 API와 실시간 동기화 상태">
               <span className="pulse-dot"></span>
-              Mode B · Live API Connected (Port 8000)
+              로컬 합성 Run 연결 · Mode B
             </span>
           ) : (
             <span
@@ -811,7 +812,7 @@ function FabOneDemoContent() {
               title={connectionError ? `API 오류 (${connectionError}): Mode A 로컬 픽스처로 동작 중` : "백엔드 미실행 시에도 브라우저에서 독립 동작하는 합성 픽스처 모드"}
             >
               <span className="pulse-dot" style={{ background: connectionError ? '#D97706' : '#0369A1' }}></span>
-              Mode A · Standalone Synthetic Fixture {connectionError ? '(API 미연결 / 폴백)' : ''}
+              브라우저 예시 데이터 · Mode A {connectionError ? '(API 미연결 / 폴백)' : ''}
             </span>
           )}
 
@@ -822,7 +823,7 @@ function FabOneDemoContent() {
             </span>
           ) : (
             <span className="pill" style={{ color: '#047857', borderColor: '#A7F3D0', background: '#ECFDF5' }}>
-              Chamber Normal
+              모의 정상 구간
             </span>
           )}
 
@@ -841,6 +842,17 @@ function FabOneDemoContent() {
 
       {/* Main Container */}
       <main className="main-wrapper">
+        <FriendlyPageIntro
+  eyebrow="FAB ONE · 시작하기"
+  title="어디부터 시작하면 좋을까요?"
+  description="반도체 공정이 처음이어도 괜찮아요. 순서대로 둘러보거나, 직접 이상 신호의 근거를 따라가 볼 수 있어요."
+  primaryLabel="3분 둘러보기"
+  primaryHref={'/demo-tour?step=INTRO&seed=' + seed}
+  variant="soft"
+  detailLabel="연습 데이터는 어디서 오나요?"
+  detail={<p>모든 예시는 합성 데이터예요. 둘러보기는 브라우저의 연습 데이터(Mode A)를 쓰고, 연결형 조사는 로컬 FastAPI/SQLite가 만든 합성 Run(Mode B)을 사용해요. 실제 FAB나 생산 설비에 연결하지 않아요.</p>}
+/>
+
         {/* BUILD-10 Tour Return Banner */}
         <TourReturnBanner tourStep={tourStepParam} seed={seed} />
 
@@ -857,9 +869,9 @@ function FabOneDemoContent() {
         >
           {/* Card A: Mode A Guided Tour */}
           <div
-            id="hero-guided-tour-card"
+            id="hero-guided-tour-card" className="ux-home-choice"
             style={{
-              background: "linear-gradient(135deg, #ECFDF5 0%, #F0FDF4 100%)",
+              background: "#FFFFFF",
               border: "1px solid #A7F3D0",
               borderRadius: "12px",
               padding: "16px 20px",
@@ -889,7 +901,7 @@ function FabOneDemoContent() {
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "15px", fontWeight: 800, color: "#065F46" }}>
-                    Mode A · 3~5분 완결 가이드 투어
+                    처음이라면, 여기서 시작해 보세요.
                   </span>
                   <span
                     style={{
@@ -905,7 +917,7 @@ function FabOneDemoContent() {
                   </span>
                 </div>
                 <div style={{ fontSize: "12px", color: "#047857", marginTop: "4px", lineHeight: 1.4 }}>
-                  브라우저 독립 동작(오프라인 보장). 시뮬레이터(T7) → FDC 경보 → 센서 원본 → W-08 추적성 → 워크스페이스 순차 학습.
+                  가상 공정을 단계별로 따라가면서 알람과 센서, 웨이퍼 이력이 어떻게 연결되는지 살펴봐요.
                 </div>
               </div>
             </div>
@@ -928,16 +940,16 @@ function FabOneDemoContent() {
                   boxShadow: "0 2px 4px rgba(11, 159, 120, 0.25)",
                 }}
               >
-                가이드 투어 시작 (Start Tour) ➔
+                3분 둘러보기 →
               </Link>
             </div>
           </div>
 
           {/* Card B: Mode B Live Connected Case */}
           <div
-            id="hero-live-connected-card"
+            id="hero-live-connected-card" className="ux-home-choice"
             style={{
-              background: "linear-gradient(135deg, #EFF6FF 0%, #F0FDF4 100%)",
+              background: "#FFFFFF",
               border: "1px solid #BFDBFE",
               borderRadius: "12px",
               padding: "16px 20px",
@@ -967,7 +979,7 @@ function FabOneDemoContent() {
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                   <span style={{ fontSize: "15px", fontWeight: 800, color: "#1E40AF" }}>
-                    Mode B · 실시간 연계 조사 케이스
+                    이상 신호를 직접 조사해 볼까요?
                   </span>
                   <span
                     style={{
@@ -983,7 +995,7 @@ function FabOneDemoContent() {
                   </span>
                 </div>
                 <div style={{ fontSize: "12px", color: "#1E3A8A", marginTop: "4px", lineHeight: 1.4 }}>
-                  FastAPI 백엔드 + SQLite 실시간 시뮬레이션 Run 생성, FDC 알람 큐 정렬, W-08 추적성 검증, Casebook 저장(5~8 클릭 완결).
+                  로컬 서버에서 만든 연습 데이터를 바탕으로 알람을 고르고 증거를 살펴봐요. 마지막에는 조사 내용을 저장할 수 있어요.
                 </div>
               </div>
             </div>
@@ -1011,7 +1023,7 @@ function FabOneDemoContent() {
                   boxShadow: "0 2px 4px rgba(37, 99, 235, 0.25)",
                 }}
               >
-                실시간 연계 케이스 시작 (Live Mode B) ➔
+                데이터로 조사 시작하기 →
               </Link>
             </div>
           </div>
@@ -1080,7 +1092,7 @@ function FabOneDemoContent() {
                 <line x1="12" y1="9" x2="12" y2="13"></line>
                 <line x1="12" y1="17" x2="12.01" y2="17"></line>
               </svg>
-              이상 구간 탐색 (Seek T7 Anomaly)
+              이상 시점 T7 보기
             </button>
 
             <button
@@ -1150,7 +1162,7 @@ function FabOneDemoContent() {
             <div className="stat-box-value" style={{ color: currentSample?.quality_flag === 'MISSING' ? '#94A3B8' : (currentStep === 7 ? '#DC2626' : '#0F172A') }}>
               {currentSample?.quality_flag === 'MISSING' ? 'MISSING (결측)' : `${currentSample?.measured_value ?? '-'} ${currentSample?.unit || ''}`}
             </div>
-            <div className="stat-box-hint">품질 플래그: {currentSample?.quality_flag || 'NORMAL'}</div>
+            <div className="stat-box-hint">데이터 상태: {currentSample?.quality_flag || 'NORMAL'}</div>
           </div>
           <div className="stat-box">
             <div className="stat-box-label">웨이퍼 처리 현황</div>
@@ -1167,7 +1179,7 @@ function FabOneDemoContent() {
             <section className="dash-card" aria-label="센서 시계열 트렌드">
               <div className="card-header-row">
                 <div>
-                  <h2 className="card-title">Chamber Sensor Trend (합성 시계열)</h2>
+                  <h2 className="card-title">센서 값이 어떻게 달라졌을까요?</h2>
                   <p className="card-subtitle">
                     T0~T7 시점 계측값 · {selectedSensor === 'RELATIVE_SIGNAL' ? '광학 센서 결측 구간(T4, T5) 분절 시각화' : selectedSensor === 'CHAMBER_PRESSURE' ? '격막 게이지 전구간 연속 계측' : 'RF 발생기 전방 전원 연속 계측'} 및 UCL 스파이크 탐지
                   </p>
@@ -1511,7 +1523,7 @@ function FabOneDemoContent() {
             <section className="dash-card" aria-label="이상 감지 알람">
               <div className="card-header-row">
                 <div>
-                  <h2 className="card-title">FDC 이상 감지 알람 (Alerts)</h2>
+                  <h2 className="card-title">지금 확인할 이상 신호</h2>
                   <p className="card-subtitle">발생한 이상 징후 및 잠재 영향 웨이퍼 추적 목록 (클릭하여 엔지니어링 조사 연동)</p>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1621,7 +1633,7 @@ function FabOneDemoContent() {
                           <polyline points="10 9 9 9 8 9"></polyline>
                         </svg>
                         <div>
-                          <h3 className="investigation-title">엔지니어링 공정 이상 조사 (Engineering Investigation)</h3>
+                          <h3 className="investigation-title">이 신호와 연결된 근거 살펴보기</h3>
                           <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
                             대상 알람: <strong>{investigationData.alert_id}</strong> ({investigationData.rule_code}) · 관리 시점 T{investigationData.anomaly_step}
                           </div>
@@ -1705,7 +1717,7 @@ function FabOneDemoContent() {
                                 UCL 한계: {ev.ucl_threshold} {ev.unit} · Target: {ev.target_value} {ev.unit}
                               </div>
                               <div style={{ fontSize: '10px', color: '#64748B', display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                                <span>품질 플래그: <strong>{ev.quality_flag}</strong></span>
+                                <span>데이터 상태: <strong>{ev.quality_flag}</strong></span>
                                 {isSensorSelected && <span style={{ color: '#0B9F78', fontWeight: 700 }}>✓ 차트 표시 중</span>}
                               </div>
                             </div>
@@ -1836,7 +1848,7 @@ function FabOneDemoContent() {
             <aside className="chamber-card" aria-label="챔버 현황 및 개념도">
               <div className="card-header-row" style={{ marginBottom: '8px' }}>
                 <div>
-                  <h3 className="card-title" style={{ fontSize: '15px' }}>식각 챔버 개념도 (Etch Chamber)</h3>
+                  <h3 className="card-title" style={{ fontSize: '15px' }}>식각 챔버 알아보기</h3>
                   <p className="card-subtitle">ETCH-02 · CH-B (에메랄드 화이트 UI)</p>
                 </div>
                 <span className="pill" style={{ color: '#047857', background: '#ECFDF5', borderColor: '#A7F3D0' }}>
@@ -1924,7 +1936,7 @@ function FabOneDemoContent() {
             <section className="dash-card" aria-label="웨이퍼 카세트 현황">
               <div className="card-header-row" style={{ marginBottom: '8px' }}>
                 <div>
-                  <h3 className="card-title" style={{ fontSize: '15px' }}>FOUP 카세트 웨이퍼 (25매)</h3>
+                  <h3 className="card-title" style={{ fontSize: '15px' }}>웨이퍼 25장의 상태</h3>
                   <p className="card-subtitle">Lot: {summary.lot_id} · 노출 상태별 구분</p>
                 </div>
               </div>

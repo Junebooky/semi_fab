@@ -1448,7 +1448,7 @@ test('BUILD-04 Traceability Error Differentiation & Cassette Protection Invarian
 
   // Verify page.tsx source contains cassette protection and timeline disclaimer
   const tracePageSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
-  assert.ok(tracePageSource.includes('카세트 동기화 중단'), 'Cassette error notification banner must be present');
+  assert.ok(tracePageSource.includes('웨이퍼 목록을 다시 확인해야 해요.'), 'Cassette error notification banner must be present');
   assert.ok(tracePageSource.includes('pointerEvents: notFoundError ? \'none\' : \'auto\''), 'Cassette must be non-interactive during error');
   assert.ok(tracePageSource.includes('가상 시나리오 재구성 (Synthetic Scenario Reconstruction)'), 'Timeline synthetic disclaimer must be present');
 });
@@ -2026,8 +2026,8 @@ test('BUILD-05 Command Center Page Source Invariants & EKL Integration', () => {
   assert.ok(ccPageSource.includes('반도체 공정 시뮬레이션') || ccPageSource.includes('가상 합성'), 'Synthetic simulation disclaimer must be present');
 
   // 5. Total & filtered count badges
-  assert.ok(ccPageSource.includes('전체 수집 알람'), 'Total alarms badge must be present');
-  assert.ok(ccPageSource.includes('현재 필터 일치'), 'Filtered alarms badge must be present');
+  assert.ok(ccPageSource.includes('전체 알람'), 'Total alarms badge must be present');
+  assert.ok(ccPageSource.includes('검색된 알람'), 'Filtered alarms badge must be present');
 
   // 6. Empty state with reset
   assert.ok(ccPageSource.includes('필터 초기화'));
@@ -3890,8 +3890,8 @@ test('BUILD-10 (d) Multi-Page Tour Return Banner & tourStep Preservation Integra
       `${name} must parse or reference tourStep query parameter`
     );
     assert.ok(
-      src.includes('가이드 투어 (Demo Tour)'),
-      `${name} must have 가이드 투어 navigation tab`
+      src.includes('처음 둘러보기'),
+      `${name} must retain the friendly tour navigation tab`
     );
   });
 });
@@ -4184,7 +4184,7 @@ test('BUILD-12 (e) Engineering Workspace Mode B Loader & Fail-Closed Boundary Co
   assert.ok(wsPageSource.includes('setIsSupportedAlert(false)'), 'Workspace must set isSupportedAlert to false on standby or error');
 
   // 4. In-memory volatile disclaimer
-  assert.ok(wsPageSource.includes('새로고침 시 휘발'), 'Workspace must warn that engineering notes are volatile on refresh');
+  assert.ok(wsPageSource.includes('저장하기 전에는 새로고침하면 사라져요'), 'Workspace must warn that engineering notes are volatile on refresh');
   assert.ok(wsPageSource.includes('인메모리'), 'Workspace must display in-memory volatile caveat');
 });
 
@@ -4597,8 +4597,8 @@ test('BUILD-14 (g) Release Candidate Portfolio UI, Dual-Card Demo Chooser & Focu
 
   // 2. Release candidate branding
   assert.ok(
-    wsPageSource.includes('BUILD-14 Release Candidate') || wsPageSource.includes('BUILD-15 Release Freeze'),
-    'Workspace must declare release status in header'
+    wsPageSource.includes('조사 내용을 정리하는 공간'),
+    'Workspace header must identify the investigation workspace in user-facing Korean'
   );
 });
 
@@ -4824,7 +4824,7 @@ test('BUILD-15 (e) Workspace Lineage Isolation UI Invariants Contract', () => {
   );
 
   assert.ok(wsSource.includes('isExactLineageMatch'), 'Workspace must use isExactLineageMatch');
-  assert.ok(wsSource.includes('BUILD-15 Release Freeze'), 'Workspace header must declare BUILD-15 Release Freeze');
+  assert.ok(wsSource.includes('조사 내용을 정리하는 공간'), 'Workspace header must explain the investigation purpose');
   assert.ok(wsSource.includes('상세 열람 (Read-Only) 👁'), 'Must render Read-Only button for mismatched lineage');
   assert.ok(wsSource.includes('동일 Run 에디터로 불러오기 ↩'), 'Must render active run load button for matching lineage');
 });

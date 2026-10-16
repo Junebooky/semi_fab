@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
+import { FriendlyPageIntro } from '@/components/ux/FriendlyPageIntro';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
 import { TourReturnBanner } from '@/components/guided-demo';
@@ -622,34 +623,34 @@ function TraceabilityContent() {
               <rect x="14" y="14" width="7" height="7"></rect>
               <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
-            식각 챔버 시뮬레이터 (Home)
+            홈
           </Link>
           <Link href={buildCrossNavUrl('/traceability', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
-            웨이퍼 이력 추적성 (Traceability)
+            웨이퍼 확인
           </Link>
           <Link href={buildCrossNavUrl('/command-center', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
-            FDC 커맨드 센터 (Command Center)
+            알람 확인
           </Link>
           <Link href={buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
             </svg>
-            설비 인텔리전스 (Equipment)
+            설비 살펴보기
           </Link>
           <Link href={buildCrossNavUrl('/fab-simulation', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            FAB 시뮬레이션 (Simulation)
+            공정 체험
           </Link>
           <Link href={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -658,14 +659,14 @@ function TraceabilityContent() {
               <path d="M9 12h6" />
               <path d="M9 16h6" />
             </svg>
-            엔지니어링 워크스페이스 (Workspace)
+            조사 노트
           </Link>
           <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: queryTourStep || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
             </svg>
-            가이드 투어 (Demo Tour)
+            처음 둘러보기
           </Link>
         </nav>
 
@@ -691,12 +692,21 @@ function TraceabilityContent() {
 
       {/* Main Container */}
       <main className="main-wrapper">
+        <FriendlyPageIntro
+  eyebrow="웨이퍼 이력 확인"
+  title={candidateCount > 0 ? '추가 확인이 필요한 웨이퍼 ' + candidateCount + '장이에요' : '추가 확인 후보가 표시되지 않았어요'}
+  description="25개 슬롯에서 웨이퍼를 고르면 공정 이력과 관련 알람을 볼 수 있어요. 영향 가능성은 불량 확정을 뜻하지 않아요."
+  primaryLabel="조사 노트로 이어가기"
+  primaryHref={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })}
+  detail={<p>연습용 Lot: {currentLotId}. 공정 참여 기록은 관찰된 이력일 뿐 물리적 결함 확정이 아니에요. Mode B에서 출처가 맞지 않으면 조회를 막아 다른 Run을 섞지 않아요.</p>}
+/>
+
         {/* BUILD-10 Tour Return Banner */}
         <TourReturnBanner tourStep={queryTourStep} seed={seed} />
 
         {/* Notice Box */}
         <div className="notice-box" role="status">
-          <strong>추적 상태 안내:</strong> {notice}
+          <strong>현재 이력:</strong> {notice}
         </div>
 
         {/* 2-Column Traceability Layout */}
@@ -706,7 +716,7 @@ function TraceabilityContent() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <div>
                 <h2 style={{ fontSize: '15px', fontWeight: 800, margin: 0, color: '#17263B' }}>
-                  FOUP 카세트 슬롯 (25매)
+                  웨이퍼 25장을 살펴봐요
                 </h2>
                 <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
                   Lot: <strong>{currentLotId}</strong>
@@ -731,21 +741,21 @@ function TraceabilityContent() {
                 className={`trace-filter-chip confirmed ${filter === 'CONFIRMED' ? 'active confirmed' : ''}`}
                 onClick={() => setFilter('CONFIRMED')}
               >
-                노출 확정 ({confirmedCount})
+                공정 이력 확인 ({confirmedCount})
               </button>
               <button
                 type="button"
                 className={`trace-filter-chip candidate ${filter === 'CANDIDATE' ? 'active candidate' : ''}`}
                 onClick={() => setFilter('CANDIDATE')}
               >
-                잠재 영향군 ({candidateCount})
+                추가 확인 ({candidateCount})
               </button>
               <button
                 type="button"
                 className={`trace-filter-chip unexposed ${filter === 'UNEXPOSED' ? 'active unexposed' : ''}`}
                 onClick={() => setFilter('UNEXPOSED')}
               >
-                미노출 ({unexposedCount})
+                노출 이력 없음 ({unexposedCount})
               </button>
             </div>
 
@@ -763,7 +773,7 @@ function TraceabilityContent() {
                   lineHeight: 1.4,
                 }}
               >
-                <strong>⚠️ 카세트 동기화 중단:</strong><br />
+                <strong>웨이퍼 목록을 다시 확인해야 해요.</strong><br />
                 서버 오류로 인해 최신 25매 카세트 목록을 반영하지 못했습니다. 아래 슬롯은 이전 데이터(비활성 상태)입니다.
               </div>
             )}
@@ -779,13 +789,13 @@ function TraceabilityContent() {
             >
               {wafers.map(w => {
                 let statusClass = "unexposed";
-                let statusLabel = "미노출";
+                let statusLabel = "이력 없음";
                 if (w.exposure_status === 'CONFIRMED_EXPOSED') {
                   statusClass = "confirmed";
-                  statusLabel = "노출";
+                  statusLabel = "공정 이력 연결";
                 } else if (w.exposure_status === 'CANDIDATE_EXPOSED') {
                   statusClass = "candidate";
-                  statusLabel = "후보군";
+                  statusLabel = "영향 가능";
                 }
 
                 const isSelected = selectedWaferId === w.wafer_id;
@@ -819,13 +829,13 @@ function TraceabilityContent() {
                 let badgeColor = "#64748B";
                 let badgeBg = "#F1F5F9";
                 let badgeBorder = "#CBD5E1";
-                let label = "미노출 (Not Exposed)";
+                let label = "공정 노출 이력 없음 (NOT_EXPOSED)";
 
                 if (w.exposure_status === 'CONFIRMED_EXPOSED') {
                   badgeColor = "#047857";
                   badgeBg = "#ECFDF5";
                   badgeBorder = "#A7F3D0";
-                  label = "노출 확정 (Confirmed)";
+                  label = "공정 참여 이력 확인 (Confirmed)";
                 } else if (w.exposure_status === 'CANDIDATE_EXPOSED') {
                   badgeColor = "#B91C1C";
                   badgeBg = "#FEE2E2";
@@ -919,7 +929,7 @@ function TraceabilityContent() {
               </div>
             </div>
           ) : trace ? (
-            <section className="trace-detail-card" aria-label="웨이퍼 공정 이력 상세">
+            <section className="trace-detail-card" aria-label="이 웨이퍼가 거친 과정">
               {/* Header Banner */}
               <div className="trace-header-banner">
                 <div>
@@ -938,11 +948,11 @@ function TraceabilityContent() {
                         borderColor: trace.exposure_status === 'CANDIDATE_EXPOSED' ? '#FECACA' : (trace.exposure_status === 'CONFIRMED_EXPOSED' ? '#A7F3D0' : '#CBD5E1'),
                       }}
                     >
-                      {trace.exposure_status === 'CONFIRMED_EXPOSED' && '노출 확정 (CONFIRMED_EXPOSED)'}
+                      {trace.exposure_status === 'CONFIRMED_EXPOSED' && '공정 참여 이력 확인 (CONFIRMED_EXPOSED)'}
                       {trace.exposure_status === 'CANDIDATE_EXPOSED' && '잠재 영향군 (CANDIDATE_EXPOSED)'}
-                      {trace.exposure_status === 'NOT_EXPOSED' && '미노출 (NOT_EXPOSED)'}
+                      {trace.exposure_status === 'NOT_EXPOSED' && '노출 이력 없음 (NOT_EXPOSED)'}
                     </span>
-                    <EngineeringTermTrigger conceptId="wafer-exposure-status" label="노출 판정 기준" showBadge />
+                    <EngineeringTermTrigger conceptId="wafer-exposure-status" label="공정 노출 이력 판단 기준" showBadge />
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
                     FOUP 카세트 슬롯 #{trace.slot_number} · 투입 시퀀스 #{trace.sequence}
@@ -1107,7 +1117,7 @@ function TraceabilityContent() {
                         {event.step_index === 5 && (
                           <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                             <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 700 }}>공학 개념 (EKL):</span>
-                            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="노출 확정 vs 잠재 후보" showBadge />
+                            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="공정 참여 이력 확인 vs 잠재 후보" showBadge />
                           </div>
                         )}
                       </div>

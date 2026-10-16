@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
+import { FriendlyPageIntro } from '@/components/ux/FriendlyPageIntro';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
 import {
@@ -782,7 +783,7 @@ function EngineeringWorkspaceContent() {
     const saveRes = saveCasebookRecordToStorage(record);
     if (saveRes.success) {
       setSavedCaseRecords(loadSavedCasebookRecords());
-      setCasebookNotice(`현재 사건(${runId} / ${alertId})이 Casebook에 성공적으로 저장되었습니다.`);
+      setCasebookNotice(`이번 조사(${runId} / ${alertId})가 Casebook에 성공적으로 저장되었습니다.`);
     } else {
       setCasebookNotice(`저장 실패 (${saveRes.error}): ${saveRes.message}`);
     }
@@ -866,7 +867,7 @@ function EngineeringWorkspaceContent() {
         if (res.ok) {
           const snap = await res.json();
           setHistoricalRunSnapshot(snap);
-          setCasebookNotice(`과거 공정 Run (${r.run_id}) 아카이브 스냅샷을 열었습니다.`);
+          setCasebookNotice(`이전 시뮬레이션 Run (${r.run_id})을 읽기 전용으로 열었어요.`);
         } else {
           setCasebookNotice(`과거 공정 Run (${r.run_id}) 조회 실패 (HTTP ${res.status})`);
         }
@@ -922,7 +923,7 @@ function EngineeringWorkspaceContent() {
   }, []);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', color: '#1E293B', fontFamily: 'sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#FFFFFF', color: '#17263B', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* Top Header */}
       <header
         style={{
@@ -955,7 +956,7 @@ function EngineeringWorkspaceContent() {
               FAB ONE
             </span>
             <span className="brand-subtitle" style={{ fontSize: '13px', color: '#64748B', marginLeft: '6px' }}>
-              · Engineering Workspace & Casebook (BUILD-15 Release Freeze)
+              · 조사 내용을 정리하는 공간
             </span>
           </div>
         </div>
@@ -967,7 +968,7 @@ function EngineeringWorkspaceContent() {
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
-            홈 (FDC 모니터링)
+            홈
           </Link>
           <Link href={buildCrossNavUrl('/traceability', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -975,27 +976,27 @@ function EngineeringWorkspaceContent() {
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            웨이퍼 이력 추적성 (Traceability)
+            웨이퍼 확인
           </Link>
           <Link href={buildCrossNavUrl('/command-center', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
-            FDC 커맨드 센터 (Command Center)
+            알람 확인
           </Link>
           <Link href={buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
             </svg>
-            설비 인텔리전스 (Equipment)
+            설비 살펴보기
           </Link>
           <Link href={buildCrossNavUrl('/fab-simulation', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            FAB 시뮬레이션 (Simulation)
+            공정 체험
           </Link>
           <Link href={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId, alertId })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1004,7 +1005,7 @@ function EngineeringWorkspaceContent() {
               <path d="M9 12h6" />
               <path d="M9 16h6" />
             </svg>
-            엔지니어링 워크스페이스 (Workspace)
+            조사 노트
           </Link>
           <Link
             href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: queryTourStep || undefined })}
@@ -1014,7 +1015,7 @@ function EngineeringWorkspaceContent() {
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
             </svg>
-            가이드 투어 (Demo Tour)
+            처음 둘러보기
           </Link>
         </nav>
 
@@ -1122,6 +1123,18 @@ function EngineeringWorkspaceContent() {
 
       {/* Main Container */}
       <main style={{ maxWidth: '1440px', margin: '0 auto', padding: '20px' }}>
+        <FriendlyPageIntro
+  eyebrow="조사 노트"
+  title="이상 신호의 원인을 차근차근 살펴봐요"
+  description="먼저 센서 근거를 확인하고, 원인 가설과 다음 조치를 정리해 보세요. 이 화면의 판단은 연습용이며 실제 설비를 제어하지 않아요."
+  primaryLabel={isSupportedAlert ? '이번 조사 살펴보기' : undefined}
+  primaryHref={isSupportedAlert ? '#ws-investigation-board' : undefined}
+  detail={<p>현재 Run: {runId} · 알람: {alertId}. 다른 Run/알람의 기록은 섞지 않아요. 이전 조사는 읽기 전용으로 열리고, 현재 조사는 지원되는 알람에서만 저장할 수 있어요.</p>}
+/>
+<ol className="ux-journey-steps" aria-label="조사 진행 순서">
+  <li>1. 근거 확인</li><li>2. 가설 검토</li><li>3. 다음 조치</li><li>4. 저장·내려받기</li><li>5. 이전 조사 보기</li>
+</ol>
+
         {/* BUILD-10 Tour Return Banner */}
         <TourReturnBanner tourStep={queryTourStep} seed={seed} />
 
@@ -1158,7 +1171,7 @@ function EngineeringWorkspaceContent() {
                 transition: 'all 0.15s ease',
               }}
             >
-              실시간 사건 분석 (Live Run Investigation)
+              이번 조사 살펴보기
             </button>
             <button
               type="button"
@@ -1181,7 +1194,7 @@ function EngineeringWorkspaceContent() {
                 transition: 'all 0.15s ease',
               }}
             >
-              사건 기록 보관소 (Investigation Casebook 📚)
+              이전 조사 보기
             </button>
           </div>
 
@@ -1205,9 +1218,9 @@ function EngineeringWorkspaceContent() {
                 alignItems: 'center',
                 gap: '6px',
               }}
-              title="현재 조사 중인 가설 판정, 조치 체크, 엔지니어링 메모를 Casebook에 저장합니다"
+              title="현재 조사 중인 가설 판정, 조치 체크, 엔지니어링 메모를 저장합니다"
             >
-              Casebook에 현재 사례 저장 💾
+              이번 조사 저장하기
             </button>
           </div>
         </div>
@@ -1361,9 +1374,9 @@ function EngineeringWorkspaceContent() {
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#166534' }}>
-                  <span style={{ fontWeight: 800 }}>📌 엔지니어링 분석 워크스페이스 (증거·가설·조치 보드):</span>
+                  <span style={{ fontWeight: 800 }}>📌 증거부터 다음 조치까지 정리해 봐요:</span>
                   <span>
-                    8단계 흐름: FAB 시뮬레이션(T7) → FDC 커맨드 센터(경보) → 워크스페이스(가설/증거) → 설비 인텔리전스 →
+                    살펴보는 순서: 가상 공정에서 신호를 찾고, 근거와 가설을 정리한 뒤 설비 인텔리전스 →
                     웨이퍼 추적성(W-08) → EKL 용어 확인
                   </span>
                 </div>
@@ -1922,14 +1935,14 @@ function EngineeringWorkspaceContent() {
                       >
                         엔지니어링 메모 (In-memory Volatile)
                       </label>
-                      <span style={{ fontSize: '10px', color: '#94A3B8' }}>새로고침 시 휘발 (단, Casebook 저장 시 보존)</span>
+                      <span style={{ fontSize: '10px', color: '#94A3B8' }}>저장하기 전에는 새로고침하면 사라져요</span>
                     </div>
                     <textarea
                       id="engineering-workspace-notes"
                       data-testid="ws-input-user-notes"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="조사 검토 의견, 잠재 리스크, 후속 액션 아이템을 메모하세요... 'Casebook에 저장' 버튼으로 보관할 수 있습니다."
+                      placeholder="근거를 살펴본 뒤 생각한 가설과 다음 확인 사항을 적어 주세요. 마지막에 '이번 조사 저장하기'를 눌러 보관할 수 있어요."
                       rows={3}
                       style={{
                         width: '100%',
@@ -2025,7 +2038,7 @@ function EngineeringWorkspaceContent() {
             >
               <div>
                 <h2 style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
-                  사건 기록 보관소 (Investigation Casebook 📚)
+                  이전 조사 보기
                 </h2>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
                   저장된 과거 조사 사례와 최근 합성 Run 이력을 조회·비교하고 워크스페이스로 다시 불러옵니다.
@@ -2047,7 +2060,7 @@ function EngineeringWorkspaceContent() {
                     cursor: 'pointer',
                   }}
                 >
-                  Casebook JSON 백업 다운로드 📥
+                  조사 기록 백업 내려받기
                 </button>
 
                 <input
@@ -2072,7 +2085,7 @@ function EngineeringWorkspaceContent() {
                     cursor: 'pointer',
                   }}
                 >
-                  Casebook JSON 복원 📤
+                  백업한 조사 기록 가져오기
                 </button>
               </div>
             </div>
@@ -2107,7 +2120,7 @@ function EngineeringWorkspaceContent() {
                       border: '1px dashed #CBD5E1',
                     }}
                   >
-                    저장된 조사 케이스가 없습니다. 상단의 <strong>&apos;현재 사례 Casebook에 저장 💾&apos;</strong> 버튼을 눌러
+                    아직 저장한 조사가 없어요. 상단의 <strong>&apos;현재 사례 조사 저장하기 💾&apos;</strong> 버튼을 눌러
                     현재 작성 중인 가설/체크리스트/메모를 보관하세요.
                   </div>
                 ) : (
@@ -2236,7 +2249,7 @@ function EngineeringWorkspaceContent() {
                 </span>
               </div>
               <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "14px" }}>
-                ※ 이전 Run은 <strong>&apos;HISTORICAL SNAPSHOT (Read-Only)&apos;</strong>으로 제공되며, 현재 설비 실시간 제어나 양산 MES 기록이 아닌 synthetic 시뮬레이션 데이터입니다.
+                ※ 이전 시뮬레이션은 <strong>&apos;이전 조사 · 읽기 전용&apos;</strong>으로 제공되며, 현재 설비 실시간 제어나 양산 MES 기록이 아닌 synthetic 시뮬레이션 데이터입니다.
               </div>
 
               <div id="ws-casebook-server-runs-list" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
