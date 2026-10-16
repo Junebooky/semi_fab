@@ -521,7 +521,7 @@ function DemoTourContent() {
 
             <div style={{ background: '#F8FAFC', borderRadius: '8px', padding: '16px', border: '1px solid #E2E8F0' }}>
               <h3 style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A', margin: '0 0 10px 0' }}>
-                🎯 현재 단계 확인 포인트 (Key Checkpoints)
+                이 단계에서 눈여겨볼 점
               </h3>
               <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {currentStep.keyCheckpoints.map((cp, idx) => (
