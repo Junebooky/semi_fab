@@ -3972,6 +3972,203 @@ test('BUILD-11 (c) Traceability Query Seed Preservation Contract', () => {
   assert.ok(tracePageSource.includes('queryTourStep'), 'Traceability page must read queryTourStep');
 });
 
+test('BUILD-12 (a) Engineering Case Report Markdown Format & Domain Invariants Contract', () => {
+  const wsContractSource = readFileSync(
+    new URL('../src/components/engineering-workspace/engineering-workspace-contract.ts', import.meta.url),
+    'utf8'
+  );
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(contextSource.includes('export function generateCaseReportMarkdown'), 'Must export generateCaseReportMarkdown');
+  assert.ok(contextSource.includes('export function generateCaseReportFilename'), 'Must export generateCaseReportFilename');
+  assert.ok(contextSource.includes('export function isCaseReportExportable'), 'Must export isCaseReportExportable');
+  assert.ok(wsContractSource.includes("export * from '@/lib/investigation-context'"), 'Workspace contract must re-export investigation-context');
+  assert.ok(wsContractSource.includes('export function mapInvestigationDetailToEvidence'), 'Must export mapInvestigationDetailToEvidence');
+
+  // Verify markdown generation format and invariants
+  const samplePayload = {
+    reportId: 'INV-AL-DEMO-015',
+    generatedAtUtc: '2026-10-16T06:00:00.000Z',
+    mode: 'B',
+    dataOrigin: 'synthetic',
+    runId: 'RUN-DEMO-015',
+    sessionId: 'SES-SYN-01',
+    lotId: 'LOT-DEMO-815',
+    alertId: 'AL-DEMO-015',
+    severity: 'CRITICAL',
+    ruleCode: 'FDC-RULE-SPC-UCL-01',
+    equipmentId: 'ETCH-02',
+    chamberId: 'CH-B',
+    recipeId: 'RCP-ETCH-POLY-04',
+    sensors: [
+      {
+        sensorId: 'RELATIVE_SIGNAL',
+        sensorName: '광학 발광 상대 신호 (OES Relative Signal)',
+        observedValue: 80.0,
+        unit: 'a.u.',
+        qualityFlag: 'SUSPECT',
+        uclThreshold: 65.0,
+        details: 'Step T7 excursion',
+      },
+      {
+        sensorId: 'RELATIVE_SIGNAL_GAP',
+        sensorName: 'OES T4/T5 결측',
+        observedValue: null,
+        unit: 'a.u.',
+        qualityFlag: 'MISSING',
+        details: 'MISSING ≠ 0',
+      },
+    ],
+    wafers: {
+      total: 25,
+      confirmedWafers: ['W-01', 'W-02', 'W-03', 'W-04', 'W-05', 'W-06', 'W-07'],
+      candidateWafers: ['W-08', 'W-09', 'W-10', 'W-11', 'W-12'],
+      unexposedCount: 13,
+    },
+    hypotheses: [
+      {
+        id: 'HYPO-01',
+        title: 'RF 전력 정합망(Matcher) 튜닝 변동에 따른 플라즈마 서지',
+        domain: 'RF 전력',
+        status: 'SUPPORTED_FOR_REVIEW',
+        statusLabel: '검토 지지 (SUPPORTED_FOR_REVIEW)',
+        linkedEvidenceIds: ['EVI-02'],
+        engineeringRationale: 'T7 스텝 RF Power 서지와 부합',
+      },
+    ],
+    actions: [
+      {
+        id: 'ACTION-01',
+        title: '센서 로그 재확인',
+        assigneeRole: '장비 엔지니어',
+        priority: 'HIGH',
+        completed: true,
+        targetSystem: 'Equipment Intelligence',
+        detail: '시계열 추이 확인',
+      },
+      {
+        id: 'ACTION-02',
+        title: 'RF 매처 점검',
+        assigneeRole: '공정 엔지니어',
+        priority: 'HIGH',
+        completed: false,
+        targetSystem: 'RF Controller',
+        detail: '반사파 로그 점검',
+      },
+    ],
+    userNotes: '엔지니어 검토 의견: T7 스텝 일탈 조사 진행 중',
+  };
+
+  // Verify markdown template structure and domain invariants
+  const lines = [
+    '# FAB ONE Engineering Case Report',
+    'Excursion ≠ Defect',
+    'MISSING ≠ 0',
+    '합성 반도체 공정 시뮬레이터 기반 시연 보고서 (비공식 / Synthetic Demonstration',
+    '## 1. 조사 사건 개요 (Investigation Summary)',
+    '- **공정 Run ID**: ${runId}',
+    '- **FDC 경보 ID**: ${alertId}',
+    '## 2. 공정 이상 감지 및 센서 계측 증거 (Sensor Measurements & Quality Flags)',
+    '통계적 관리한계 (SPC UCL)',
+    '## 3. 웨이퍼 25매 카세트 노출 영향 분류 (Wafer Cassette Exposure Status)',
+    'CONFIRMED_EXPOSED',
+    'CANDIDATE_EXPOSED',
+    'NOT_EXPOSED',
+    '## 4. 엔지니어링 가설 검토 현황 (Candidate Hypotheses & Evidence Mapping)',
+    '## 5. 엔지니어링 조치 체크리스트 및 사용자 메모 (Action Items & Notes)',
+    '[${a.completed ? \'x\' : \' \'}]',
+    'In-memory Volatile',
+  ];
+
+  lines.forEach((phrase) => {
+    assert.ok(contextSource.includes(phrase), `Case report template in investigation-context.ts must include '${phrase}'`);
+  });
+});
+
+test('BUILD-12 (b) Case Report Filename Sanitization & Export Lock Invariant', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Filename sanitization logic
+  assert.ok(contextSource.includes("case-report-${safeRunId}-${dateStr}.md"), 'Filename must follow case-report-${safeRunId}-${dateStr}.md');
+  assert.ok(contextSource.includes('/[^a-zA-Z0-9_-]/g'), 'Filename generator must sanitize unsafe characters');
+
+  // 2. Export lock guard logic
+  assert.ok(contextSource.includes('if (!isSupportedAlert) return false;'), 'Must lock export when alert is unsupported');
+  assert.ok(contextSource.includes('if (hasError) return false;'), 'Must lock export when error state exists');
+  assert.ok(contextSource.includes('if (isLoading) return false;'), 'Must lock export when loading');
+  assert.ok(contextSource.includes('if (!runId || runId.trim().length === 0) return false;'), 'Must lock export when runId is empty');
+});
+
+test('BUILD-12 (c) Mode B Investigation Detail to Evidence Mapping Contract', () => {
+  const wsContractSource = readFileSync(
+    new URL('../src/components/engineering-workspace/engineering-workspace-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(wsContractSource.includes('mapInvestigationDetailToEvidence'), 'Must define mapInvestigationDetailToEvidence');
+  assert.ok(wsContractSource.includes("'EVI-01'"), 'Must map EVI-01 for OES T4/T5 missing');
+  assert.ok(wsContractSource.includes("'EVI-02'"), 'Must map EVI-02 for T7 excursion spike');
+  assert.ok(wsContractSource.includes("'EVI-03'"), 'Must map EVI-03 for FDC alert record');
+  assert.ok(wsContractSource.includes("'EVI-04'"), 'Must map EVI-04 for wafer impact exposure');
+  assert.ok(wsContractSource.includes('OES 상대 신호 T4/T5 결측 (MISSING ≠ 0)'), 'EVI-01 must explicitly state MISSING ≠ 0 fact');
+});
+
+test('BUILD-12 (d) Cross-Screen "Continue Investigation" Deep Link Navigation Contract', () => {
+  const ccPageSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const eiPageSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  const tracePageSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+  const homePageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const wsPageSource = readFileSync(new URL('../src/app/engineering-workspace/page.tsx', import.meta.url), 'utf8');
+
+  // 1. Command Center CTA to Workspace
+  assert.ok(ccPageSource.includes('id="cc-btn-go-workspace"'), 'Command Center must provide cc-btn-go-workspace CTA');
+  assert.ok(ccPageSource.includes('/engineering-workspace?alert='), 'cc-btn-go-workspace must target engineering-workspace');
+  assert.ok(ccPageSource.includes('mode=B&run_id='), 'cc-btn-go-workspace must propagate mode=B and run_id when in Mode B');
+
+  // 2. Equipment Intelligence CTA to Workspace
+  assert.ok(eiPageSource.includes('id="ei-btn-go-workspace"'), 'Equipment Intelligence must provide ei-btn-go-workspace CTA');
+  assert.ok(eiPageSource.includes('/engineering-workspace?alert='), 'ei-btn-go-workspace must target engineering-workspace');
+
+  // 3. Traceability CTA to Workspace
+  assert.ok(tracePageSource.includes('id="trace-btn-go-workspace"'), 'Traceability must provide trace-btn-go-workspace CTA');
+  assert.ok(tracePageSource.includes('/engineering-workspace?alert='), 'trace-btn-go-workspace must target engineering-workspace');
+
+  // 4. Home CTA to Workspace
+  assert.ok(homePageSource.includes('id="home-btn-go-workspace"'), 'Home page must provide home-btn-go-workspace CTA');
+
+  // 5. Workspace Case Report export button
+  assert.ok(wsPageSource.includes('id="ws-btn-export-case-report"'), 'Workspace must define ws-btn-export-case-report');
+  assert.ok(wsPageSource.includes('disabled={!isExportable}'), 'ws-btn-export-case-report must be disabled when !isExportable');
+  assert.ok(wsPageSource.includes('aria-disabled={!isExportable}'), 'ws-btn-export-case-report must set aria-disabled');
+});
+
+test('BUILD-12 (e) Engineering Workspace Mode B Loader & Fail-Closed Boundary Contract', () => {
+  const wsPageSource = readFileSync(new URL('../src/app/engineering-workspace/page.tsx', import.meta.url), 'utf8');
+
+  // 1. Summary-first discovery
+  assert.ok(wsPageSource.includes("fetch('http://localhost:8000/api/v1/demo/summary'"), 'Workspace must perform summary-first discovery');
+  assert.ok(wsPageSource.includes("fetch(invUrl"), 'Workspace must fetch investigation detail in Mode B');
+
+  // 2. Fail-closed boundaries
+  assert.ok(wsPageSource.includes('id="ws-mode-b-error-banner"'), 'Workspace must render ws-mode-b-error-banner on fail-closed error');
+  assert.ok(wsPageSource.includes('id="ws-export-notice-banner"'), 'Workspace must render ws-export-notice-banner upon export');
+
+  // 3. Standby alert lock & data isolation
+  assert.ok(wsPageSource.includes("trimmedQueryAlert.startsWith('AL-STANDBY')"), 'Workspace must detect AL-STANDBY alert');
+  assert.ok(wsPageSource.includes('setIsSupportedAlert(false)'), 'Workspace must set isSupportedAlert to false on standby or error');
+
+  // 4. In-memory volatile disclaimer
+  assert.ok(wsPageSource.includes('새로고침 시 휘발'), 'Workspace must warn that engineering notes are volatile on refresh');
+  assert.ok(wsPageSource.includes('인메모리'), 'Workspace must display in-memory volatile caveat');
+});
+
+
 
 
 

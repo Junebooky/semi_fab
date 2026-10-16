@@ -40,7 +40,7 @@ python3 -m uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --reload
 
 ### 2.4 테스트 실행 명령어
 ```bash
-# 1. 프론트엔드 계약 및 컴포넌트 단위/통합 테스트 (Node test runner, 71 tests)
+# 1. 프론트엔드 계약 및 컴포넌트 단위/통합 테스트 (Node test runner, 76 tests)
 cd apps/web
 npm test
 
@@ -52,7 +52,7 @@ python3 -m unittest services/api/tests/test_api.py
 cd apps/web
 npm run build
 
-# 4. Playwright 실제 브라우저 E2E 스모크 테스트 (BUILD-11)
+# 4. Playwright 실제 브라우저 E2E 스모크 테스트 (BUILD-11 + BUILD-12, 9 tests)
 cd apps/web
 npm run test:e2e
 ```
@@ -187,4 +187,42 @@ A01 기획 에이전트의 전체 기능 완성 우선 및 기술 부채 등록 
   ```bash
   npx playwright show-trace apps/web/test-results/<디렉터리>/trace.zip
   ```
+
+---
+
+## 10. BUILD-12 Mode B 통합 조사 및 Engineering Case Report 내보내기
+
+### 10.1 기능 개요
+BUILD-12는 화면 간 단절 없는 조사 흐름(Connected Investigation), FastAPI 백엔드 연동(Mode B), 그리고 브라우저 기반 의사결정 기록 내보내기(Engineering Case Report Export)를 제공합니다:
+
+1. **화면 간 조사 맥락 전파 (Connected Investigation Lineage):**
+   - 조사 컨텍스트(`mode`, `run_id`, `session_id`, `lot_id`, `alert_id`, `seed`)를 화면 간 상호 전달.
+   - 각 화면에 `#*-btn-go-workspace` 딥링크 CTA 제공:
+     - 커맨드 센터: `#cc-btn-go-workspace`
+     - 설비 인텔리전스: `#ei-btn-go-workspace`
+     - 웨이퍼 추적성: `#trace-btn-go-workspace`
+     - 홈 조사 패널: `#home-btn-go-workspace`
+2. **Mode B 엔지니어링 워크스페이스 실시간 연동 (FastAPI Integration):**
+   - `/api/v1/demo/summary` 선행 조회를 통한 `active_run_id` 발견 및 출처 확인.
+   - `/api/v1/demo/investigation?alert_id=...` API 응답 데이터를 4대 증거 항목(`EVI-01` ~ `EVI-04`)으로 자동 매핑.
+   - 도메인 플래그 보존 (`MISSING ≠ 0`, UCL 65.0, `SUSPECT`, `CRITICAL`).
+   - 자동 근본 원인 단정 배제 (인간 엔지니어 가설 검토 지원용 증거 보드로 동작).
+   - Fail-Closed 에러 경계: 백엔드 HTTP 4xx/5xx 또는 연결 오류 시 이전 캐시를 즉시 비우고 `#ws-mode-b-error-banner` 오류 패널 표출.
+3. **Engineering Case Report 내보내기 (`#ws-btn-export-case-report`):**
+   - 외부 PDF/무거운 라이브러리 없이 순수 브라우저 Markdown 파일 다운로드 (`case-report-${runId}-${date}.md`).
+   - 보고서 포함 내용:
+     - 조사 개요 (Run ID, Alert ID, 장비/챔버, 발생 시각, 조사 모드)
+     - 센서 계측치 요약표 (RF Power, Pressure, OES Signal 등)
+     - 25매 웨이퍼 노출군 분류 (CONFIRMED_EXPOSED vs CANDIDATE_EXPOSED)
+     - 가설 검토 상태 및 연계 증거 요약
+     - 조치 체크리스트 이행 현황
+     - 엔지니어링 메모 기록
+     - 도메인 불변식 및 휘발성 경고 (`Excursion ≠ Defect`, `MISSING ≠ 0`, `In-memory Volatile`)
+   - 잠금 가드: 미지원 알람(`AL-STANDBY-001`) 또는 데이터 로드 실패 시 버튼 비활성화(`disabled`, `aria-disabled="true"`).
+
+### 10.2 Playwright E2E 검증 시나리오 (`apps/web/e2e/connected-investigation.spec.ts`)
+- **Case Report Export:** 워크스페이스에서 가설 상태 변경, 체크리스트 선택, 메모 작성 후 리포트 다운로드 및 파일 내용(도메인 불변식, 런 ID, 알람 ID 등) 검증.
+- **Standby Alert Lock 반례:** `AL-STANDBY-001` 인입 시 리포트 다운로드 버튼 및 조사 보드 잠금 확인.
+- **Cross-Screen Deep Links:** 커맨드 센터, 설비 인텔리전스, 웨이퍼 추적성 각 화면의 워크스페이스 바로가기 버튼 클릭 후 워크스페이스 정상 진입 및 컨텍스트 연계 검증.
+
 
