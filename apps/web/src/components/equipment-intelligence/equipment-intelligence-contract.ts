@@ -259,10 +259,131 @@ export function validateRunLineage(
 }
 
 /**
+ * Strict schema and domain invariant validator for sensor samples.
+ * Prevents incomplete, malformed, or contaminated datasets from committing as Mode B success.
+ */
+export function validateSamplesSchema(samples: unknown): { valid: boolean; reason?: string } {
+  if (!Array.isArray(samples)) {
+    return { valid: false, reason: '센서 샘플 데이터가 배열 형식이 아닙니다 (Fail-closed).' };
+  }
+
+  // Must have at least 24 samples (3 sensors x 8 steps T0~T7)
+  if (samples.length < 24) {
+    return {
+      valid: false,
+      reason: `센서 계측 샘플 수가 부족합니다 (수신: ${samples.length}개 / 최소 24개 필요, Fail-closed).`,
+    };
+  }
+
+  const expectedSensors: SensorId[] = ['RELATIVE_SIGNAL', 'CHAMBER_PRESSURE', 'RF_POWER'];
+
+  for (const sensorId of expectedSensors) {
+    const sensorSamples = samples.filter((s) => s && s.sensor_id === sensorId);
+    if (sensorSamples.length !== 8) {
+      return {
+        valid: false,
+        reason: `센서 ${sensorId}의 스텝 계측 샘플이 8개가 아닙니다 (수신: ${sensorSamples.length}개, Fail-closed).`,
+      };
+    }
+
+    const stepIndices = new Set<number>();
+    for (const sample of sensorSamples) {
+      if (typeof sample.step_index !== 'number' || sample.step_index < 0 || sample.step_index > 7) {
+        return {
+          valid: false,
+          reason: `유효하지 않은 step_index (${sample.step_index})가 감지되었습니다.`,
+        };
+      }
+      if (stepIndices.has(sample.step_index)) {
+        return {
+          valid: false,
+          reason: `센서 ${sensorId}에 중복된 step_index (${sample.step_index})가 존재합니다.`,
+        };
+      }
+      stepIndices.add(sample.step_index);
+
+      // Verify time label
+      if (sample.time_label !== `T${sample.step_index}`) {
+        return {
+          valid: false,
+          reason: `스텝 ${sample.step_index}의 time_label (${sample.time_label})이 불일치합니다.`,
+        };
+      }
+
+      // Verify unit
+      const expectedUnit = SENSOR_METADATA[sensorId].unit;
+      if (sample.unit !== expectedUnit) {
+        return {
+          valid: false,
+          reason: `센서 ${sensorId}의 단위 (${sample.unit})가 기대값 (${expectedUnit})과 일치하지 않습니다.`,
+        };
+      }
+
+      // Verify measured value and quality flag invariants
+      if (sensorId === 'RELATIVE_SIGNAL' && (sample.step_index === 4 || sample.step_index === 5)) {
+        // T4 and T5 MUST be MISSING and measured_value MUST be strictly null (not 0, not string)
+        if (sample.quality_flag !== 'MISSING') {
+          return {
+            valid: false,
+            reason: `OES 상대 신호 T4/T5 구간은 반드시 MISSING 품질이어야 합니다 (현재: ${sample.quality_flag}).`,
+          };
+        }
+        if (sample.measured_value !== null) {
+          return {
+            valid: false,
+            reason: `OES 상대 신호 결측 구간(MISSING)의 계측값은 반드시 null이어야 하며 0 또는 다른 값으로 보간할 수 없습니다.`,
+          };
+        }
+      } else {
+        // All other points MUST have finite numeric values and quality_flag !== 'MISSING'
+        if (sample.quality_flag === 'MISSING') {
+          return {
+            valid: false,
+            reason: `연속 계측 센서/정상 스텝(${sensorId} T${sample.step_index})에 부당한 MISSING 플래그가 설정되었습니다.`,
+          };
+        }
+        if (
+          typeof sample.measured_value !== 'number' ||
+          !Number.isFinite(sample.measured_value)
+        ) {
+          return {
+            valid: false,
+            reason: `센서 ${sensorId} T${sample.step_index}의 계측값이 유효한 숫자가 아닙니다 (${sample.measured_value}).`,
+          };
+        }
+      }
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Validates alerts response structure.
+ */
+export function validateAlertsSchema(alerts: unknown): { valid: boolean; reason?: string } {
+  if (!Array.isArray(alerts)) {
+    return { valid: false, reason: '알람 응답 데이터가 배열 형식이 아닙니다 (Fail-closed).' };
+  }
+  for (const alert of alerts) {
+    if (!alert || typeof alert !== 'object') {
+      return { valid: false, reason: '유효하지 않은 알람 객체가 포함되어 있습니다.' };
+    }
+    if (!alert.alert_id || typeof alert.alert_id !== 'string') {
+      return { valid: false, reason: '알람 ID가 누락되었거나 유효하지 않습니다.' };
+    }
+    if (!alert.severity || typeof alert.severity !== 'string') {
+      return { valid: false, reason: '알람 심각도(severity)가 누락되었습니다.' };
+    }
+  }
+  return { valid: true };
+}
+
+/**
  * Deterministic Mode A synthetic fixture generator matching the exact simulation
  * formula of FAB ONE Home (page.tsx). Guarantees a single unified synthetic reality!
  */
-export function generateModeAEquipmentSamples(seed: number = 42): {
+export function generateModeAEquipmentSamples(seed: number = 20261015): {
   samples: SensorSample[];
   alerts: FdcAlert[];
   summary: {

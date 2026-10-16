@@ -16,6 +16,8 @@ import {
   calculateMissingRange,
   getThresholdPositions,
   generateModeAEquipmentSamples,
+  validateSamplesSchema,
+  validateAlertsSchema,
 } from '../../components/equipment-intelligence/equipment-intelligence-contract';
 import {
   FdcAlert,
@@ -25,6 +27,8 @@ import {
   EngineeringTermTrigger,
   EngineeringDeepDivePanel,
 } from '../../components/ekl';
+
+const API_BASE = 'http://localhost:8000';
 
 function EquipmentIntelligenceContent() {
   const searchParams = useSearchParams();
@@ -39,7 +43,11 @@ function EquipmentIntelligenceContent() {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
-  const [seed, setSeed] = useState<number>(42);
+
+  // Default seed synchronized with Home and Command Center (20261015 -> RUN-DEMO-015)
+  const seedQuery = searchParams.get('seed');
+  const initialSeed = seedQuery && !isNaN(Number(seedQuery)) ? Number(seedQuery) : 20261015;
+  const [seed, setSeed] = useState<number>(initialSeed);
 
   // User Interactive Selection State
   const initialSensor = parseSensorQuery(searchParams.get('sensor'));
@@ -65,7 +73,7 @@ function EquipmentIntelligenceContent() {
     router.replace(`/equipment-intelligence?${params.toString()}`, { scroll: false });
   };
 
-  // Primary Data Loading Routine (Summary-first with run-locked query)
+  // Primary Data Loading Routine (Summary-first with run-locked query and snapshot verification)
   const loadData = async (forceSeed?: number) => {
     const currentToken = ++requestTokenRef.current;
     setLoading(true);
@@ -74,8 +82,8 @@ function EquipmentIntelligenceContent() {
     const activeSeed = forceSeed !== undefined ? forceSeed : seed;
 
     try {
-      // 1. Fetch Summary to establish authoritative active_run_id
-      const summaryRes = await fetch('/api/v1/demo/summary');
+      // 1. Fetch Summary from authoritative FastAPI origin to discover active_run_id
+      const summaryRes = await fetch(`${API_BASE}/api/v1/demo/summary`, { cache: 'no-store' });
 
       // Check if request was superseded during network flight
       if (currentToken !== requestTokenRef.current) return;
@@ -84,7 +92,9 @@ function EquipmentIntelligenceContent() {
         throw new Error(`HTTP ${summaryRes.status}: 공정 요약 정보를 불러올 수 없습니다 (Fail-closed).`);
       }
 
-      const summaryData = await summaryRes.json();
+      const summaryData = await summaryRes.json().catch(() => {
+        throw new Error('수신된 요약 데이터의 JSON 형식이 올바르지 않습니다 (Malformed JSON, Fail-closed).');
+      });
       if (currentToken !== requestTokenRef.current) return;
 
       const discoveredRunId = summaryData?.active_run_id;
@@ -94,33 +104,65 @@ function EquipmentIntelligenceContent() {
 
       // 2. Fetch Run Samples and Alerts in parallel using the exact discovered Run ID
       const [samplesRes, alertsRes] = await Promise.all([
-        fetch(`/api/v1/demo/runs/${encodeURIComponent(discoveredRunId)}/samples`),
-        fetch(`/api/v1/demo/alerts?run_id=${encodeURIComponent(discoveredRunId)}`),
+        fetch(`${API_BASE}/api/v1/demo/runs/${encodeURIComponent(discoveredRunId)}/samples`, { cache: 'no-store' }),
+        fetch(`${API_BASE}/api/v1/demo/alerts?run_id=${encodeURIComponent(discoveredRunId)}`, { cache: 'no-store' }),
       ]);
 
       if (currentToken !== requestTokenRef.current) return;
 
+      // Rigorous HTTP Status Verification: If EITHER samples OR alerts fails, fail closed!
       if (!samplesRes.ok) {
         throw new Error(`HTTP ${samplesRes.status}: 설비 센서 시계열 데이터를 불러올 수 없습니다 (Fail-closed).`);
       }
+      if (!alertsRes.ok) {
+        throw new Error(`HTTP ${alertsRes.status}: 설비 FDC 알람 데이터를 불러올 수 없습니다 (Fail-closed).`);
+      }
 
-      const rawSamples = await samplesRes.json();
-      const rawAlerts = alertsRes.ok ? await alertsRes.json() : [];
+      const rawSamples = await samplesRes.json().catch(() => {
+        throw new Error('수신된 센서 계측 데이터의 JSON 형식이 올바르지 않습니다 (Malformed JSON, Fail-closed).');
+      });
+      const rawAlerts = await alertsRes.json().catch(() => {
+        throw new Error('수신된 알람 데이터의 JSON 형식이 올바르지 않습니다 (Malformed JSON, Fail-closed).');
+      });
 
       if (currentToken !== requestTokenRef.current) return;
 
-      // 3. Schema validation: Must be an array of samples
-      if (!Array.isArray(rawSamples) || rawSamples.length < 8) {
-        throw new Error('수신된 센서 계측 데이터 구조가 유효하지 않거나 샘플 수가 부족합니다 (Fail-closed).');
+      // 3. Strict Schema & Domain Invariant Validation
+      const sampleVal = validateSamplesSchema(rawSamples);
+      if (!sampleVal.valid) {
+        throw new Error(sampleVal.reason || '센서 계측 데이터 규약 검증 실패 (Fail-closed).');
       }
+
+      const alertVal = validateAlertsSchema(rawAlerts);
+      if (!alertVal.valid) {
+        throw new Error(alertVal.reason || '알람 데이터 규약 검증 실패 (Fail-closed).');
+      }
+
+      // 4. Double-Check Summary Snapshot to prevent concurrent Run reset desynchronization
+      const recheckSummaryRes = await fetch(`${API_BASE}/api/v1/demo/summary`, { cache: 'no-store' });
+      if (!recheckSummaryRes.ok) {
+        throw new Error('공정 요약 재확인 실패 (Fail-closed).');
+      }
+      const recheckSummaryData = await recheckSummaryRes.json().catch(() => {
+        throw new Error('공정 요약 재확인 데이터 형식이 올바르지 않습니다 (Fail-closed).');
+      });
+
+      if (recheckSummaryData?.active_run_id !== discoveredRunId) {
+        throw new Error(
+          `활성 공정 Run이 계측 데이터 조회 도중 변경되었습니다 (${discoveredRunId} -> ${recheckSummaryData?.active_run_id}). 오래된 Run 데이터의 커밋을 차단합니다 (Fail-closed).`
+        );
+      }
+
+      if (currentToken !== requestTokenRef.current) return;
 
       // Atomic state commit
       setMode('B');
       setActiveRunId(discoveredRunId);
-      setLotId(summaryData.lot_id || 'LOT-20261015-001');
+      setLotId(recheckSummaryData.lot_id || null);
       setSamples(rawSamples);
-      setAlerts(Array.isArray(rawAlerts) ? rawAlerts : []);
+      setAlerts(rawAlerts);
       setNoticeMessage(`Mode B (FastAPI 연동): 활성 Run ${discoveredRunId}의 ETCH-02 / CH-B 원자적 센서 텔레메트리 연동 완료.`);
+      setErrorMessage(null);
       setLoading(false);
     } catch (err: any) {
       if (currentToken !== requestTokenRef.current) return;
@@ -141,9 +183,16 @@ function EquipmentIntelligenceContent() {
         setNoticeMessage(
           `Mode A (오프라인 합성 시뮬레이션): API 서버 미연결 상태로 난수 시드(Seed: ${activeSeed}) 기반 결정론적 합성 데이터를 표출합니다.`
         );
+        setErrorMessage(null);
         setLoading(false);
       } else {
-        // Mode B Server Error (Fail-Closed)
+        // Mode B Server Error (Fail-Closed): Clear prior state completely!
+        setMode('B');
+        setActiveRunId(null);
+        setLotId(null);
+        setSamples([]);
+        setAlerts([]);
+        setNoticeMessage(null);
         setErrorMessage(err.message || '데이터 로드 실패 (Fail-closed)');
         setLoading(false);
       }
@@ -771,7 +820,7 @@ function EquipmentIntelligenceContent() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <Link
                           id="ei-btn-go-investigation"
-                          href={`/?alert=${encodeURIComponent(activeAlert.alert_id)}&investigation=true&sensor=${encodeURIComponent(selectedSensor)}`}
+                          href={`/?alert=${encodeURIComponent(activeAlert.alert_id)}&investigation=true&sensor=${encodeURIComponent(selectedSensor)}${mode === 'A' ? `&seed=${seed}` : ''}`}
                           className="btn-danger-outline"
                           style={{
                             textDecoration: 'none',

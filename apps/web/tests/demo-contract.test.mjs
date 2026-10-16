@@ -2037,7 +2037,7 @@ test('BUILD-05 Command Center Page Source Invariants & EKL Integration', () => {
 // BUILD-06 Equipment Intelligence Contract Tests (a ~ g)
 // ========================================================
 
-function generateModeAEquipmentSamplesTest(seed = 42) {
+function generateModeAEquipmentSamplesTest(seed = 20261015) {
   let s = Math.abs(seed);
   const nextRand = () => {
     s = (s * 1664525 + 1013904223) % 4294967296;
@@ -2133,13 +2133,81 @@ function calculateChartCoordinatesTest(samples, sensorId) {
   });
 }
 
+function validateSamplesSchemaTest(samples) {
+  if (!Array.isArray(samples)) {
+    return { valid: false, reason: '센서 샘플 데이터가 배열 형식이 아닙니다 (Fail-closed).' };
+  }
+  if (samples.length < 24) {
+    return { valid: false, reason: `센서 계측 샘플 수가 부족합니다 (수신: ${samples.length}개 / 최소 24개 필요, Fail-closed).` };
+  }
+  const expectedSensors = ['RELATIVE_SIGNAL', 'CHAMBER_PRESSURE', 'RF_POWER'];
+  const expectedUnits = { RELATIVE_SIGNAL: 'a.u.', CHAMBER_PRESSURE: 'mTorr', RF_POWER: 'W' };
+
+  for (const sensorId of expectedSensors) {
+    const sensorSamples = samples.filter((s) => s && s.sensor_id === sensorId);
+    if (sensorSamples.length !== 8) {
+      return { valid: false, reason: `센서 ${sensorId}의 스텝 계측 샘플이 8개가 아닙니다 (수신: ${sensorSamples.length}개, Fail-closed).` };
+    }
+    const stepIndices = new Set();
+    for (const sample of sensorSamples) {
+      if (typeof sample.step_index !== 'number' || sample.step_index < 0 || sample.step_index > 7) {
+        return { valid: false, reason: `유효하지 않은 step_index (${sample.step_index})가 감지되었습니다.` };
+      }
+      if (stepIndices.has(sample.step_index)) {
+        return { valid: false, reason: `센서 ${sensorId}에 중복된 step_index (${sample.step_index})가 존재합니다.` };
+      }
+      stepIndices.add(sample.step_index);
+      if (sample.time_label !== `T${sample.step_index}`) {
+        return { valid: false, reason: `스텝 ${sample.step_index}의 time_label (${sample.time_label})이 불일치합니다.` };
+      }
+      if (sample.unit !== expectedUnits[sensorId]) {
+        return { valid: false, reason: `센서 ${sensorId}의 단위 (${sample.unit})가 기대값 (${expectedUnits[sensorId]})과 일치하지 않습니다.` };
+      }
+      if (sensorId === 'RELATIVE_SIGNAL' && (sample.step_index === 4 || sample.step_index === 5)) {
+        if (sample.quality_flag !== 'MISSING') {
+          return { valid: false, reason: `OES 상대 신호 T4/T5 구간은 반드시 MISSING 품질이어야 합니다 (현재: ${sample.quality_flag}).` };
+        }
+        if (sample.measured_value !== null) {
+          return { valid: false, reason: `OES 상대 신호 결측 구간(MISSING)의 계측값은 반드시 null이어야 하며 0 또는 다른 값으로 보간할 수 없습니다.` };
+        }
+      } else {
+        if (sample.quality_flag === 'MISSING') {
+          return { valid: false, reason: `연속 계측 센서/정상 스텝(${sensorId} T${sample.step_index})에 부당한 MISSING 플래그가 설정되었습니다.` };
+        }
+        if (typeof sample.measured_value !== 'number' || !Number.isFinite(sample.measured_value)) {
+          return { valid: false, reason: `센서 ${sensorId} T${sample.step_index}의 계측값이 유효한 숫자가 아닙니다 (${sample.measured_value}).` };
+        }
+      }
+    }
+  }
+  return { valid: true };
+}
+
+function validateAlertsSchemaTest(alerts) {
+  if (!Array.isArray(alerts)) {
+    return { valid: false, reason: '알람 응답 데이터가 배열 형식이 아닙니다 (Fail-closed).' };
+  }
+  for (const alert of alerts) {
+    if (!alert || typeof alert !== 'object') {
+      return { valid: false, reason: '유효하지 않은 알람 객체가 포함되어 있습니다.' };
+    }
+    if (!alert.alert_id || typeof alert.alert_id !== 'string') {
+      return { valid: false, reason: '알람 ID가 누락되었거나 유효하지 않습니다.' };
+    }
+    if (!alert.severity || typeof alert.severity !== 'string') {
+      return { valid: false, reason: '알람 심각도(severity)가 누락되었습니다.' };
+    }
+  }
+  return { valid: true };
+}
+
 test('BUILD-06 (a) Summary-first run discovery, same run_id samples + alerts propagation, and run lineage validation', async () => {
   const recordedCalls = [];
-  const serverSummaryRunId = 'RUN-DEMO-042';
+  const serverSummaryRunId = 'RUN-DEMO-015';
 
   // Harness simulating loadData in equipment-intelligence/page.tsx
   let activeReqId = 0;
-  async function loadEquipmentDataHarness(fetchSummaryFn, fetchSamplesFn, fetchAlertsFn) {
+  async function loadEquipmentDataHarness(fetchSummaryFn, fetchSamplesFn, fetchAlertsFn, fetchRecheckFn) {
     const reqId = ++activeReqId;
 
     // Step 1: Summary first
@@ -2159,21 +2227,36 @@ test('BUILD-06 (a) Summary-first run discovery, same run_id samples + alerts pro
 
     if (reqId !== activeReqId) return { discarded: true };
 
+    // Step 3: Schema validation
+    const sVal = validateSamplesSchemaTest(samplesData);
+    if (!sVal.valid) throw new Error(sVal.reason);
+    const aVal = validateAlertsSchemaTest(alertsData);
+    if (!aVal.valid) throw new Error(aVal.reason);
+
+    // Step 4: Snapshot confirmation recheck
+    const recheckRes = await (fetchRecheckFn ? fetchRecheckFn() : fetchSummaryFn());
+    const recheckData = await recheckRes.json();
+    if (recheckData?.active_run_id !== currentRunId) {
+      throw new Error(`Run desynchronization: ${currentRunId} vs ${recheckData?.active_run_id}`);
+    }
+
+    if (reqId !== activeReqId) return { discarded: true };
+
     return {
       activeRunId: currentRunId,
-      lotId: summaryData?.lot_id,
+      lotId: recheckData?.lot_id,
       samples: samplesData,
       alerts: alertsData,
       discarded: false
     };
   }
 
-  const fixture = generateModeAEquipmentSamplesTest(42);
+  const fixture = generateModeAEquipmentSamplesTest(20261015);
 
   const res = await loadEquipmentDataHarness(
     async () => {
       recordedCalls.push({ endpoint: 'summary' });
-      return { ok: true, status: 200, json: async () => ({ active_run_id: serverSummaryRunId, lot_id: 'LOT-DEMO-042' }) };
+      return { ok: true, status: 200, json: async () => ({ active_run_id: serverSummaryRunId, lot_id: 'LOT-DEMO-815' }) };
     },
     async (rId) => {
       recordedCalls.push({ endpoint: 'samples', runId: rId });
@@ -2182,6 +2265,10 @@ test('BUILD-06 (a) Summary-first run discovery, same run_id samples + alerts pro
     async (rId) => {
       recordedCalls.push({ endpoint: 'alerts', runId: rId });
       return { ok: true, status: 200, json: async () => fixture.alerts };
+    },
+    async () => {
+      recordedCalls.push({ endpoint: 'summary_recheck' });
+      return { ok: true, status: 200, json: async () => ({ active_run_id: serverSummaryRunId, lot_id: 'LOT-DEMO-815' }) };
     }
   );
 
@@ -2190,6 +2277,7 @@ test('BUILD-06 (a) Summary-first run discovery, same run_id samples + alerts pro
   assert.equal(recordedCalls[1].runId, serverSummaryRunId);
   assert.equal(recordedCalls[2].endpoint, 'alerts', 'Alerts must be called with discovered run_id');
   assert.equal(recordedCalls[2].runId, serverSummaryRunId);
+  assert.equal(recordedCalls[3].endpoint, 'summary_recheck', 'Summary recheck MUST be executed before commit');
   assert.equal(res.activeRunId, serverSummaryRunId);
   assert.equal(res.samples.length, 24);
   assert.equal(res.alerts.length, 1);
@@ -2238,7 +2326,7 @@ test('BUILD-06 (b) Rapid Run reset, delayed inflight samples/alerts response dis
 });
 
 test('BUILD-06 (c) Optical sensor (RELATIVE_SIGNAL) T4/T5 null segmentation vs continuous CHAMBER_PRESSURE / RF_POWER unbroken line invariant', () => {
-  const fixture = generateModeAEquipmentSamplesTest(42);
+  const fixture = generateModeAEquipmentSamplesTest(20261015);
 
   // 1. RELATIVE_SIGNAL (Optical Sensor)
   const oesCoords = calculateChartCoordinatesTest(fixture.samples, 'RELATIVE_SIGNAL');
@@ -2313,7 +2401,7 @@ test('BUILD-06 (d) Sensor switching, URL query parameter parsing fail-safe, meas
   assert.ok(contractSource.includes("ucl: 1650.0"), 'RF_POWER UCL must be 1650.0');
 
   // Step T7 is marked SUSPECT on all 3 sensors
-  const fixture = generateModeAEquipmentSamplesTest(42);
+  const fixture = generateModeAEquipmentSamplesTest(20261015);
   const t7Oes = fixture.samples.find(s => s.sensor_id === 'RELATIVE_SIGNAL' && s.step_index === 7);
   const t7Prs = fixture.samples.find(s => s.sensor_id === 'CHAMBER_PRESSURE' && s.step_index === 7);
   const t7Rf = fixture.samples.find(s => s.sensor_id === 'RF_POWER' && s.step_index === 7);
@@ -2326,11 +2414,11 @@ test('BUILD-06 (d) Sensor switching, URL query parameter parsing fail-safe, meas
 });
 
 test('BUILD-06 (e) Valid vs Invalid FDC alert investigation linking, candidate wafers binding, and fail-closed isolation', () => {
-  const activeRunId = 'RUN-DEMO-042';
+  const activeRunId = 'RUN-DEMO-015';
 
   // 1. Valid Alert: ETCH-02 / CH-B / CRITICAL / FDC-RULE-SPC-UCL-01 / matching activeRunId
   const validAlert = {
-    alert_id: 'AL-DEMO-042',
+    alert_id: 'AL-DEMO-015',
     severity: 'CRITICAL',
     equipment_id: 'ETCH-02',
     chamber_id: 'CH-B',
@@ -2401,11 +2489,11 @@ test('BUILD-06 (f) Mode A offline fallback vs Mode B HTTP 4xx/5xx/malformed/empt
       }
 
       // Success scenario
-      const fixture = generateModeAEquipmentSamplesTest(42);
+      const fixture = generateModeAEquipmentSamplesTest(20261015);
       return { mode: 'B', samples: fixture.samples, errorMessage: null };
     } catch (err) {
       if (err instanceof TypeError || (err.message && err.message.includes('fetch'))) {
-        const fixture = generateModeAEquipmentSamplesTest(42);
+        const fixture = generateModeAEquipmentSamplesTest(20261015);
         return { mode: 'A', samples: fixture.samples, errorMessage: null };
       }
       return { mode: 'B', samples: [], errorMessage: err.message };
@@ -2472,6 +2560,292 @@ test('BUILD-06 (g) Multi-page bidirectional navigation, EKL L1 integration, and 
   assert.ok(eiPageSource.includes('role="tablist"'), 'Sensor tabs must define role="tablist"');
   assert.ok(eiPageSource.includes('role="tab"'), 'Sensor tabs must define role="tab"');
   assert.ok(eiPageSource.includes('role="tabpanel"'), 'Sensor content must define role="tabpanel"');
+});
+
+// ========================================================
+// P1-A, P1-B, P1-C Specific Contract & Regression Tests
+// ========================================================
+
+test('P1-A BUILD-06 Mode B API Origin Endpoint Consistency & Absence of Next.js Proxy/Rewrites', () => {
+  const eiPageSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  const nextConfigSource = readFileSync(new URL('../next.config.mjs', import.meta.url), 'utf8');
+
+  // 1. Explicit API_BASE pointing directly to FastAPI port 8000
+  assert.ok(eiPageSource.includes("const API_BASE = 'http://localhost:8000';"), 'Equipment Intelligence must declare explicit API_BASE');
+  assert.ok(eiPageSource.includes("`${API_BASE}/api/v1/demo/summary`"), 'Summary must be fetched with API_BASE');
+  assert.ok(eiPageSource.includes("`${API_BASE}/api/v1/demo/runs/"), 'Samples must be fetched with API_BASE');
+  assert.ok(eiPageSource.includes("`${API_BASE}/api/v1/demo/alerts?run_id="), 'Alerts must be fetched with API_BASE');
+
+  // 2. Must NOT use relative /api/v1 fetches in equipment-intelligence/page.tsx
+  assert.ok(!eiPageSource.includes("fetch('/api/v1/"), 'Must not use relative /api/v1 fetches');
+
+  // 3. Must use { cache: "no-store" } on all API fetches
+  assert.ok(eiPageSource.includes("{ cache: 'no-store' }"), 'All fetches must disable caching');
+
+  // 4. Next.js config must NOT have silent rewrites or proxy
+  assert.ok(!nextConfigSource.includes('rewrites'), 'next.config.mjs must have no rewrites');
+  assert.ok(!nextConfigSource.includes('proxy'), 'next.config.mjs must have no proxy');
+});
+
+test('P1-B BUILD-06 (a) Samples 200 + Alerts 500 fails closed and never commits Mode B success', async () => {
+  let state = {
+    mode: 'B',
+    activeRunId: 'PREV-RUN-001',
+    lotId: 'PREV-LOT-001',
+    samples: [{ sample_id: 1 }],
+    alerts: [{ alert_id: 'PREV-AL-001' }],
+    noticeMessage: '이전 성공 메시지',
+    errorMessage: null
+  };
+
+  async function simulateFetchWithAlertsFailure() {
+    try {
+      const summaryRes = { ok: true, status: 200, json: async () => ({ active_run_id: 'RUN-DEMO-015' }) };
+      const currentRunId = (await summaryRes.json()).active_run_id;
+
+      const samplesRes = { ok: true, status: 200, json: async () => generateModeAEquipmentSamplesTest().samples };
+      const alertsRes = { ok: false, status: 500, json: async () => ({ error: 'Internal Server Error' }) };
+
+      if (!samplesRes.ok) {
+        throw new Error(`HTTP ${samplesRes.status}: 설비 센서 시계열 데이터를 불러올 수 없습니다 (Fail-closed).`);
+      }
+      if (!alertsRes.ok) {
+        throw new Error(`HTTP ${alertsRes.status}: 설비 FDC 알람 데이터를 불러올 수 없습니다 (Fail-closed).`);
+      }
+
+      // If both succeed (should not reach here)
+      state.samples = await samplesRes.json();
+      state.alerts = await alertsRes.json();
+      state.activeRunId = currentRunId;
+    } catch (err) {
+      // Fail closed state cleanup
+      state.mode = 'B';
+      state.activeRunId = null;
+      state.lotId = null;
+      state.samples = [];
+      state.alerts = [];
+      state.noticeMessage = null;
+      state.errorMessage = err.message;
+    }
+  }
+
+  await simulateFetchWithAlertsFailure();
+
+  // Assert fail closed state
+  assert.equal(state.mode, 'B');
+  assert.equal(state.activeRunId, null, 'activeRunId must be wiped on failure');
+  assert.equal(state.lotId, null, 'lotId must be wiped on failure');
+  assert.equal(state.samples.length, 0, 'samples must be wiped on failure');
+  assert.equal(state.alerts.length, 0, 'alerts must be wiped on failure');
+  assert.equal(state.noticeMessage, null, 'noticeMessage must be wiped on failure');
+  assert.ok(state.errorMessage.includes('HTTP 500'), 'errorMessage must report alerts failure');
+});
+
+test('P1-B BUILD-06 (b) Alerts response non-array or malformed fails closed', () => {
+  // Non-array alert responses
+  assert.equal(validateAlertsSchemaTest(null).valid, false);
+  assert.equal(validateAlertsSchemaTest(undefined).valid, false);
+  assert.equal(validateAlertsSchemaTest({ error: 'unauthorized' }).valid, false);
+  assert.equal(validateAlertsSchemaTest('ALERTS_STRING').valid, false);
+
+  // Missing required fields
+  assert.equal(validateAlertsSchemaTest([{ severity: 'CRITICAL' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ alert_id: 'AL-01' }]).valid, false);
+
+  // Valid alerts array
+  assert.equal(validateAlertsSchemaTest([{ alert_id: 'AL-01', severity: 'CRITICAL' }]).valid, true);
+  assert.equal(validateAlertsSchemaTest([]).valid, true);
+});
+
+test('P1-B BUILD-06 (c) Sensor Samples Schema counterexamples fail closed without fallback to Mode A or fake zeros', () => {
+  const validFixture = generateModeAEquipmentSamplesTest(20261015);
+  assert.equal(validateSamplesSchemaTest(validFixture.samples).valid, true);
+
+  // Counterexample 1: 8 samples concentrated on 1 sensor only (24 items total, but all RELATIVE_SIGNAL)
+  const singleSensorSamples = Array.from({ length: 24 }, (_, i) => ({
+    step_index: i % 8,
+    time_label: `T${i % 8}`,
+    sensor_id: 'RELATIVE_SIGNAL',
+    measured_value: i % 8 === 4 || i % 8 === 5 ? null : 50.0,
+    unit: 'a.u.',
+    quality_flag: i % 8 === 4 || i % 8 === 5 ? 'MISSING' : 'GOOD'
+  }));
+  const singleSensorRes = validateSamplesSchemaTest(singleSensorSamples);
+  assert.equal(singleSensorRes.valid, false, 'Samples concentrated on 1 sensor must fail closed');
+  assert.ok(singleSensorRes.reason.includes('스텝 계측 샘플이 8개가 아닙니다'));
+
+  // Counterexample 1b: Missing CHAMBER_PRESSURE entirely (8 OES + 16 RF)
+  const missingPressureSamples = [
+    ...validFixture.samples.filter(s => s.sensor_id === 'RELATIVE_SIGNAL'),
+    ...validFixture.samples.filter(s => s.sensor_id === 'RF_POWER'),
+    ...validFixture.samples.filter(s => s.sensor_id === 'RF_POWER'),
+  ];
+  const missingPrsRes = validateSamplesSchemaTest(missingPressureSamples);
+  assert.equal(missingPrsRes.valid, false);
+  assert.ok(missingPrsRes.reason.includes('CHAMBER_PRESSURE'));
+
+  // Counterexample 2: String measured value (e.g. '80.0' instead of number)
+  const stringValSamples = JSON.parse(JSON.stringify(validFixture.samples));
+  stringValSamples[0].measured_value = '80.0';
+  const strRes = validateSamplesSchemaTest(stringValSamples);
+  assert.equal(strRes.valid, false, 'String measured value must fail closed');
+  assert.ok(strRes.reason.includes('유효한 숫자'));
+
+  // Counterexample 3: MISSING with zero value (measured_value: 0 instead of null on T4)
+  const zeroMissingSamples = JSON.parse(JSON.stringify(validFixture.samples));
+  const t4Oes = zeroMissingSamples.find(s => s.sensor_id === 'RELATIVE_SIGNAL' && s.step_index === 4);
+  t4Oes.measured_value = 0; // Forbidden zero-filling of missing data!
+  const zeroRes = validateSamplesSchemaTest(zeroMissingSamples);
+  assert.equal(zeroRes.valid, false, 'MISSING with zero must fail closed (MISSING != 0 invariant)');
+  assert.ok(zeroRes.reason.includes('반드시 null이어야 하며 0 또는 다른 값으로 보간할 수 없습니다'));
+
+  // Counterexample 4: Wrong unit (e.g. 'Torr' instead of 'mTorr')
+  const wrongUnitSamples = JSON.parse(JSON.stringify(validFixture.samples));
+  const prsSample = wrongUnitSamples.find(s => s.sensor_id === 'CHAMBER_PRESSURE');
+  prsSample.unit = 'Torr';
+  const unitRes = validateSamplesSchemaTest(wrongUnitSamples);
+  assert.equal(unitRes.valid, false, 'Wrong unit must fail closed');
+  assert.ok(unitRes.reason.includes('단위'));
+
+  // Counterexample 5: Continuous sensor with illegitimate MISSING flag
+  const continuousMissingSamples = JSON.parse(JSON.stringify(validFixture.samples));
+  const prsT2 = continuousMissingSamples.find(s => s.sensor_id === 'CHAMBER_PRESSURE' && s.step_index === 2);
+  prsT2.quality_flag = 'MISSING';
+  const contRes = validateSamplesSchemaTest(continuousMissingSamples);
+  assert.equal(contRes.valid, false, 'Continuous sensor with MISSING flag must fail closed');
+  assert.ok(contRes.reason.includes('부당한 MISSING 플래그'));
+
+  // Counterexample 6: Duplicate step index within a sensor
+  const dupStepSamples = JSON.parse(JSON.stringify(validFixture.samples));
+  dupStepSamples[1].step_index = 0;
+  const dupRes = validateSamplesSchemaTest(dupStepSamples);
+  assert.equal(dupRes.valid, false, 'Duplicate step index must fail closed');
+  assert.ok(dupRes.reason.includes('중복된 step_index'));
+});
+
+test('P1-B BUILD-06 (d) Concurrent Run reset snapshot validation aborts commit when active run changes', async () => {
+  let state = {
+    mode: 'B',
+    activeRunId: null,
+    lotId: null,
+    samples: [],
+    alerts: [],
+    errorMessage: null
+  };
+
+  async function loadDataWithConcurrentResetSimulation() {
+    try {
+      // 1. Initial summary discovers RUN-DEMO-001
+      const initialSummary = { active_run_id: 'RUN-DEMO-001', lot_id: 'LOT-DEMO-001' };
+      const discoveredRunId = initialSummary.active_run_id;
+
+      // 2. Samples and alerts fetched for RUN-DEMO-001
+      const fixture = generateModeAEquipmentSamplesTest(20261015);
+      const rawSamples = fixture.samples;
+      const rawAlerts = fixture.alerts;
+
+      // Validate schema
+      const sampleVal = validateSamplesSchemaTest(rawSamples);
+      if (!sampleVal.valid) throw new Error(sampleVal.reason);
+
+      // 3. Simulated concurrent reset: Before committing, another user/tab reset run to RUN-DEMO-002!
+      const recheckSummary = { active_run_id: 'RUN-DEMO-002', lot_id: 'LOT-DEMO-002' };
+      if (recheckSummary.active_run_id !== discoveredRunId) {
+        throw new Error(
+          `활성 공정 Run이 계측 데이터 조회 도중 변경되었습니다 (${discoveredRunId} -> ${recheckSummary.active_run_id}). 오래된 Run 데이터의 커밋을 차단합니다 (Fail-closed).`
+        );
+      }
+
+      // Should never reach atomic commit
+      state.activeRunId = discoveredRunId;
+      state.samples = rawSamples;
+      state.alerts = rawAlerts;
+    } catch (err) {
+      state.mode = 'B';
+      state.activeRunId = null;
+      state.lotId = null;
+      state.samples = [];
+      state.alerts = [];
+      state.errorMessage = err.message;
+    }
+  }
+
+  await loadDataWithConcurrentResetSimulation();
+
+  // Commit must have been aborted and state cleaned up
+  assert.equal(state.activeRunId, null, 'Concurrent reset must abort commit and leave activeRunId null');
+  assert.equal(state.samples.length, 0);
+  assert.ok(state.errorMessage.includes('계측 데이터 조회 도중 변경되었습니다'));
+});
+
+test('P1-B BUILD-06 (e) Error catch block wipes previous state and does not fabricate arbitrary lot ID', () => {
+  const eiPageSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+
+  // Verify catch block clears state
+  assert.ok(eiPageSource.includes('setActiveRunId(null);'), 'catch block must clear activeRunId');
+  assert.ok(eiPageSource.includes('setLotId(null);'), 'catch block must clear lotId');
+  assert.ok(eiPageSource.includes('setSamples([]);'), 'catch block must clear samples');
+  assert.ok(eiPageSource.includes('setAlerts([]);'), 'catch block must clear alerts');
+  assert.ok(eiPageSource.includes('setNoticeMessage(null);'), 'catch block must clear noticeMessage');
+
+  // Verify no fallback arbitrary lot ID
+  assert.ok(!eiPageSource.includes("summaryData.lot_id || 'LOT-20261015-001'"), 'Arbitrary lot ID fallback must be removed');
+  assert.ok(eiPageSource.includes('setLotId(recheckSummaryData.lot_id || null);'), 'lotId must use snapshot data or null');
+});
+
+test('P1-C BUILD-06 Unified Mode A Default Seed (20261015) and Sensor Deep Link Navigation', () => {
+  const eiContractSource = readFileSync(
+    new URL('../src/components/equipment-intelligence/equipment-intelligence-contract.ts', import.meta.url),
+    'utf8'
+  );
+  const eiPageSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  const ccPageSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const homePageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+
+  // 1. Contract default seed is 20261015
+  assert.ok(eiContractSource.includes('seed: number = 20261015'), 'Default seed in contract must be 20261015');
+
+  // 2. Equipment Intelligence initial seed is 20261015
+  assert.ok(eiPageSource.includes('const initialSeed = seedQuery && !isNaN(Number(seedQuery)) ? Number(seedQuery) : 20261015;'));
+
+  // 3. Mode A Fixture deterministic IDs
+  const fixture = generateModeAEquipmentSamplesTest(20261015);
+  assert.equal(fixture.summary.run_id, 'RUN-DEMO-015', 'Default seed 20261015 must produce RUN-DEMO-015');
+  assert.equal(fixture.alerts[0].alert_id, 'AL-DEMO-015', 'Default seed 20261015 must produce AL-DEMO-015');
+  assert.equal(fixture.summary.lot_id, 'LOT-DEMO-815', 'Default seed 20261015 must produce LOT-DEMO-815');
+
+  // 4. Command Center links with seed parameter in Mode A
+  assert.ok(
+    ccPageSource.includes("`/equipment-intelligence?sensor=RELATIVE_SIGNAL${mode === 'A' ? `&seed=${seed}` : ''}`"),
+    'Command Center must pass seed to Equipment Intelligence in Mode A'
+  );
+
+  // 5. Equipment Intelligence links to investigation with seed parameter in Mode A
+  assert.ok(
+    eiPageSource.includes("${mode === 'A' ? `&seed=${seed}` : ''}"),
+    'Equipment Intelligence must pass seed to Home Investigation in Mode A'
+  );
+
+  // 6. Home page reads and synchronizes sensor and seed searchParams
+  assert.ok(homePageSource.includes("searchParams.get('sensor')"), 'Home page must read sensor query parameter');
+  assert.ok(homePageSource.includes("searchParams.get('seed')"), 'Home page must read seed query parameter');
+  assert.ok(homePageSource.includes("setSelectedSensor(upper as 'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE' | 'RF_POWER')"));
+
+  // 7. Test Home sensor synchronization logic
+  function testHomeSensorInit(sensorParam) {
+    if (sensorParam) {
+      const upper = sensorParam.trim().toUpperCase();
+      if (upper === 'CHAMBER_PRESSURE' || upper === 'RF_POWER') return upper;
+    }
+    return 'RELATIVE_SIGNAL';
+  }
+
+  assert.equal(testHomeSensorInit('RF_POWER'), 'RF_POWER');
+  assert.equal(testHomeSensorInit('rf_power'), 'RF_POWER');
+  assert.equal(testHomeSensorInit('CHAMBER_PRESSURE'), 'CHAMBER_PRESSURE');
+  assert.equal(testHomeSensorInit('RELATIVE_SIGNAL'), 'RELATIVE_SIGNAL');
+  assert.equal(testHomeSensorInit('INVALID_SENSOR'), 'RELATIVE_SIGNAL');
+  assert.equal(testHomeSensorInit(null), 'RELATIVE_SIGNAL');
 });
 
 

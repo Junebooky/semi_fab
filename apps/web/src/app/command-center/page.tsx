@@ -784,7 +784,7 @@ function CommandCenterContent() {
                     </Link>
                     <Link
                       id="cc-btn-go-equipment"
-                      href="/equipment-intelligence?sensor=RELATIVE_SIGNAL"
+                      href={`/equipment-intelligence?sensor=RELATIVE_SIGNAL${mode === 'A' ? `&seed=${seed}` : ''}`}
                       className="btn-secondary"
                       style={{
                         textDecoration: 'none',
