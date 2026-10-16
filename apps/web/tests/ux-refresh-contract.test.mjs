@@ -97,7 +97,7 @@ test('Design does not erase provenance, critical state or route URLs', () => {
   assert.match(css,/--ux-emerald: #0B795F/);
   assert.match(css,/@media \(max-width: 480px\)/);
   assert.match(css,/prefers-reduced-motion/);
-  assert.match(shared,/Mode B/);
+  assert.match(shared,/Mode \{mode\}/);
   const home=app('page.tsx');
   assert.ok(home.includes('generateModeAFixture('));
   assert.ok(home.includes('fetch("http://localhost:8000/api/v1/demo/'));
