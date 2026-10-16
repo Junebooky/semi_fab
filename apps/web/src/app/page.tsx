@@ -271,6 +271,8 @@ function FabOneDemoContent() {
   const alertParam = searchParams.get('alert');
   const invParam = searchParams.get('investigation');
   const waferParam = searchParams.get('wafer');
+  const sensorParam = searchParams.get('sensor');
+  const seedParam = searchParams.get('seed');
 
   const [mode, setMode] = useState<'A' | 'B'>('A');
   const [backendAvailable, setBackendAvailable] = useState<boolean>(false);
@@ -284,13 +286,25 @@ function FabOneDemoContent() {
   const [selectedAlert, setSelectedAlert] = useState<FdcAlert | null>(DEFAULT_FIXTURE.alerts[0]);
   const [isInvestigationOpen, setIsInvestigationOpen] = useState<boolean>(true);
 
+  // Initial sensor from query parameter (?sensor=...) with safe fallback
+  const initialSensor = (() => {
+    if (sensorParam) {
+      const upper = sensorParam.trim().toUpperCase();
+      if (upper === 'CHAMBER_PRESSURE' || upper === 'RF_POWER') return upper as 'CHAMBER_PRESSURE' | 'RF_POWER';
+    }
+    return 'RELATIVE_SIGNAL';
+  })();
+
+  // Initial seed from query parameter (?seed=...)
+  const initialSeed = seedParam && !isNaN(Number(seedParam)) ? Number(seedParam) : 20261015;
+
   // Playback timeline state
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [selectedSensor, setSelectedSensor] = useState<'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE' | 'RF_POWER'>('RELATIVE_SIGNAL');
+  const [selectedSensor, setSelectedSensor] = useState<'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE' | 'RF_POWER'>(initialSensor);
   const [selectedWafer, setSelectedWafer] = useState<WaferItem | null>(DEFAULT_FIXTURE.wafers[7]); // W-08 default candidate
   const [isAnomalyActive, setIsAnomalyActive] = useState<boolean>(false);
-  const [seed, setSeed] = useState<number>(20261015);
+  const [seed, setSeed] = useState<number>(initialSeed);
   const [noticeMessage, setNoticeMessage] = useState<string>("FAB ONE 식각 공정 시뮬레이터 준비 완료");
 
   // [P1-A]: Request sequencing and race condition guards for async alert investigation loading
@@ -569,8 +583,14 @@ function FabOneDemoContent() {
     }
   };
 
-  // Handle URL deep link query parameters (?alert=...&investigation=true&wafer=...)
+  // Handle URL deep link query parameters (?alert=...&investigation=true&wafer=...&sensor=...)
   useEffect(() => {
+    if (sensorParam) {
+      const upper = sensorParam.trim().toUpperCase();
+      if (upper === 'CHAMBER_PRESSURE' || upper === 'RF_POWER' || upper === 'RELATIVE_SIGNAL') {
+        setSelectedSensor(upper as 'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE' | 'RF_POWER');
+      }
+    }
     if (alertParam && alerts.length > 0) {
       const foundAlert = alerts.find(a => a.alert_id === alertParam);
       if (foundAlert) {
@@ -586,7 +606,7 @@ function FabOneDemoContent() {
         setSelectedWafer(foundWafer);
       }
     }
-  }, [alertParam, invParam, waferParam, alerts, wafers]);
+  }, [alertParam, invParam, waferParam, sensorParam, alerts, wafers]);
 
   const handleChangeSeed = async () => {
     activeInvestigationReqIdRef.current++;
@@ -742,6 +762,12 @@ function FabOneDemoContent() {
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
             FDC 커맨드 센터 (Command Center)
+          </Link>
+          <Link href="/equipment-intelligence" className="nav-tab-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+            설비 인텔리전스 (Equipment)
           </Link>
         </nav>
 

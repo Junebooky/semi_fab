@@ -18,13 +18,24 @@ function CommandCenterContent() {
   const router = useRouter();
 
   const queryAlert = searchParams.get('alert');
+  const querySeed = searchParams.get('seed');
+
+  const initialSeed = useMemo(() => {
+    if (querySeed) {
+      const num = Number(querySeed);
+      if (!isNaN(num) && Number.isInteger(num) && num > 0 && num < 1000000000) {
+        return num;
+      }
+    }
+    return 20261015;
+  }, [querySeed]);
 
   const [mode, setMode] = useState<'A' | 'B'>('A');
-  const [seed, setSeed] = useState<number>(20261015);
-  const [activeRunId, setActiveRunId] = useState<string | null>('RUN-DEMO-015');
-  const [alarms, setAlarms] = useState<FdcAlert[]>(() => generateModeACommandCenterAlarms(20261015));
+  const [seed, setSeed] = useState<number>(initialSeed);
+  const [activeRunId, setActiveRunId] = useState<string | null>(() => `RUN-DEMO-${String(initialSeed % 1000).padStart(3, '0')}`);
+  const [alarms, setAlarms] = useState<FdcAlert[]>(() => generateModeACommandCenterAlarms(initialSeed));
   const [selectedAlertId, setSelectedAlertId] = useState<string | null>(() => {
-    const initialAlarms = generateModeACommandCenterAlarms(20261015);
+    const initialAlarms = generateModeACommandCenterAlarms(initialSeed);
     return queryAlert || (initialAlarms.length > 0 ? initialAlarms[0].alert_id : null);
   });
 
@@ -216,6 +227,16 @@ function CommandCenterContent() {
     loadAlarms();
   }, [loadAlarms]);
 
+  // Synchronize seed when query param changes
+  useEffect(() => {
+    if (querySeed) {
+      const num = Number(querySeed);
+      if (!isNaN(num) && Number.isInteger(num) && num > 0 && num < 1000000000) {
+        setSeed(num);
+      }
+    }
+  }, [querySeed]);
+
   // Filtered and Sorted Alarms (pure derivation)
   const filteredAndSortedAlarms = useMemo(() => {
     return applyFilterAndSort(alarms, severityFilter, statusFilter, equipmentFilter, sortOrder);
@@ -291,14 +312,14 @@ function CommandCenterContent() {
 
         {/* Navigation Tabs */}
         <nav style={{ display: 'flex', gap: '8px' }} aria-label="화면 탭">
-          <Link href="/" className="nav-tab-link">
+          <Link href={`/${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
               <polyline points="9 22 9 12 15 12 15 22"></polyline>
             </svg>
             홈 (FDC 모니터링)
           </Link>
-          <Link href="/traceability" className="nav-tab-link">
+          <Link href={`/traceability${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -306,12 +327,18 @@ function CommandCenterContent() {
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
-          <Link href="/command-center" className="nav-tab-link active">
+          <Link href={`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
             FDC 커맨드 센터 (Command Center)
+          </Link>
+          <Link href={`/equipment-intelligence${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+            설비 인텔리전스 (Equipment)
           </Link>
         </nav>
 
@@ -735,7 +762,7 @@ function CommandCenterContent() {
                           {selectedAlert.candidate_wafers.map((wId) => (
                             <Link
                               key={wId}
-                              href={`/traceability?wafer=${wId}`}
+                              href={`/traceability?wafer=${wId}${mode === 'A' ? `&seed=${seed}` : ''}`}
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -770,11 +797,29 @@ function CommandCenterContent() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'center' }}>
                     <Link
                       id="cc-btn-go-investigation"
-                      href={`/?alert=${encodeURIComponent(selectedAlert.alert_id)}&investigation=true`}
+                      href={`/?alert=${encodeURIComponent(selectedAlert.alert_id)}&investigation=true${mode === 'A' ? `&seed=${seed}` : ''}`}
                       className="btn-danger-outline"
                       style={{ textDecoration: 'none', padding: '10px 16px', fontSize: '13px', whiteSpace: 'nowrap', textAlign: 'center' }}
                     >
                       엔지니어링 조사 상세 보기 →
+                    </Link>
+                    <Link
+                      id="cc-btn-go-equipment"
+                      href={`/equipment-intelligence?sensor=RELATIVE_SIGNAL${mode === 'A' ? `&seed=${seed}` : ''}`}
+                      className="btn-secondary"
+                      style={{
+                        textDecoration: 'none',
+                        padding: '8px 14px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                        textAlign: 'center',
+                        borderColor: '#0B9F78',
+                        color: '#047857',
+                        background: '#FFFFFF',
+                      }}
+                    >
+                      설비 센서 계측 확인 (ETCH-02 / CH-B) →
                     </Link>
                   </div>
                 </div>
