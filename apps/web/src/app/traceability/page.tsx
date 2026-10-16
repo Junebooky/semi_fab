@@ -159,7 +159,7 @@ function generateModeAWaferTrace(waferId: string, seed: number): WaferTraceDetai
   } else {
     timeline.push({
       step_index: 3,
-      step_name: "FOUP 카세트 내 미공정 이력 연결 대기 (Cassette Stored)",
+      step_name: "FOUP 카세트 내 미노출 대기 (Cassette Stored)",
       time_label: "T0 ~ T7",
       timestamp_utc: "2026-10-15T00:00:00.000Z",
       equipment_id: "ETCH-02",
@@ -206,31 +206,31 @@ function generateModeAWaferTrace(waferId: string, seed: number): WaferTraceDetai
       chamber_id: "QA-DISPOSITION",
       event_type: "HOLD",
       status: "HELD",
-      description: `엔지니어링 조사(${investigation_id}) 연계: 잠재 공정 이력 연결 영향 가능으로 분류되어 결함 검측(Defect Review) 및 EDS 우선 검사군으로 배정됨.`
+      description: `엔지니어링 조사(${investigation_id}) 연계: 잠재 노출 후보군으로 분류되어 결함 검측(Defect Review) 및 EDS 우선 검사군으로 배정됨.`
     });
   } else if (exposure_status === 'CONFIRMED_EXPOSED') {
     timeline.push({
       step_index: 5,
-      step_name: "공정 이력 연결 완료군 품질 일치성 검증 대기 (Lot Hold)",
+      step_name: "노출 완료군 품질 일치성 검증 대기 (Lot Hold)",
       time_label: "T8+",
       timestamp_utc: "2026-10-15T00:01:00.000Z",
       equipment_id: "ETCH-02",
       chamber_id: "QA-DISPOSITION",
       event_type: "HOLD",
       status: "HELD",
-      description: "공정 이력 연결 완료군 품질 일치성 검증 및 박막 두께 측정 대기를 위해 로트 단위 품질 보류(Hold) 등록."
+      description: "노출 완료군 품질 일치성 검증 및 박막 두께 측정 대기를 위해 로트 단위 품질 보류(Hold) 등록."
     });
   } else {
     timeline.push({
       step_index: 5,
-      step_name: "미공정 이력 연결 웨이퍼 재투입 대기 (Unexposed Disposition)",
+      step_name: "미노출 웨이퍼 재투입 대기 (Unexposed Disposition)",
       time_label: "T8+",
       timestamp_utc: "2026-10-15T00:01:00.000Z",
       equipment_id: "ETCH-02",
       chamber_id: "LOADPORT-01",
       event_type: "HOLD",
       status: "PENDING",
-      description: "미공정 이력 연결 안전 웨이퍼로 확인되어 설비 점검 완료 후 다음 생산 배치로 재투입 대기."
+      description: "미노출 안전 웨이퍼로 확인되어 설비 점검 완료 후 다음 생산 배치로 재투입 대기."
     });
   }
 
@@ -308,7 +308,7 @@ function TraceabilityContent() {
         message: `카세트 규격에 존재하지 않는 웨이퍼 ID ('${targetWafer}')입니다. (25매 카세트 유효 범위: W-01 ~ W-25)`
       });
       setIsLoading(false);
-      setNotice(`해당 카세트에서 찾을 수 없는 웨이퍼 '${targetWafer}' 입니다.`);
+      setNotice(`오류 (404 Not Found): 카세트에 존재하지 않는 웨이퍼 ID '${targetWafer}' 입니다.`);
       return;
     }
 
@@ -335,7 +335,7 @@ function TraceabilityContent() {
           status: 404,
           message: `카세트 규격에 존재하지 않는 웨이퍼 ID ('${targetWafer}')입니다.`
         });
-        setNotice(`해당 카세트에서 찾을 수 없는 웨이퍼 '${targetWafer}' 입니다.`);
+        setNotice(`오류 (404 Not Found): 카세트에 존재하지 않는 웨이퍼 ID '${targetWafer}' 입니다.`);
       }
       setIsLoading(false);
       return;
@@ -698,7 +698,7 @@ function TraceabilityContent() {
   description="25개 슬롯에서 웨이퍼를 고르면 공정 이력과 관련 알람을 볼 수 있어요. 영향 가능성은 불량 확정을 뜻하지 않아요."
   primaryLabel="조사 노트로 이어가기"
   primaryHref={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })}
-  detail={<p>연습용 Lot: {currentLotId}. 공정 이력 연결 확인은 공정 이력 연결을 뜻하며 물리적 결함 확정이 아니에요. Mode B에서 출처가 맞지 않으면 조회를 막아 다른 Run을 섞지 않아요.</p>}
+  detail={<p>연습용 Lot: {currentLotId}. 공정 참여 기록은 관찰된 이력일 뿐 물리적 결함 확정이 아니에요. Mode B에서 출처가 맞지 않으면 조회를 막아 다른 Run을 섞지 않아요.</p>}
 />
 
         {/* BUILD-10 Tour Return Banner */}
@@ -755,7 +755,7 @@ function TraceabilityContent() {
                 className={`trace-filter-chip unexposed ${filter === 'UNEXPOSED' ? 'active unexposed' : ''}`}
                 onClick={() => setFilter('UNEXPOSED')}
               >
-                공정 이력 연결 이력 없음 ({unexposedCount})
+                노출 이력 없음 ({unexposedCount})
               </button>
             </div>
 
@@ -789,7 +789,7 @@ function TraceabilityContent() {
             >
               {wafers.map(w => {
                 let statusClass = "unexposed";
-                let statusLabel = "미공정 이력 연결";
+                let statusLabel = "노출 이력 없음";
                 if (w.exposure_status === 'CONFIRMED_EXPOSED') {
                   statusClass = "confirmed";
                   statusLabel = "공정 이력 연결";
@@ -829,13 +829,13 @@ function TraceabilityContent() {
                 let badgeColor = "#64748B";
                 let badgeBg = "#F1F5F9";
                 let badgeBorder = "#CBD5E1";
-                let label = "미공정 이력 연결 (Not Exposed)";
+                let label = "노출 이력 없음 (Not Exposed)";
 
                 if (w.exposure_status === 'CONFIRMED_EXPOSED') {
                   badgeColor = "#047857";
                   badgeBg = "#ECFDF5";
                   badgeBorder = "#A7F3D0";
-                  label = "공정 이력 연결 확정 (Confirmed)";
+                  label = "공정 참여 이력 확인 (Confirmed)";
                 } else if (w.exposure_status === 'CANDIDATE_EXPOSED') {
                   badgeColor = "#B91C1C";
                   badgeBg = "#FEE2E2";
@@ -948,11 +948,11 @@ function TraceabilityContent() {
                         borderColor: trace.exposure_status === 'CANDIDATE_EXPOSED' ? '#FECACA' : (trace.exposure_status === 'CONFIRMED_EXPOSED' ? '#A7F3D0' : '#CBD5E1'),
                       }}
                     >
-                      {trace.exposure_status === 'CONFIRMED_EXPOSED' && '공정 이력 연결 확정 (CONFIRMED_EXPOSED)'}
+                      {trace.exposure_status === 'CONFIRMED_EXPOSED' && '공정 참여 이력 확인 (CONFIRMED_EXPOSED)'}
                       {trace.exposure_status === 'CANDIDATE_EXPOSED' && '잠재 영향군 (CANDIDATE_EXPOSED)'}
-                      {trace.exposure_status === 'NOT_EXPOSED' && '미공정 이력 연결 (NOT_EXPOSED)'}
+                      {trace.exposure_status === 'NOT_EXPOSED' && '노출 이력 없음 (NOT_EXPOSED)'}
                     </span>
-                    <EngineeringTermTrigger conceptId="wafer-exposure-status" label="공정 이력 연결 판정 기준" showBadge />
+                    <EngineeringTermTrigger conceptId="wafer-exposure-status" label="공정 노출 이력 판단 기준" showBadge />
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
                     FOUP 카세트 슬롯 #{trace.slot_number} · 투입 시퀀스 #{trace.sequence}
@@ -1117,7 +1117,7 @@ function TraceabilityContent() {
                         {event.step_index === 5 && (
                           <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                             <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 700 }}>공학 개념 (EKL):</span>
-                            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="공정 이력 연결 확정 vs 잠재 후보" showBadge />
+                            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="공정 참여 이력 확인 vs 잠재 후보" showBadge />
                           </div>
                         )}
                       </div>
