@@ -1030,7 +1030,7 @@ function FabOneDemoContent() {
         </section>
 
         {/* Interactive Playback Control Bar - Progressive Disclosure */}
-        <details className="ux-advanced-controls" open>
+        <details className="ux-advanced-controls">
           <summary className="ux-advanced-controls__summary">
             <span className="ux-advanced-controls__summary-title">
               <span>⚙️ 가상 공정 재생 조작 및 스텝 타임라인</span>
