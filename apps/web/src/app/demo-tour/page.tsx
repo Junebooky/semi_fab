@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import Link from 'next/link';
+import { FriendlyPageIntro } from '@/components/ux/FriendlyPageIntro';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
 import {
@@ -120,7 +121,7 @@ function DemoTourContent() {
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
-            홈 (FDC 모니터링)
+            홈
           </Link>
           <Link href={buildCrossNavUrl('/traceability', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -128,27 +129,27 @@ function DemoTourContent() {
               <line x1="12" y1="8" x2="12" y2="12" />
               <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
-            웨이퍼 이력 추적성 (Traceability)
+            웨이퍼 확인
           </Link>
           <Link href={buildCrossNavUrl('/command-center', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
-            FDC 커맨드 센터 (Command Center)
+            알람 확인
           </Link>
           <Link href={buildCrossNavUrl('/equipment-intelligence', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
             </svg>
-            설비 인텔리전스 (Equipment)
+            설비 살펴보기
           </Link>
           <Link href={buildCrossNavUrl('/fab-simulation', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            FAB 시뮬레이션 (Simulation)
+            공정 체험
           </Link>
           <Link href={buildCrossNavUrl('/engineering-workspace', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -157,14 +158,14 @@ function DemoTourContent() {
               <path d="M9 12h6" />
               <path d="M9 16h6" />
             </svg>
-            엔지니어링 워크스페이스 (Workspace)
+            조사 노트
           </Link>
           <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
             </svg>
-            가이드 투어 (Demo Tour)
+            처음 둘러보기
           </Link>
         </nav>
 
@@ -182,7 +183,7 @@ function DemoTourContent() {
               fontWeight: 700,
             }}
           >
-            Mode A (합성 가이드)
+            연습용 안내 · Mode A
           </span>
           <span
             className="pill"
@@ -227,13 +228,22 @@ function DemoTourContent() {
             onClick={handleResynthesize}
             title="난수 시드를 변경하여 새로운 합성 시나리오를 생성합니다"
           >
-            시드 변경 (Seed: {seed}) ⟳
+            새 연습 데이터 만들기 (Seed: {seed}) ⟳
           </button>
         </div>
       </header>
 
       {/* Main Container */}
       <main style={{ maxWidth: '1440px', margin: '0 auto', padding: '24px 20px' }}>
+        <FriendlyPageIntro
+  eyebrow="처음 둘러보기"
+  title="8단계로 FAB ONE을 익혀 볼까요?"
+  description="가상 공정에서 시작해 알람·센서·웨이퍼·조사 노트까지 자연스럽게 연결해 드려요. 원하는 단계에서 멈추거나 다시 시작할 수 있어요."
+  primaryLabel="단계 조작으로 이동"
+  primaryHref="#tour-btn-next"
+  detail={<p>모든 단계는 브라우저의 연습 데이터(Mode A, Seed {seed})로 재현돼요. 실제 제조 장비나 실시간 FAB 기록과 연결하지 않아요.</p>}
+/>
+
         {/* Tour Header Banner */}
         <div
           style={{
@@ -268,14 +278,14 @@ function DemoTourContent() {
                     fontWeight: 800,
                   }}
                 >
-                  🧭 3~5분 완결 사용자 여정
+                  약 3분 · 단계별 안내
                 </span>
                 <span style={{ fontSize: '13px', fontWeight: 700, color: '#64748B' }}>
-                  Step {currentStep.stepNumber} of {TOUR_STEPS.length} ({progressPercent}%)
+                  {currentStep.stepNumber} / {TOUR_STEPS.length} 단계 · {progressPercent}% 진행
                 </span>
               </div>
               <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', margin: '6px 0 0 0' }}>
-                FAB ONE 통합 가이드 투어 (Guided Demo Tour)
+                함께 둘러보며 익혀 봐요
               </h1>
             </div>
 
@@ -297,7 +307,7 @@ function DemoTourContent() {
                   cursor: activeStepId === 'INTRO' ? 'not-allowed' : 'pointer',
                 }}
               >
-                ← 이전 단계
+                ← 이전으로
               </button>
               <button
                 type="button"
@@ -315,7 +325,7 @@ function DemoTourContent() {
                   cursor: activeStepId === 'FINISH' ? 'not-allowed' : 'pointer',
                 }}
               >
-                다음 단계 →
+                다음으로 →
               </button>
               <button
                 type="button"
@@ -619,7 +629,7 @@ function DemoTourContent() {
                 color: '#1E293B',
               }}
             >
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0B9F78' }}>홈 (FDC 모니터링) ↗</div>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0B9F78' }}>홈 ↗</div>
               <div style={{ fontSize: '11px', color: '#64748B' }}>챔버 상태 및 실시간 계측</div>
             </Link>
 
@@ -727,7 +737,7 @@ function DemoTourContent() {
             <EngineeringTermTrigger conceptId="oes-relative-signal" label="OES 상대 신호 원리" showBadge />
             <EngineeringTermTrigger conceptId="rf-power" label="RF Power 전력 제어" showBadge />
             <EngineeringTermTrigger conceptId="spc-ucl-missing" label="SPC 관리한계 및 결측치" showBadge />
-            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="노출 확정 vs 잠재 후보" showBadge />
+            <EngineeringTermTrigger conceptId="wafer-exposure-status" label="공정 이력과 영향 가능성" showBadge />
           </div>
         </section>
 
