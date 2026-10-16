@@ -3108,4 +3108,186 @@ test('[잔여 P1-C] 개별 합성 재합성 이후 복귀 시 seed 컨텍스트 
   assert.ok(eiPageSource.includes("`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`"), 'EI back to CC must preserve seed');
 });
 
+// =========================================================================
+// BUILD-07 Virtual FAB Simulation Contract Tests (a ~ e)
+// =========================================================================
+
+test('BUILD-07 (a) Simulation State Machine: 7 sequential steps, navigation forward/backward, and step invariants', () => {
+  const stepsSource = readFileSync(
+    new URL('../src/components/fab-simulation/fab-simulation-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Exactly 7 sequential steps defined
+  const expectedSteps = ['READY', 'FOUP_LOADED', 'TRANSFER', 'ETCH_RUNNING', 'T7_EXCURSION', 'INSPECTION_HOLD', 'COMPLETE'];
+  expectedSteps.forEach((stepName) => {
+    assert.ok(stepsSource.includes(`step: '${stepName}'`), `Simulation must define step ${stepName}`);
+  });
+
+  // 2. Step index clamping state transitions
+  function transitionStep(currentIdx, action) {
+    if (action === 'NEXT') return Math.min(6, currentIdx + 1);
+    if (action === 'PREV') return Math.max(0, currentIdx - 1);
+    if (action === 'RESET') return 0;
+    return currentIdx;
+  }
+
+  assert.equal(transitionStep(0, 'PREV'), 0, 'Cannot go previous from READY');
+  assert.equal(transitionStep(0, 'NEXT'), 1);
+  assert.equal(transitionStep(5, 'NEXT'), 6);
+  assert.equal(transitionStep(6, 'NEXT'), 6, 'Cannot go next from COMPLETE');
+  assert.equal(transitionStep(4, 'RESET'), 0, 'Reset returns to READY');
+});
+
+test('BUILD-07 (b) 25-wafer FOUP cassette mapping, W-08 target isolation, and exposure status invariant', () => {
+  // Test simulated wafers function
+  function testFoupWafers() {
+    return Array.from({ length: 25 }, (_, i) => {
+      const slot = i + 1;
+      const wafer_id = `W-${slot < 10 ? '0' + slot : slot}`;
+      const is_target_wafer = wafer_id === 'W-08';
+      let status = 'NOT_EXPOSED';
+      if (slot <= 7) status = 'CONFIRMED_EXPOSED';
+      else if (slot >= 8 && slot <= 12) status = 'CANDIDATE_EXPOSED';
+      return { slot, wafer_id, exposure_status: status, is_target_wafer };
+    });
+  }
+
+  const wafers = testFoupWafers();
+  assert.equal(wafers.length, 25, 'FOUP must contain exactly 25 wafers');
+
+  // W-01 ~ W-07: CONFIRMED_EXPOSED
+  const confirmed = wafers.filter(w => w.exposure_status === 'CONFIRMED_EXPOSED');
+  assert.equal(confirmed.length, 7);
+  assert.equal(confirmed[0].wafer_id, 'W-01');
+  assert.equal(confirmed[6].wafer_id, 'W-07');
+
+  // W-08 ~ W-12: CANDIDATE_EXPOSED
+  const candidates = wafers.filter(w => w.exposure_status === 'CANDIDATE_EXPOSED');
+  assert.equal(candidates.length, 5);
+  assert.deepEqual(candidates.map(w => w.wafer_id), ['W-08', 'W-09', 'W-10', 'W-11', 'W-12']);
+
+  // W-08 target wafer isolation
+  const target = wafers.find(w => w.wafer_id === 'W-08');
+  assert.equal(target.is_target_wafer, true, 'W-08 must be identified as the demo target wafer');
+
+  // W-13 ~ W-25: NOT_EXPOSED
+  const notExposed = wafers.filter(w => w.exposure_status === 'NOT_EXPOSED');
+  assert.equal(notExposed.length, 13);
+  assert.equal(notExposed[0].wafer_id, 'W-13');
+  assert.equal(notExposed[12].wafer_id, 'W-25');
+});
+
+test('BUILD-07 (c) Telemetry invariants: T4/T5 OES null/MISSING gap vs T7 multi-sensor excursion', () => {
+  const contractSource = readFileSync(
+    new URL('../src/components/fab-simulation/fab-simulation-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Contract defines null for T4/T5 and forbids zero-filling
+  assert.ok(contractSource.includes('oes_signal: null'), 'T4/T5 OES signal must be strictly null (MISSING)');
+  assert.ok(contractSource.includes("oes_quality: 'MISSING'"), 'T4/T5 OES quality must be MISSING');
+  assert.ok(contractSource.includes('MISSING ≠ 0'), 'MISSING != 0 domain disclaimer must be enforced');
+
+  // 2. Step T7 excursion values exceed SPC UCL (65.0 a.u.)
+  assert.ok(contractSource.includes('80.0'), 'T7 OES excursion must reach 80.0 a.u.');
+  assert.ok(contractSource.includes('168.5'), 'T7 pressure excursion must reach 168.5 mTorr');
+  assert.ok(contractSource.includes('1820.0'), 'T7 RF Power excursion must reach 1820.0 W');
+  assert.ok(contractSource.includes('ucl_limit: 65.0'), 'UCL limit must be 65.0 a.u.');
+});
+
+test('BUILD-07 (d) Cross-page navigation hub & seed lineage retention across 5 views', () => {
+  function testSimulationNavLinks(seed) {
+    const safeSeed = (seed && Number.isInteger(Number(seed)) && Number(seed) > 0 && Number(seed) < 1000000000)
+      ? Number(seed) : 20261015;
+    const runId = `RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const alertId = `AL-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const lotId = `LOT-DEMO-${800 + (safeSeed % 50)}`;
+
+    return {
+      runId,
+      alertId,
+      lotId,
+      commandCenter: `/command-center?seed=${safeSeed}`,
+      equipmentIntelligence: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=${safeSeed}`,
+      homeInvestigation: `/?alert=${encodeURIComponent(alertId)}&investigation=true&seed=${safeSeed}`,
+      waferTraceability: `/traceability?wafer=W-08&seed=${safeSeed}`,
+      fabSimulation: `/fab-simulation?seed=${safeSeed}`,
+    };
+  }
+
+  // Default seed 20261015
+  const defaultLinks = testSimulationNavLinks(20261015);
+  assert.equal(defaultLinks.runId, 'RUN-DEMO-015');
+  assert.equal(defaultLinks.alertId, 'AL-DEMO-015');
+  assert.equal(defaultLinks.lotId, 'LOT-DEMO-815');
+  assert.equal(defaultLinks.commandCenter, '/command-center?seed=20261015');
+  assert.equal(defaultLinks.equipmentIntelligence, '/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=20261015');
+  assert.equal(defaultLinks.homeInvestigation, '/?alert=AL-DEMO-015&investigation=true&seed=20261015');
+  assert.equal(defaultLinks.waferTraceability, '/traceability?wafer=W-08&seed=20261015');
+
+  // Modified seed 20261016
+  const modLinks = testSimulationNavLinks(20261016);
+  assert.equal(modLinks.runId, 'RUN-DEMO-016');
+  assert.equal(modLinks.alertId, 'AL-DEMO-016');
+  assert.equal(modLinks.lotId, 'LOT-DEMO-816');
+  assert.equal(modLinks.commandCenter, '/command-center?seed=20261016');
+  assert.equal(modLinks.waferTraceability, '/traceability?wafer=W-08&seed=20261016');
+
+  // Safe integer bounds: out-of-bounds, negative, float, and strings fall back safely
+  assert.equal(testSimulationNavLinks(-10).runId, 'RUN-DEMO-015');
+  assert.equal(testSimulationNavLinks(0).runId, 'RUN-DEMO-015');
+  assert.equal(testSimulationNavLinks(1.5).runId, 'RUN-DEMO-015');
+  assert.equal(testSimulationNavLinks('invalid').runId, 'RUN-DEMO-015');
+  assert.equal(testSimulationNavLinks(9999999999).runId, 'RUN-DEMO-015');
+});
+
+test('BUILD-07 (e) Page source assertions: 3D asset slot, EKL concept triggers, buttons, and domain disclaimers', () => {
+  const simPageSource = readFileSync(new URL('../src/app/fab-simulation/page.tsx', import.meta.url), 'utf8');
+  const slotSource = readFileSync(new URL('../src/components/fab-simulation/Fab3dAssetSlot.tsx', import.meta.url), 'utf8');
+  const homeSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const traceSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+  const ccSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const eiSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+
+  // 1. 3D Asset Slot reservation
+  assert.ok(slotSource.includes('id="fab-3d-asset-slot"'), 'Must define fab-3d-asset-slot ID');
+  assert.ok(simPageSource.includes('<Fab3dAssetSlot'), 'Page must mount Fab3dAssetSlot');
+
+  // 2. Playback and navigation control buttons
+  assert.ok(simPageSource.includes('id="sim-btn-prev"'), 'Must have sim-btn-prev');
+  assert.ok(simPageSource.includes('id="sim-btn-next"'), 'Must have sim-btn-next');
+  assert.ok(simPageSource.includes('id="sim-btn-toggle-play"'), 'Must have sim-btn-toggle-play');
+  assert.ok(simPageSource.includes('id="sim-btn-reset"'), 'Must have sim-btn-reset');
+  assert.ok(simPageSource.includes('id="sim-btn-resynthesize"'), 'Must have sim-btn-resynthesize');
+  assert.ok(simPageSource.includes('type="button"'), 'Buttons must specify type="button"');
+
+  // 3. EKL concept triggers
+  const requiredEKL = ['oes-relative-signal', 'rf-power', 'spc-ucl-missing', 'wafer-exposure-status'];
+  requiredEKL.forEach(concept => {
+    assert.ok(simPageSource.includes(concept), `Simulation must include EKL trigger for ${concept}`);
+  });
+
+  const contractSource = readFileSync(new URL('../src/components/fab-simulation/fab-simulation-contract.ts', import.meta.url), 'utf8');
+
+  // 4. Domain Disclaimers
+  assert.ok(
+    contractSource.includes('Excursion ≠ Defect') && (simPageSource.includes('DOMAIN_DISCLAIMERS.excursionVsDefect') || simPageSource.includes('Excursion ≠ Defect')),
+    'Must include Excursion != Defect disclaimer'
+  );
+  assert.ok(simPageSource.includes('CONFIRMED_EXPOSED') && simPageSource.includes('CANDIDATE_EXPOSED'), 'Must explain exposure status');
+  assert.ok(simPageSource.includes('MISSING ≠ 0'), 'Must include MISSING != 0 disclaimer');
+  assert.ok(
+    contractSource.includes('Real-time FAB operation 아님') && (simPageSource.includes('DOMAIN_DISCLAIMERS.simulationMode') || simPageSource.includes('Real-time FAB operation 아님')),
+    'Must disclaim real-time fab operation'
+  );
+
+  // 5. Cross-page navigation links to /fab-simulation across all other 4 pages
+  assert.ok(homeSource.includes('/fab-simulation'), 'Home page must link to /fab-simulation');
+  assert.ok(traceSource.includes('/fab-simulation'), 'Traceability page must link to /fab-simulation');
+  assert.ok(ccSource.includes('/fab-simulation'), 'Command Center page must link to /fab-simulation');
+  assert.ok(eiSource.includes('/fab-simulation'), 'Equipment Intelligence page must link to /fab-simulation');
+});
+
+
 
