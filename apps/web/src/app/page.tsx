@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { EngineeringTermTrigger } from '@/components/ekl';
 
 // Types
 interface SensorSample {
@@ -934,6 +935,15 @@ function FabOneDemoContent() {
                   <p className="card-subtitle">
                     T0~T7 시점 계측값 · {selectedSensor === 'RELATIVE_SIGNAL' ? '광학 센서 결측 구간(T4, T5) 분절 시각화' : selectedSensor === 'CHAMBER_PRESSURE' ? '격막 게이지 전구간 연속 계측' : 'RF 발생기 전방 전원 연속 계측'} 및 UCL 스파이크 탐지
                   </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '8px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#076F5B' }}>공학 개념 (EKL):</span>
+                    <EngineeringTermTrigger conceptId="oes-relative-signal" label="OES 상대 신호" showBadge />
+                    <EngineeringTermTrigger conceptId="chamber-pressure" label="챔버 압력" showBadge />
+                    <EngineeringTermTrigger conceptId="rf-power" label="RF Power" showBadge />
+                    <EngineeringTermTrigger conceptId="spc-ucl-missing" label="UCL 및 결측치" showBadge />
+                    <EngineeringTermTrigger conceptId="wafer-exposure-status" label="노출 상태" showBadge />
+                    <EngineeringTermTrigger conceptId="etch-rate" label="식각 속도 계산기" showBadge />
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -1166,10 +1176,14 @@ function FabOneDemoContent() {
                     <span className="legend-swatch-solid"></span> 합성 계측선 (연속 구간)
                   </span>
                   <span className="legend-item">
-                    <span className="legend-swatch-missing"></span> {selectedSensor === 'RELATIVE_SIGNAL' ? '광학 결측 분절 (T4, T5는 0이 아님)' : '센서 연속 측정 (결측 없음)'}
+                    <span className="legend-swatch-missing"></span>
+                    {selectedSensor === 'RELATIVE_SIGNAL' ? (
+                      <span>광학 <EngineeringTermTrigger conceptId="spc-ucl-missing" label="결측 분절 (T4, T5는 0이 아님)" /></span>
+                    ) : '센서 연속 측정 (결측 없음)'}
                   </span>
                   <span className="legend-item">
-                    <span className="legend-swatch-ucl"></span> 가상 관리한계 UCL ({selectedSensor === 'RELATIVE_SIGNAL' ? '65.0 a.u.' : selectedSensor === 'CHAMBER_PRESSURE' ? '140 mTorr' : '1650 W'})
+                    <span className="legend-swatch-ucl"></span>
+                    <EngineeringTermTrigger conceptId="spc-ucl-missing" label="가상 관리한계 UCL" /> ({selectedSensor === 'RELATIVE_SIGNAL' ? '65.0 a.u.' : selectedSensor === 'CHAMBER_PRESSURE' ? '140 mTorr' : '1650 W'})
                   </span>
                   <span className="legend-item">
                     <span className="legend-swatch-target"></span> 기준 목표치 Target ({selectedSensor === 'RELATIVE_SIGNAL' ? '50.0 a.u.' : selectedSensor === 'CHAMBER_PRESSURE' ? '120 mTorr' : '1500 W'})
@@ -1395,6 +1409,9 @@ function FabOneDemoContent() {
                     {/* Domain Disclaimer Banner (Explicit requirement: Do not describe sensor anomaly as confirmed defect) */}
                     <div className="investigation-disclaimer">
                       <strong>품질 분석 가이드라인:</strong> {investigationData.disclaimer}
+                      <span style={{ marginLeft: '8px' }}>
+                        <EngineeringTermTrigger conceptId="wafer-exposure-status" label="노출 상태 판정 기준" showBadge />
+                      </span>
                     </div>
 
                     {/* Context Meta Grid */}
@@ -1429,7 +1446,14 @@ function FabOneDemoContent() {
                               }}
                               title="클릭 시 좌측 시계열 트렌드 차트에 해당 센서를 표시합니다"
                             >
-                              <div className="evidence-label">{ev.sensor_name}</div>
+                              <div className="evidence-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span>{ev.sensor_name}</span>
+                                <EngineeringTermTrigger
+                                  conceptId={ev.sensor_id === 'RF_POWER' ? 'rf-power' : ev.sensor_id === 'CHAMBER_PRESSURE' ? 'chamber-pressure' : 'oes-relative-signal'}
+                                  label="EKL"
+                                  showBadge
+                                />
+                              </div>
                               <div className="evidence-val-row">
                                 <span className="evidence-val">{ev.measured_value} {ev.unit}</span>
                                 <span className="evidence-delta-pill">+{ev.deviation_percent}%</span>
@@ -1459,9 +1483,11 @@ function FabOneDemoContent() {
                       </div>
 
                       <div style={{ marginTop: '8px' }}>
-                        <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>
-                          잠재 영향 후보군 (Candidate Exposed - 클릭 시 우측 카세트 슬롯 상세 확인):
+                        <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>잠재 영향 후보군 (Candidate Exposed - 클릭 시 우측 카세트 슬롯 상세 확인):</span>
+                          <EngineeringTermTrigger conceptId="wafer-exposure-status" label="후보군 해석 한계" />
                         </div>
+
                         <div className="candidate-wafers-strip">
                           {investigationData.candidate_exposed_wafers.map(wId => {
                             const isWaferActive = selectedWafer?.wafer_id === wId;

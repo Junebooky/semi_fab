@@ -1231,3 +1231,54 @@ button:focus-visible, input:focus-visible {
   }
 }
 
+/* ========================================================
+   Engineering Knowledge Layer (EKL) Component Styles
+   ======================================================== */
+
+@keyframes eklSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.ekl-knowledge-term:hover {
+  background-color: #DDF8EC !important;
+  color: #076F5B !important;
+}
+
+.ekl-knowledge-term:focus-visible {
+  outline: 2px solid #0B9F78 !important;
+  outline-offset: 2px;
+  background-color: #DDF8EC !important;
+}
+
+@media (max-width: 640px) {
+  .ekl-insight-card {
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+    max-height: 85vh !important;
+    border-radius: 20px 20px 0 0 !important;
+    padding: 20px 16px 28px !important;
+  }
+
+  .ekl-deep-panel {
+    width: 100% !important;
+    border-left: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ekl-deep-panel {
+    animation: none !important;
+  }
+}
+
+
