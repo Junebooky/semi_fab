@@ -923,7 +923,7 @@ function EngineeringWorkspaceContent() {
   }, []);
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F8FAFC', color: '#1E293B', fontFamily: 'sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#FFFFFF', color: '#17263B', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       {/* Top Header */}
       <header
         style={{
@@ -1218,7 +1218,7 @@ function EngineeringWorkspaceContent() {
                 alignItems: 'center',
                 gap: '6px',
               }}
-              title="현재 조사 중인 가설 판정, 조치 체크, 엔지니어링 메모를 조사 저장하기합니다"
+              title="현재 조사 중인 가설 판정, 조치 체크, 엔지니어링 메모를 저장합니다"
             >
               이번 조사 저장하기
             </button>
@@ -1935,14 +1935,14 @@ function EngineeringWorkspaceContent() {
                       >
                         엔지니어링 메모 (In-memory Volatile)
                       </label>
-                      <span style={{ fontSize: '10px', color: '#94A3B8' }}>새로고침 시 휘발 (단, Casebook 저장 시 보존)</span>
+                      <span style={{ fontSize: '10px', color: '#94A3B8' }}>저장하기 전에는 새로고침하면 사라져요</span>
                     </div>
                     <textarea
                       id="engineering-workspace-notes"
                       data-testid="ws-input-user-notes"
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      placeholder="조사 검토 의견, 잠재 리스크, 후속 액션 아이템을 메모하세요... '조사 저장하기' 버튼으로 보관할 수 있습니다."
+                      placeholder="근거를 살펴본 뒤 생각한 가설과 다음 확인 사항을 적어 주세요. 마지막에 '이번 조사 저장하기'를 눌러 보관할 수 있어요."
                       rows={3}
                       style={{
                         width: '100%',
