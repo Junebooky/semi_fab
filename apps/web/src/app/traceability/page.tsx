@@ -706,7 +706,7 @@ function TraceabilityContent() {
 
         {/* Notice Box */}
         <div className="notice-box" role="status">
-          <strong>지금 보고 있는 데이터:</strong> {notice}
+          <strong>현재 이력:</strong> {notice}
         </div>
 
         {/* 2-Column Traceability Layout */}
@@ -789,7 +789,7 @@ function TraceabilityContent() {
             >
               {wafers.map(w => {
                 let statusClass = "unexposed";
-                let statusLabel = "노출 이력 없음";
+                let statusLabel = "이력 없음";
                 if (w.exposure_status === 'CONFIRMED_EXPOSED') {
                   statusClass = "confirmed";
                   statusLabel = "공정 이력 연결";
@@ -829,7 +829,7 @@ function TraceabilityContent() {
                 let badgeColor = "#64748B";
                 let badgeBg = "#F1F5F9";
                 let badgeBorder = "#CBD5E1";
-                let label = "노출 이력 없음 (Not Exposed)";
+                let label = "공정 노출 이력 없음 (NOT_EXPOSED)";
 
                 if (w.exposure_status === 'CONFIRMED_EXPOSED') {
                   badgeColor = "#047857";
