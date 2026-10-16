@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } fr
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
-import { TourReturnBanner } from '@/components/guided-demo';
+import { TourReturnBanner, getModeAT7ExcursionValues } from '@/components/guided-demo';
 
 // Types
 interface SensorSample {
@@ -102,9 +102,10 @@ function generateModeAFixture(seed: number) {
   const prsNoise = (nextRand() - 0.5) * 1.5;
   const rfNoise = (nextRand() - 0.5) * 20.0;
 
-  const t7Rel = +(80.0 + (nextRand() - 0.5) * 4.0).toFixed(1);
-  const t7Prs = +(168.5 + (nextRand() - 0.5) * 5.0).toFixed(2);
-  const t7Rf = +(1820.0 + rfNoise).toFixed(1);
+  const t7 = getModeAT7ExcursionValues(seed);
+  const t7Rel = t7.oesSignal;
+  const t7Prs = t7.chamberPressure;
+  const t7Rf = t7.rfPower;
 
   const samples: SensorSample[] = [
     // RELATIVE_SIGNAL (Optical sensor: T4 and T5 missing due to optical shutter)

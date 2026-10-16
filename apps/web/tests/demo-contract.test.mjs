@@ -3918,6 +3918,61 @@ test('BUILD-10 (f) Domain Terminology & Responsive CSS Alignment', () => {
   assert.ok(cssSource.includes('@media (max-width: 1100px)'), 'globals.css must define responsive media query for boards');
 });
 
+test('BUILD-11 (a) Playwright Configuration & E2E Test Suite Contract', () => {
+  const pkgSource = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+  const pkg = JSON.parse(pkgSource);
+  assert.ok(pkg.scripts['test:e2e'], 'package.json must define test:e2e script');
+  assert.equal(pkg.scripts['test:e2e'], 'playwright test');
+  assert.ok(pkg.devDependencies['@playwright/test'], '@playwright/test must be declared in devDependencies');
+
+  const configSource = readFileSync(new URL('../playwright.config.ts', import.meta.url), 'utf8');
+  assert.ok(configSource.includes("testDir: './e2e'"), 'playwright.config.ts must point to ./e2e');
+  assert.ok(configSource.includes("command: 'npm run dev'"), 'webServer command must be npm run dev');
+  assert.ok(configSource.includes('http://localhost:3000'), 'baseURL or webServer must target port 3000');
+
+  const e2eSpecSource = readFileSync(new URL('../e2e/guided-demo-journey.spec.ts', import.meta.url), 'utf8');
+  assert.ok(e2eSpecSource.includes('#btn-start-guided-tour'), 'E2E test must click home tour CTA');
+  assert.ok(e2eSpecSource.includes('#tour-btn-open-target'), 'E2E test must click open target button');
+  assert.ok(e2eSpecSource.includes('#btn-return-to-tour'), 'E2E test must click return to tour button');
+  assert.ok(e2eSpecSource.includes('20261016'), 'E2E test must test counterexample 1 (seed 20261016)');
+  assert.ok(e2eSpecSource.includes('AL-STANDBY-001'), 'E2E test must test counterexample 2 (AL-STANDBY-001)');
+  assert.ok(e2eSpecSource.includes('#ws-unsupported-lock-panel'), 'E2E test must assert unsupported lock panel');
+});
+
+test('BUILD-11 (b) Shared Mode A T7 Multi-Sensor Excursion Harmonization Contract', () => {
+  const tourContractSource = readFileSync(
+    new URL('../src/components/guided-demo/guided-demo-contract.ts', import.meta.url),
+    'utf8'
+  );
+  assert.ok(tourContractSource.includes('export function getModeAT7ExcursionValues'), 'Must export getModeAT7ExcursionValues');
+  assert.ok(tourContractSource.includes('oesSignal:'), 'Must return oesSignal');
+  assert.ok(tourContractSource.includes('chamberPressure:'), 'Must return chamberPressure');
+  assert.ok(tourContractSource.includes('rfPower:'), 'Must return rfPower');
+
+  const simContractSource = readFileSync(
+    new URL('../src/components/fab-simulation/fab-simulation-contract.ts', import.meta.url),
+    'utf8'
+  );
+  assert.ok(simContractSource.includes('getModeAT7ExcursionValues'), 'Fab simulation must use getModeAT7ExcursionValues');
+
+  const wsContractSource = readFileSync(
+    new URL('../src/components/engineering-workspace/engineering-workspace-contract.ts', import.meta.url),
+    'utf8'
+  );
+  assert.ok(wsContractSource.includes('getModeAT7ExcursionValues'), 'Engineering workspace must use getModeAT7ExcursionValues');
+
+  const homePageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  assert.ok(homePageSource.includes('getModeAT7ExcursionValues'), 'Home page must use getModeAT7ExcursionValues');
+});
+
+test('BUILD-11 (c) Traceability Query Seed Preservation Contract', () => {
+  const tracePageSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+  assert.ok(tracePageSource.includes("searchParams.get('seed')"), 'Traceability page must parse seed from searchParams');
+  assert.ok(tracePageSource.includes('safeSeed'), 'Traceability page must calculate safeSeed');
+  assert.ok(tracePageSource.includes('queryTourStep'), 'Traceability page must read queryTourStep');
+});
+
+
 
 
 

@@ -98,17 +98,17 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'EXCURSION',
     stepNumber: 3,
     title: 'Step T7 복합 센서 공정 일탈 (Excursion Spike)',
-    subtitle: '식각 종점 구간 OES 신호 급증 (80.0 a.u. > UCL 65.0) 및 압력·RF 전력 서지',
+    subtitle: '식각 종점 구간 OES 신호 급증 (> UCL 65.0) 및 압력·RF 전력 서지 (기준 시나리오: OES ~80.0 a.u., 168.5 mTorr, 1820 W)',
     description:
-      '식각 종점 T7 스텝에서 OES 상대 신호가 관리한계(UCL 65.0 a.u.)를 크게 초과(80.0 a.u.)하며, 챔버 압력(168.5 mTorr)과 RF Power(1820 W)가 동반 급증하는 통계적 공정 일탈이 발생합니다.',
+      '식각 종점 T7 스텝에서 OES 상대 신호가 관리한계(UCL 65.0 a.u.)를 초과하며, 챔버 압력(기준 120 mTorr)과 RF Power(기준 1500 W)가 동반 급증하는 통계적 공정 일탈이 발생합니다 (기준 시나리오 대표값: OES ~80.0 a.u., 168.5 mTorr, 1820 W; Seed에 따른 합성 계측값 정합 연동).',
     keyCheckpoints: [
-      'OES 상대 신호 통계적 관리한계 초과 (UCL 65.0 a.u. → 계측 80.0 a.u.)',
-      '챔버 압력(120 → 168.5 mTorr) 및 RF Power(1500 → 1820 W) 동반 서지',
+      'OES 상대 신호 통계적 관리한계 초과 (UCL 65.0 a.u. 상한 이탈)',
+      '챔버 압력(120 → ~168.5 mTorr) 및 RF Power(1500 → ~1820 W) 동반 서지',
     ],
     targetRoute: '/fab-simulation',
     actionLabel: 'T7 일탈 타임라인 확인 ↗',
     badgeText: '공정 일탈 (Excursion)',
-    domainNotes: '통계적 관리한계 일탈(Excursion)은 장비 센서 신호 이상이며 완제품 불량 확정이 아닙니다.',
+    domainNotes: '수치는 시드별 합성 계측값이며, 개념 설명 카드에는 기준 시나리오 대표값(~80.0 a.u. / ~168.5 mTorr / ~1820 W)이 안내됩니다. 통계적 관리한계 일탈(Excursion)은 센서 이상 관측일 뿐 완제품 불량 확정이 아닙니다.',
   },
   {
     id: 'ALARM',
@@ -289,5 +289,53 @@ export function getTourNavLinks(step: TourStepId, seed: number) {
     traceability: `/traceability?wafer=W-08&seed=${safeSeed}&tourStep=${step}`,
     engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(alertId)}&seed=${safeSeed}&tourStep=${step}`,
     demoTour: (targetStep: TourStepId = step) => `/demo-tour?step=${targetStep}&seed=${safeSeed}`,
+  };
+}
+
+/**
+ * Unified Mode A T7 excursion telemetry values.
+ * Harmonizes deterministic sensor measurements across Fab Simulation, Home,
+ * Equipment Intelligence, and Engineering Workspace.
+ */
+export interface ModeAT7ExcursionValues {
+  oesSignal: number;
+  chamberPressure: number;
+  rfPower: number;
+  baselineOes: number;
+  baselinePressure: number;
+  baselineRf: number;
+  uclLimit: number;
+  benchmarkSummary: string;
+}
+
+export function getModeAT7ExcursionValues(seed: number = 20261015): ModeAT7ExcursionValues {
+  const safeSeed =
+    seed && Number.isInteger(Number(seed)) && Number(seed) > 0 && Number(seed) < 1000000000
+      ? Number(seed)
+      : 20261015;
+
+  let s = Math.abs(safeSeed);
+  const nextRand = () => {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    return s / 4294967296;
+  };
+
+  const relNoise = (nextRand() - 0.5) * 2.0;
+  const prsNoise = (nextRand() - 0.5) * 1.5;
+  const rfNoise = (nextRand() - 0.5) * 20.0;
+
+  const oesSignal = +(80.0 + (nextRand() - 0.5) * 4.0).toFixed(1);
+  const chamberPressure = +(168.5 + (nextRand() - 0.5) * 5.0).toFixed(1);
+  const rfPower = +(1820.0 + rfNoise).toFixed(1);
+
+  return {
+    oesSignal,
+    chamberPressure,
+    rfPower,
+    baselineOes: 50.0,
+    baselinePressure: 120.0,
+    baselineRf: 1500.0,
+    uclLimit: 65.0,
+    benchmarkSummary: '기준 시나리오 대표값: OES ~80.0 a.u., 압력 ~168.5 mTorr, RF ~1820 W',
   };
 }

@@ -5,6 +5,8 @@
  * action checklist state machine, and cross-screen navigation links.
  */
 
+import { getModeAT7ExcursionValues } from '../guided-demo/guided-demo-contract';
+
 export type EvidenceType =
   | 'OBSERVATION_QUALITY'
   | 'PROCESS_EXCURSION'
@@ -97,6 +99,8 @@ export function generateDefaultEvidenceItems(seed: number = 20261015): EvidenceI
   const alertId = `AL-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
   const lotId = `LOT-DEMO-${800 + (safeSeed % 50)}`;
 
+  const t7 = getModeAT7ExcursionValues(safeSeed);
+
   return [
     {
       id: 'EVI-01',
@@ -117,12 +121,12 @@ export function generateDefaultEvidenceItems(seed: number = 20261015): EvidenceI
       type: 'PROCESS_EXCURSION',
       title: 'Step T7 복합 센서 공정 일탈 (Excursion Spike)',
       category: '통계적 관리한계 초과',
-      summary: '식각 종점 T7 구간에서 OES(80.0 a.u.), 챔버 압력(168.5 mTorr), RF 전력(1820 W) 복합 급증.',
-      observedValue: '80.0 a.u. (> UCL 65.0)',
+      summary: `식각 종점 T7 구간에서 OES(${t7.oesSignal} a.u.), 챔버 압력(${t7.chamberPressure} mTorr), RF 전력(${t7.rfPower} W) 복합 급증 (UCL 65.0 초과).`,
+      observedValue: `${t7.oesSignal} a.u. (> UCL 65.0)`,
       unit: 'a.u. / mTorr / W',
       qualityFlag: 'SUSPECT',
-      provenance: `ETCH-02 / CH-B (${runId}) · T7 스텝 계측`,
-      details: 'OES 광학 상대 신호가 관리한계(UCL 65.0 a.u.)를 초과하고 챔버 압력(기준 120 → 168.5 mTorr) 및 RF Power(기준 1500 → 1820 W)가 동반 서지했습니다.',
+      provenance: `ETCH-02 / CH-B (${runId}) · T7 스텝 계측 (Seed: ${safeSeed})`,
+      details: `OES 광학 상대 신호가 관리한계(UCL 65.0 a.u.)를 초과(${t7.oesSignal} a.u.)하고 챔버 압력(기준 120 → ${t7.chamberPressure} mTorr) 및 RF Power(기준 1500 → ${t7.rfPower} W)가 동반 서지했습니다 (시드 ${safeSeed} 기반 결정론적 합성 계측값; 기준 시나리오 대표값: OES ~80.0 a.u., 압력 ~168.5 mTorr, RF ~1820 W).`,
       linkUrl: `/?alert=${encodeURIComponent(alertId)}&investigation=true&seed=${safeSeed}`,
       linkLabel: '엔지니어링 조사 상세 보기 ↗',
     },

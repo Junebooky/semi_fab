@@ -274,10 +274,10 @@ function FabSimulationContent() {
           {/* Stepper Header with Controls */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ padding: '3px 8px', borderRadius: '6px', background: '#0B9F78', color: '#FFFFFF', fontSize: '11px', fontWeight: 800 }}>
+              <span id="sim-step-badge" style={{ padding: '3px 8px', borderRadius: '6px', background: '#0B9F78', color: '#FFFFFF', fontSize: '11px', fontWeight: 800 }}>
                 {currentStepMeta.badge}
               </span>
-              <h1 style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+              <h1 id="sim-step-heading" style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
                 {currentStepMeta.name}: {currentStepMeta.title}
               </h1>
             </div>
@@ -635,7 +635,7 @@ function FabSimulationContent() {
                       {telemetry.oes_quality}
                     </span>
                   </div>
-                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+                  <div id="sim-telemetry-oes" style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
                     {telemetry.oes_signal !== null ? `${telemetry.oes_signal} a.u.` : 'null (결측 / MISSING)'}
                   </div>
                   <div style={{ fontSize: '10px', color: '#64748B', marginTop: '4px' }}>
@@ -664,12 +664,14 @@ function FabSimulationContent() {
                       {telemetry.pressure_quality}
                     </span>
                   </div>
-                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+                  <div id="sim-telemetry-pressure" style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
                     {telemetry.chamber_pressure} mTorr
                   </div>
                   <div style={{ fontSize: '10px', color: '#64748B', marginTop: '4px' }}>
                     {telemetry.is_excursion ? (
-                      <span style={{ color: '#B91C1C', fontWeight: 700 }}>압력 급증 (정상 120 → 168.5 mTorr)</span>
+                      <span style={{ color: '#B91C1C', fontWeight: 700 }}>
+                        압력 급증 (정상 120 → {telemetry.chamber_pressure} mTorr)
+                      </span>
                     ) : (
                       '안정 진공 유지 (Baseline ~120 mTorr)'
                     )}
@@ -691,12 +693,14 @@ function FabSimulationContent() {
                       {telemetry.rf_quality}
                     </span>
                   </div>
-                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+                  <div id="sim-telemetry-rf" style={{ fontSize: '20px', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
                     {telemetry.rf_power} W
                   </div>
                   <div style={{ fontSize: '10px', color: '#64748B', marginTop: '4px' }}>
                     {telemetry.is_excursion ? (
-                      <span style={{ color: '#B91C1C', fontWeight: 700 }}>전력 서지 (정상 1500 → 1820 W)</span>
+                      <span style={{ color: '#B91C1C', fontWeight: 700 }}>
+                        전력 서지 (정상 1500 → {telemetry.rf_power} W)
+                      </span>
                     ) : (
                       '공정 정합 출력 (Baseline ~1500 W)'
                     )}

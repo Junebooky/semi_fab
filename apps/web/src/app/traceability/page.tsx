@@ -259,14 +259,17 @@ function TraceabilityContent() {
 
   const queryWafer = searchParams.get('wafer') || 'W-08';
   const queryTourStep = searchParams.get('tourStep');
+  const querySeed = searchParams.get('seed');
+  const safeSeed = (querySeed && Number.isInteger(Number(querySeed)) && Number(querySeed) > 0 && Number(querySeed) < 1000000000)
+    ? Number(querySeed) : 20261015;
 
   const [mode, setMode] = useState<'A' | 'B'>('A');
-  const [seed, setSeed] = useState<number>(20261015);
+  const [seed, setSeed] = useState<number>(safeSeed);
   const [selectedWaferId, setSelectedWaferId] = useState<string>(queryWafer);
   const [filter, setFilter] = useState<'ALL' | 'CONFIRMED' | 'CANDIDATE' | 'UNEXPOSED'>('ALL');
-  const [wafers, setWafers] = useState<WaferItem[]>(() => generateModeAWafers(20261015));
+  const [wafers, setWafers] = useState<WaferItem[]>(() => generateModeAWafers(safeSeed));
   const [trace, setTrace] = useState<WaferTraceDetail | null>(() => {
-    return isValidWaferId(queryWafer) ? generateModeAWaferTrace(queryWafer, 20261015) : null;
+    return isValidWaferId(queryWafer) ? generateModeAWaferTrace(queryWafer, safeSeed) : null;
   });
   const [notFoundError, setNotFoundError] = useState<NotFoundError | null>(() => {
     return !isValidWaferId(queryWafer)
@@ -522,6 +525,16 @@ function TraceabilityContent() {
     }
   }, [queryWafer, loadData]);
 
+  // Sync seed if URL search param changes
+  useEffect(() => {
+    if (querySeed) {
+      const parsed = Number(querySeed);
+      if (Number.isInteger(parsed) && parsed > 0 && parsed < 1000000000 && parsed !== seed) {
+        setSeed(parsed);
+      }
+    }
+  }, [querySeed, seed]);
+
   // Initial load
   useEffect(() => {
     loadData(selectedWaferId);
@@ -531,7 +544,9 @@ function TraceabilityContent() {
     targetWaferIdRef.current = wId;
     activeTraceReqIdRef.current++;
     setSelectedWaferId(wId);
-    router.replace(`/traceability?wafer=${wId}`, { scroll: false });
+    const seedParam = seed !== 20261015 ? `&seed=${seed}` : '';
+    const tourParam = queryTourStep ? `&tourStep=${encodeURIComponent(queryTourStep)}` : '';
+    router.replace(`/traceability?wafer=${wId}${seedParam}${tourParam}`, { scroll: false });
     loadData(wId);
   };
 

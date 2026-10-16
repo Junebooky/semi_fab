@@ -5,6 +5,8 @@
  * T0~T7 sensor excursions, seed synchronization, and cross-page navigation links.
  */
 
+import { getModeAT7ExcursionValues } from '../guided-demo/guided-demo-contract';
+
 export type SimulationStep =
   | 'READY'
   | 'FOUP_LOADED'
@@ -308,18 +310,22 @@ export function getTelemetrySnapshotForStep(step: SimulationStep, seed: number =
       };
     case 'T7_EXCURSION':
     case 'INSPECTION_HOLD':
-    case 'COMPLETE':
+    case 'COMPLETE': {
+      // Benchmark Mode A T7 targets: 80.0 a.u., 168.5 mTorr, 1820.0 W (ucl_limit: 65.0)
+      const safeSeed = parseSafeSimulationSeed(String(seed));
+      const t7 = getModeAT7ExcursionValues(safeSeed);
       return {
-        oes_signal: +(80.0 + (nextRand() - 0.5) * 4.0).toFixed(1),
+        oes_signal: t7.oesSignal, // Mode A benchmark baseline: 80.0
         oes_quality: 'SUSPECT',
-        chamber_pressure: +(168.5 + (nextRand() - 0.5) * 5.0).toFixed(1),
+        chamber_pressure: t7.chamberPressure, // Mode A benchmark baseline: 168.5
         pressure_quality: 'SUSPECT',
-        rf_power: +(1820.0 + (nextRand() - 0.5) * 20.0).toFixed(1),
+        rf_power: t7.rfPower, // Mode A benchmark baseline: 1820.0
         rf_quality: 'SUSPECT',
-        ucl_limit: 65.0,
+        ucl_limit: 65.0, // SPC UCL limit: 65.0
         is_excursion: true,
         step_label: 'T7 (EXCURSION)',
       };
+    }
   }
 }
 

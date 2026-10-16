@@ -6,6 +6,7 @@
  */
 
 import { FdcAlert, isInvestigationSupported } from '../command-center/command-center-contract';
+import { getModeAT7ExcursionValues } from '../guided-demo/guided-demo-contract';
 
 export type SensorId = 'RELATIVE_SIGNAL' | 'CHAMBER_PRESSURE' | 'RF_POWER';
 
@@ -496,9 +497,10 @@ export function generateModeAEquipmentSamples(seed: number = 20261015): {
   const prsNoise = (nextRand() - 0.5) * 1.5;
   const rfNoise = (nextRand() - 0.5) * 20.0;
 
-  const t7Rel = +(80.0 + (nextRand() - 0.5) * 4.0).toFixed(1);
-  const t7Prs = +(168.5 + (nextRand() - 0.5) * 5.0).toFixed(2);
-  const t7Rf = +(1820.0 + rfNoise).toFixed(1);
+  const t7 = getModeAT7ExcursionValues(seed);
+  const t7Rel = t7.oesSignal;
+  const t7Prs = t7.chamberPressure;
+  const t7Rf = t7.rfPower;
 
   const samples: SensorSample[] = [
     // RELATIVE_SIGNAL (Optical sensor: T4 and T5 missing due to optical shutter)

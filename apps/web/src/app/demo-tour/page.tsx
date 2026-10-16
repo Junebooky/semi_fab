@@ -416,6 +416,7 @@ function DemoTourContent() {
         {/* Active Step Showcase Card */}
         <div
           id="active-step-showcase"
+          data-step-id={currentStep.id}
           style={{
             background: '#FFFFFF',
             border: '1px solid #E2E8F0',
