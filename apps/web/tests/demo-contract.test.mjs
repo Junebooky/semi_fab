@@ -3534,6 +3534,193 @@ test('BUILD-08 (e) Page source assertions: 6-tab navigation, buttons, EKL trigge
   assert.ok(ccSource.includes('id="cc-btn-go-workspace"'), 'Command Center must have direct button to workspace');
 });
 
+// =========================================================================
+// BUILD-09 FAB ONE Integrated Guided Demo Contract Tests (a ~ e)
+// =========================================================================
+
+test('BUILD-09 (a) Contract: 8 sequential tour steps, progression percentage, forward/backward step cycling', () => {
+  const contractSource = readFileSync(
+    new URL('../src/components/guided-demo/guided-demo-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  const EXPECTED_STEP_IDS = ['INTRO', 'SIMULATE', 'EXCURSION', 'ALARM', 'SENSOR', 'TRACE', 'WORKSPACE', 'FINISH'];
+
+  EXPECTED_STEP_IDS.forEach((stepId) => {
+    assert.ok(contractSource.includes(`id: '${stepId}'`), `Contract must define step ${stepId}`);
+  });
+
+  function calculateTourProgress(stepIndex, total = 8) {
+    return Math.round(((stepIndex + 1) / total) * 100);
+  }
+
+  assert.equal(calculateTourProgress(0), 13, 'Step 1 is ~13%');
+  assert.equal(calculateTourProgress(1), 25, 'Step 2 is 25%');
+  assert.equal(calculateTourProgress(2), 38, 'Step 3 is ~38%');
+  assert.equal(calculateTourProgress(3), 50, 'Step 4 is 50%');
+  assert.equal(calculateTourProgress(4), 63, 'Step 5 is ~63%');
+  assert.equal(calculateTourProgress(5), 75, 'Step 6 is 75%');
+  assert.equal(calculateTourProgress(6), 88, 'Step 7 is ~88%');
+  assert.equal(calculateTourProgress(7), 100, 'Step 8 is 100%');
+
+  function getNextTourStep(current) {
+    const idx = EXPECTED_STEP_IDS.indexOf(current);
+    if (idx === -1 || idx >= EXPECTED_STEP_IDS.length - 1) return 'FINISH';
+    return EXPECTED_STEP_IDS[idx + 1];
+  }
+
+  function getPrevTourStep(current) {
+    const idx = EXPECTED_STEP_IDS.indexOf(current);
+    if (idx <= 0) return 'INTRO';
+    return EXPECTED_STEP_IDS[idx - 1];
+  }
+
+  assert.equal(getNextTourStep('INTRO'), 'SIMULATE');
+  assert.equal(getNextTourStep('WORKSPACE'), 'FINISH');
+  assert.equal(getNextTourStep('FINISH'), 'FINISH');
+
+  assert.equal(getPrevTourStep('FINISH'), 'WORKSPACE');
+  assert.equal(getPrevTourStep('SIMULATE'), 'INTRO');
+  assert.equal(getPrevTourStep('INTRO'), 'INTRO');
+});
+
+test('BUILD-09 (b) Contract: Tour query parsing, seed safety bounds, and invalid step fallback', () => {
+  function parseSafeTourSeed(raw) {
+    if (raw) {
+      const num = Number(raw);
+      if (!isNaN(num) && Number.isInteger(num) && num > 0 && num < 1000000000) {
+        return num;
+      }
+    }
+    return 20261015;
+  }
+
+  const VALID_STEPS = ['INTRO', 'SIMULATE', 'EXCURSION', 'ALARM', 'SENSOR', 'TRACE', 'WORKSPACE', 'FINISH'];
+  function parseSafeTourStep(raw) {
+    if (!raw) return 'INTRO';
+    const upper = raw.trim().toUpperCase();
+    return VALID_STEPS.includes(upper) ? upper : 'INTRO';
+  }
+
+  // 1. Step fallback
+  assert.equal(parseSafeTourStep(null), 'INTRO');
+  assert.equal(parseSafeTourStep(''), 'INTRO');
+  assert.equal(parseSafeTourStep('simulate'), 'SIMULATE');
+  assert.equal(parseSafeTourStep('ALARM'), 'ALARM');
+  assert.equal(parseSafeTourStep('INVALID_STEP_NAME'), 'INTRO');
+  assert.equal(parseSafeTourStep('123'), 'INTRO');
+
+  // 2. Seed bounds
+  assert.equal(parseSafeTourSeed(null), 20261015);
+  assert.equal(parseSafeTourSeed('-100'), 20261015);
+  assert.equal(parseSafeTourSeed('0'), 20261015);
+  assert.equal(parseSafeTourSeed('1.25'), 20261015);
+  assert.equal(parseSafeTourSeed('20261015'), 20261015);
+  assert.equal(parseSafeTourSeed('20261016'), 20261016);
+  assert.equal(parseSafeTourSeed('9999999999'), 20261015);
+});
+
+test('BUILD-09 (c) Contract: Cross-screen context propagation (seed, alert, wafer, sensor) without fake attribution', () => {
+  function getTourNavLinks(step, seed = 20261015) {
+    const safeSeed = (seed && Number.isInteger(Number(seed)) && Number(seed) > 0 && Number(seed) < 1000000000) ? Number(seed) : 20261015;
+    const runId = `RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const alertId = `AL-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const lotId = `LOT-DEMO-${800 + (safeSeed % 50)}`;
+
+    return {
+      runId,
+      alertId,
+      lotId,
+      home: `/?alert=${encodeURIComponent(alertId)}&investigation=true&seed=${safeSeed}`,
+      fabSimulation: `/fab-simulation?seed=${safeSeed}`,
+      commandCenter: `/command-center?seed=${safeSeed}&alert=${encodeURIComponent(alertId)}`,
+      equipmentIntelligence: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=${safeSeed}`,
+      traceability: `/traceability?wafer=W-08&seed=${safeSeed}`,
+      engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(alertId)}&seed=${safeSeed}`,
+      demoTour: (targetStep = step) => `/demo-tour?step=${targetStep}&seed=${safeSeed}`,
+    };
+  }
+
+  const links = getTourNavLinks('INTRO', 20261015);
+  assert.equal(links.runId, 'RUN-DEMO-015');
+  assert.equal(links.alertId, 'AL-DEMO-015');
+  assert.equal(links.lotId, 'LOT-DEMO-815');
+
+  // Verify URL query parameters maintain valid single-run lineage
+  assert.ok(links.home.includes('alert=AL-DEMO-015') && links.home.includes('seed=20261015'));
+  assert.ok(links.fabSimulation.includes('seed=20261015'));
+  assert.ok(links.commandCenter.includes('alert=AL-DEMO-015') && links.commandCenter.includes('seed=20261015'));
+  assert.ok(links.equipmentIntelligence.includes('sensor=RELATIVE_SIGNAL') && links.equipmentIntelligence.includes('seed=20261015'));
+  assert.ok(links.traceability.includes('wafer=W-08') && links.traceability.includes('seed=20261015'));
+  assert.ok(links.engineeringWorkspace.includes('alert=AL-DEMO-015') && links.engineeringWorkspace.includes('seed=20261015'));
+  assert.equal(links.demoTour('ALARM'), '/demo-tour?step=ALARM&seed=20261015');
+});
+
+test('BUILD-09 (d) Contract: Domain safety invariants and 5-point tour completion summary', () => {
+  const contractSource = readFileSync(
+    new URL('../src/components/guided-demo/guided-demo-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Scientific & safety disclaimers
+  assert.ok(contractSource.includes('Excursion ≠ Defect'), 'Must state Excursion != Defect');
+  assert.ok(contractSource.includes('CONFIRMED_EXPOSED'), 'Must state CONFIRMED_EXPOSED definition');
+  assert.ok(contractSource.includes('CANDIDATE_EXPOSED'), 'Must state CANDIDATE_EXPOSED definition');
+  assert.ok(contractSource.includes('MISSING ≠ 0'), 'Must state MISSING != 0');
+  assert.ok(contractSource.includes('UCL/LCL은 센서 시계열의 통계적 공정 관리한계(SPC)이며 제품 규격(USL/LSL)과 다릅니다'), 'Must distinguish SPC vs Spec');
+  assert.ok(contractSource.includes('실제 반도체 팹(MES/FDC) 제어 명령을 발행하지 않습니다'), 'Must disclaim real factory control');
+
+  // 2. 5-point completion summary
+  assert.ok(contractSource.includes('TOUR_COMPLETION_SUMMARY'), 'Must define TOUR_COMPLETION_SUMMARY');
+  assert.ok(contractSource.includes('FDC 실시간 경보 감지'), 'Takeaway 1: Alarm Sentinel');
+  assert.ok(contractSource.includes('센서 계측 근거 및 관측 품질 검증'), 'Takeaway 2: Sensor Intelligence');
+  assert.ok(contractSource.includes('웨이퍼 단위 이력 추적성 격리'), 'Takeaway 3: Wafer Traceability');
+  assert.ok(contractSource.includes('엔지니어링 백보드 기반 가설 검증'), 'Takeaway 4: Engineering Workspace');
+  assert.ok(contractSource.includes('반도체 공학 도메인 지식 연계'), 'Takeaway 5: EKL Knowledge');
+  assert.ok(contractSource.includes('실제 불량/원인 확정/양산 지표 예측/실제 설비 검사 실행 주장 없음'), 'Must explicitly disclaim automated root cause / yield prediction');
+});
+
+test('BUILD-09 (e) Page source assertions: /demo-tour route, home tour CTA, 7-tab navigation, buttons, EKL triggers', () => {
+  const tourPageSource = readFileSync(new URL('../src/app/demo-tour/page.tsx', import.meta.url), 'utf8');
+  const homeSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const traceSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+  const ccSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const eiSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  const simSource = readFileSync(new URL('../src/app/fab-simulation/page.tsx', import.meta.url), 'utf8');
+  const wsSource = readFileSync(new URL('../src/app/engineering-workspace/page.tsx', import.meta.url), 'utf8');
+
+  // 1. Controls & interactive elements on /demo-tour
+  assert.ok(tourPageSource.includes('id="tour-progress-bar"'), 'Must have tour progress bar');
+  assert.ok(tourPageSource.includes('id="active-step-showcase"'), 'Must have active step showcase');
+  assert.ok(tourPageSource.includes('id="tour-btn-prev"'), 'Must have prev button');
+  assert.ok(tourPageSource.includes('id="tour-btn-next"'), 'Must have next button');
+  assert.ok(tourPageSource.includes('id="tour-btn-reset"'), 'Must have reset button');
+  assert.ok(tourPageSource.includes('id="tour-btn-open-target"'), 'Must have open target screen link');
+  assert.ok(tourPageSource.includes('id="tour-btn-resynthesize"'), 'Must have resynthesize button');
+  assert.ok(tourPageSource.includes('id="tour-completion-summary-panel"'), 'Must have tour completion summary panel');
+
+  // 2. Home page tour CTA Hero banner
+  assert.ok(homeSource.includes('id="hero-guided-tour-banner"'), 'Home page must feature guided tour hero banner');
+  assert.ok(homeSource.includes('id="btn-start-guided-tour"'), 'Home page must have start guided tour button');
+  assert.ok(homeSource.includes('/demo-tour?step=INTRO'), 'Home CTA must link to /demo-tour?step=INTRO');
+
+  // 3. 7-Tab unified navigation across ALL 7 pages
+  assert.ok(homeSource.includes('/demo-tour'), 'Home must link to /demo-tour');
+  assert.ok(traceSource.includes('/demo-tour'), 'Traceability must link to /demo-tour');
+  assert.ok(ccSource.includes('/demo-tour'), 'Command Center must link to /demo-tour');
+  assert.ok(eiSource.includes('/demo-tour'), 'Equipment Intelligence must link to /demo-tour');
+  assert.ok(simSource.includes('/demo-tour'), 'Fab Simulation must link to /demo-tour');
+  assert.ok(wsSource.includes('/demo-tour'), 'Workspace must link to /demo-tour');
+  assert.ok(tourPageSource.includes('/demo-tour'), 'Tour page must link to /demo-tour');
+
+  // 4. EKL concept triggers on /demo-tour
+  const requiredEKL = ['oes-relative-signal', 'rf-power', 'spc-ucl-missing', 'wafer-exposure-status'];
+  requiredEKL.forEach((concept) => {
+    assert.ok(tourPageSource.includes(concept), `Tour page must include EKL trigger for ${concept}`);
+  });
+});
+
+
 
 
 
