@@ -77,7 +77,7 @@ function DemoTourContent() {
   }, [seed, searchParams, router]);
 
   return (
-    <div className="command-center-container" style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div className="command-center-container" style={{ minHeight: '100vh', background: '#FFFFFF' }}>
       {/* Top Header */}
       <header
         className="top-nav-bar"
