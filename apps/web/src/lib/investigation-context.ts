@@ -86,7 +86,7 @@ export interface CasebookRecord {
   id: string; // CASE-${runId}-${timestamp}
   schemaVersion: number; // strictly 1
   runId: string;
-  sessionId?: string;
+  sessionId: string;
   alertId: string;
   seed: number;
   mode: SimulationMode;
@@ -128,29 +128,21 @@ export function isValidCasebookRecord(item: any): item is CasebookRecord {
   // 1. Strictly enforce schemaVersion === 1 (missing or other versions rejected)
   if (item.schemaVersion !== 1) return false;
 
-  // 2. Core identifiers and string boundaries
+  // 2. Core identifiers and string boundaries (all mandatory non-empty strings in v1)
   if (typeof item.id !== 'string' || item.id.trim().length === 0 || item.id.length > 128) return false;
   if (typeof item.runId !== 'string' || item.runId.trim().length === 0 || item.runId.length > 64) return false;
   if (typeof item.alertId !== 'string' || item.alertId.trim().length === 0 || item.alertId.length > 64) return false;
+  if (typeof item.sessionId !== 'string' || item.sessionId.trim().length === 0 || item.sessionId.length > 128) return false;
   if (typeof item.lotId !== 'string' || item.lotId.trim().length === 0 || item.lotId.length > 64) return false;
   if (typeof item.equipmentId !== 'string' || item.equipmentId.trim().length === 0 || item.equipmentId.length > 64) return false;
   if (typeof item.chamberId !== 'string' || item.chamberId.trim().length === 0 || item.chamberId.length > 64) return false;
   if (item.mode !== 'A' && item.mode !== 'B') return false;
   if (typeof item.savedAtUtc !== 'string' || isNaN(Date.parse(item.savedAtUtc))) return false;
 
-  // 3. Optional string and numeric fields with range bounds
-  if (item.sessionId !== undefined && item.sessionId !== null) {
-    if (typeof item.sessionId !== 'string' || item.sessionId.length > 128) return false;
-  }
-  if (item.dataOrigin !== undefined && item.dataOrigin !== null) {
-    if (typeof item.dataOrigin !== 'string' || item.dataOrigin.length > 64) return false;
-  }
-  if (item.seed !== undefined && item.seed !== null) {
-    if (!Number.isInteger(Number(item.seed)) || Number(item.seed) < 0 || Number(item.seed) > 2147483647) return false;
-  }
-  if (item.status !== undefined && item.status !== null) {
-    if (!['DRAFT', 'REVIEWED', 'DISPOSITIONED'].includes(item.status)) return false;
-  }
+  // 3. Mandatory synthetic origin, integer seed, and status enum
+  if (typeof item.dataOrigin !== 'string' || !['synthetic', 'live_api'].includes(item.dataOrigin)) return false;
+  if (item.seed === undefined || item.seed === null || !Number.isInteger(Number(item.seed)) || Number(item.seed) < 0 || Number(item.seed) > 2147483647) return false;
+  if (typeof item.status !== 'string' || !['DRAFT', 'REVIEWED', 'DISPOSITIONED'].includes(item.status)) return false;
 
   // 4. Nested Hypotheses validation (array bounds, item schema, status enum)
   if (!Array.isArray(item.hypotheses) || item.hypotheses.length > 50) return false;
@@ -205,8 +197,10 @@ export function isValidCasebookRecord(item: any): item is CasebookRecord {
 
 /**
  * Evaluates whether a CasebookRecord perfectly matches the active investigation lineage.
- * If any key lineage attributes diverge (run, alert, mode, session, lot, equipment, chamber),
- * the record must be isolated in read-only mode to prevent active editor judgment contamination.
+ * Mode B active editor restore requires all 8 lineage attributes to be non-empty and 100% identical:
+ * mode, runId, alertId, sessionId, lotId, equipmentId, chamberId, dataOrigin.
+ * If ANY field is missing, empty, enum-mismatched, or divergent, returns false so that the record
+ * is strictly isolated in the read-only modal and never commits to active editor notes/hypotheses/actions.
  */
 export function isExactLineageMatch(
   record: CasebookRecord | null | undefined,
@@ -218,16 +212,31 @@ export function isExactLineageMatch(
     lotId?: string | null;
     equipmentId?: string | null;
     chamberId?: string | null;
+    dataOrigin?: string | null;
   }
 ): boolean {
   if (!record || typeof record !== 'object') return false;
   if (record.mode !== currentContext.mode) return false;
-  if (!record.runId || !currentContext.runId || record.runId.trim() !== currentContext.runId.trim()) return false;
-  if (!record.alertId || !currentContext.alertId || record.alertId.trim() !== currentContext.alertId.trim()) return false;
-  if (record.sessionId && currentContext.sessionId && record.sessionId.trim() !== currentContext.sessionId.trim()) return false;
-  if (record.lotId && currentContext.lotId && record.lotId.trim() !== currentContext.lotId.trim()) return false;
-  if (record.equipmentId && currentContext.equipmentId && record.equipmentId.trim() !== currentContext.equipmentId.trim()) return false;
-  if (record.chamberId && currentContext.chamberId && record.chamberId.trim() !== currentContext.chamberId.trim()) return false;
+
+  const expectedDataOrigin = currentContext.dataOrigin || (currentContext.mode === 'B' ? 'live_api' : 'synthetic');
+
+  // Helper: must be non-empty string on both sides and match exactly after trimming
+  const isStrictMatch = (a?: string | null, b?: string | null): boolean => {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    const trimmedA = a.trim();
+    const trimmedB = b.trim();
+    if (trimmedA.length === 0 || trimmedB.length === 0) return false;
+    return trimmedA === trimmedB;
+  };
+
+  if (!isStrictMatch(record.runId, currentContext.runId)) return false;
+  if (!isStrictMatch(record.alertId, currentContext.alertId)) return false;
+  if (!isStrictMatch(record.sessionId, currentContext.sessionId)) return false;
+  if (!isStrictMatch(record.lotId, currentContext.lotId)) return false;
+  if (!isStrictMatch(record.equipmentId, currentContext.equipmentId)) return false;
+  if (!isStrictMatch(record.chamberId, currentContext.chamberId)) return false;
+  if (!isStrictMatch(record.dataOrigin, expectedDataOrigin)) return false;
+
   return true;
 }
 
@@ -448,7 +457,13 @@ export function loadSavedCasebookRecords(): CasebookRecord[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed.filter(isValidCasebookRecord);
+      return parsed.filter((item) => {
+        if (!item || typeof item !== 'object') return false;
+        if (typeof item.id !== 'string' || item.id.trim().length === 0) return false;
+        if (typeof item.runId !== 'string' || item.runId.trim().length === 0) return false;
+        if (typeof item.alertId !== 'string' || item.alertId.trim().length === 0) return false;
+        return true;
+      });
     }
     return [];
   } catch {

@@ -12,12 +12,13 @@
 ### Workstream A: P0 완전 계통성 격리 & 엄격 v1 스키마 무결성 (Lineage Isolation & Schema Invariants)
 
 1. **완전 계통성 일치 검증 (`isExactLineageMatch`)**:
-   - 단순 `mode`와 `runId` 비교를 넘어 7개 계통 속성(`mode`, `runId`, `alertId`, `sessionId`, `lotId`, `equipmentId`, `chamberId`)이 100% 일치할 때만 동일 활성 케이스로 인정합니다.
-   - 동일 `runId`이더라도 `alertId`나 `sessionId`가 상이한 과거 케이스북 레코드 로드 시, 활성 워크스페이스 에디터 수정을 원천 차단하고 읽기 전용 모달(`#ws-historical-case-modal`)로 격리하여 작성 중인 가설/조치/메모 오염을 방지합니다.
-   - 읽기 전용 모달 내 명확한 안내 배너(`"데이터 격리 안전 보호"`, Run/Alert/Session 계통 정보)를 표시하고, `#ws-btn-close-historical-case` 및 `#ws-btn-return-active-workspace`를 통한 안전한 복귀를 보장합니다.
+   - Mode B 활성 에디터 복원 시 `mode`, `runId`, `alertId`, `sessionId`, `lotId`, `equipmentId`, `chamberId`, `dataOrigin` 8개 계통 속성 전체가 non-empty string으로 100% 일치할 때만 동일 활성 케이스로 인정합니다.
+   - 동일 `runId`/`alertId`이더라도 `sessionId`가 누락/공백이거나, `dataOrigin`이 상이한 경우 에디터 수정을 원천 차단하고 읽기 전용 모달(`#ws-historical-case-modal`)로 격리하여 작성 중인 가설/조치/메모 오염을 방지합니다.
+   - 읽기 전용 모달 내 명확한 안내 배너(`"데이터 격리 안전 보호"`, Run/Alert/Session/Origin 계통 정보)를 표시하고, `#ws-btn-close-historical-case` 및 `#ws-btn-return-active-workspace`를 통한 안전한 복귀를 보장합니다.
 
 2. **엄격 v1 스키마 유효성 검증 (`isValidCasebookRecord`)**:
    - `schemaVersion === 1` 필수 필드 강제 검증.
+   - 필수 non-empty 식별자 필드(`id`, `runId`, `alertId`, `sessionId`, `lotId`, `equipmentId`, `chamberId`), 유효한 합성 출처(`dataOrigin`: `'synthetic' | 'live_api'`), 정수형 시드(`seed`), 상태 enum(`status`: `'DRAFT' | 'REVIEWED' | 'DISPOSITIONED'`) 검증.
    - 중첩 가설(`hypotheses`) 및 조치(`actions`) 배열의 각 항목에 대한 엄격한 필드 및 enum (`status`: `UNVERIFIED`, `SUPPORTED_FOR_REVIEW`, `NEEDS_MORE_DATA`, `RULED_OUT` 등) 유효성 검증.
    - 문자열 길이 상한선(ID ≤ 100자, 제목 ≤ 200자, 메모 ≤ 5,000자, Markdown 내용 ≤ 50,000자) 적용으로 메모리 고갈 및 DoS 방지.
 
@@ -31,13 +32,20 @@
 ### Workstream B: P1 7개 화면 연속 사용자 여정 및 반례 검증 (Real 7-Screen Journey Proof)
 
 1. **연속 7개 화면 실제 브라우저 여정 검증 (E2E Test 1)**:
-   - 홈(`/`) `#hero-live-connected-card` -> 커맨드 센터 (`#cc-run-id-badge`) -> 설비 인텔리전스 (T7 챔버 압력/RF 파워 일탈 확인, `#ei-run-id-badge`) -> 웨이퍼 추적성 (`W-08` 노출 후보군 확인) -> 엔지니어링 워크스페이스 (증거 링크, 가설/조치/메모 편집, Markdown 보고서 내보내기, Casebook 저장) -> Casebook 탭 (저장된 레코드 확인) -> 과거 공정 Run 아카이브 스냅샷 뷰어 (`GET /api/v1/demo/runs/{run_id}`)까지 단절 없는 실시간 연속 흐름 완주.
+   - 홈(`/`) `#hero-live-connected-card` -> 커맨드 센터 (`#cc-run-id-badge`) -> 설비 인텔리전스 (T7 챔버 압력/RF 파워 일탈 확인, `#ei-run-id-badge`) -> 웨이퍼 추적성 (`W-08` 노출 후보군 확인, `/traceability`) -> 엔지니어링 워크스페이스 (증거 링크, 가설/조치/메모 편집, Markdown 보고서 내보내기, Casebook 저장) -> Casebook 탭 (저장된 레코드 확인) -> 과거 공정 Run 아카이브 스냅샷 뷰어 (`GET /api/v1/demo/runs/{run_id}`)까지 단일 Test 1에서 실제 브라우저 클릭 및 assert로 완주.
 
 2. **계통성 분리 반례 검증 (E2E Test 7)**:
-   - 동일 `runId`를 공유하지만 다른 `alertId`/`sessionId`를 가진 과거 케이스북 레코드를 로드할 때 활성 에디터 오염 없이 `#ws-historical-case-modal`로 격리 표시되고 현재 작성 메모가 보존됨을 검증.
+   - (a) 동일 `runId` 다른 `alertId`
+   - (b) 동일 `runId`/`alertId`이나 `sessionId` 누락
+   - (c) 동일 `runId`/`alertId`/`sessionId`이나 상이한 `dataOrigin`
+   - 위 3가지 반례 레코드 로드 시 활성 에디터 오염 없이 `#ws-historical-case-modal`로 격리 표시되고 현재 작성 메모가 불변 유지됨을 검증.
 
 3. **엄격 v1 스키마 손상 백업 거부 반례 검증 (E2E Test 8)**:
-   - 손상된 JSON, `schemaVersion` 누락, 가설/조치 필드 결함 데이터 가져오기 시 유효한 레코드만 선별 로드되고 오염 데이터는 차단됨을 검증.
+   - 실제 Playwright `setInputFiles`를 사용하여:
+     - (a) `schemaVersion` 누락 손상 백업 파일
+     - (b) 500KB 용량 초과 백업 파일 (`PAYLOAD_TOO_LARGE`)
+     - (c) 가설 enum 무효 백업 파일
+     - 3개 실제 UI validation 경로를 테스트하고 사용자 오류 알림 표출 및 localStorage/UI 레코드 목록 불변식을 검증.
 
 ---
 
@@ -47,9 +55,9 @@
    - `python3 -m unittest services/api/tests/test_api.py` (전체 16건 무결격 통과)
 2. **웹 단위 및 계약 테스트 (93/93 PASS)**:
    - `npm test` in `apps/web` (신규 BUILD-15 (a)~(e) 5건 계약 테스트 추가 및 전체 93건 통과)
-     - (a) Strict Lineage Isolation & `isExactLineageMatch` Contract
-     - (b) Strict Schema v1 Validation & Invariant Enclosure Contract
-     - (c) Payload Limit, Max Records & Backup Import Sanitization Contract
+     - (a) Strict Lineage Isolation & `isExactLineageMatch` Contract (8개 계통 필드 전수 일치 및 missing sessionId/origin 반례)
+     - (b) Strict Schema v1 Validation & Invariant Enclosure Contract (필수 sessionId, dataOrigin, seed, status enum)
+     - (c) Payload Limit, Max Records & Backup Import Sanitization Contract (500KB/100건 상한)
      - (d) LocalStorage Quota Failure & Error Handling Contract
      - (e) Markdown Pipe Escaping & `<br/>` Tag Conversion Contract
 3. **Next.js 프로덕션 정적 빌드 검증 (10/10 PASS)**:
@@ -71,14 +79,14 @@
   1. **홈 화면 (`/`)**: 상단 `#hero-guided-tour-card`에서 `#btn-start-guided-tour` 클릭하여 가이드 투어 진입.
   2. **1단계 (FAB 개요)**: 팹 라인 배치도 및 공정 단계 확인.
   3. **2단계 (설비 이상 감지)**: ETCH-02 Chamber B의 T7 시간대 압력/RF 파워 일탈 확인.
-  4. **3단계 (웨이퍼 추적성)**: 동일 챔버를 통과한 LOT-20261016 중 `W-08` 웨이퍼의 노출 후보군 식별.
+  4. **3단계 (웨이퍼 추적성)**: 동일 챔버를 통과한 LOT-20261016 중 `W-08` 웨이퍼의 노출 후보군 식별 (`/traceability`).
   5. **4단계 (상관관계 분석)**: 센서 일탈과 웨이퍼 결함 사이의 통계적 상관도 확인.
   6. **5단계 (엔지니어 가설 수립)**: 압력 헌팅 및 플라즈마 임피던스 불일치 가설 등록.
   7. **6단계 (조치 계획 수립)**: 가스 밸브 캘리브레이션 및 RF 매처 점검 액션 계획.
   8. **7~8단계 (요약 및 워크스페이스 완료)**: 전체 조사 요약 확인 후 엔지니어링 워크스페이스로 복귀하여 완료.
 
 ### 3.2 5분 Mode B 실시간 연동 조사 (FastAPI 백엔드 실시간 연결)
-- **목적**: FastAPI 백엔드와 양방향 통신하며 실제 FAB 공정 런 모니터링, 이상 트리아지, 웨이퍼 추적, 케이스북 저장 및 과거 런 스냅샷 아카이브 조회 시연.
+- **목적**: FastAPI 백엔드와 양방향 통신하며 합성 FAB 공정 런 모니터링, 이상 트리아지, 웨이퍼 추적, 케이스북 저장 및 과거 런 스냅샷 아카이브 조회 시연.
 - **소요 시간**: 약 5분.
 - **시나리오 단계**:
   1. **홈 화면 (`/`)**: 상단 `#hero-live-connected-card`에서 `#btn-start-live-connected-case` 클릭.
@@ -90,10 +98,11 @@
      - 상단 헤더 활성 런 배지(`#ei-run-id-badge`) 확인.
      - ETCH-02 CH-B의 센서 텔레메트리 차트에서 T7 구간 챔버 압력(~168.5 mTorr vs UCL 160.0) 및 RF 파워(~1820 W vs UCL 1800) 일탈 확인.
      - "웨이퍼 추적성으로 이동" 클릭.
-  4. **웨이퍼 추적성 (`/wafer-traceability`)**:
+  4. **웨이퍼 추적성 (`/traceability`)**:
      - 25매 웨이퍼 로트 맵 확인.
      - T7 시간대에 챔버에 노출된 `W-08` 웨이퍼가 `Candidate Exposed`로 강조 표시됨을 확인.
      - "엔지니어링 워크스페이스로 전송" 클릭.
+     - *(안내: 백엔드 공정 데이터는 가상 시뮬레이션 합성 데이터이며 실제 FAB 물리 설비 연동이 아님)*
   5. **엔지니어링 워크스페이스 (`/engineering-workspace`)**:
      - 3-Phase 비동기 스냅샷 검증 통과 후 활성 조사 보드 진입.
      - 증거 링크(`W-08`, `T7 Excursion`) 확인.
@@ -163,44 +172,42 @@ cd apps/web && npm run test:e2e
 
 ## 6. 스택 PR 통합 계획 (Stacked PR Integration Plan #15 ~ #42)
 
-### 6.1 PR 계통 체인 구조 (PR Lineage Chain)
+### 6.1 PR 계통 체인 구조 (PR Lineage Chain, GitHub 실상태 기준)
 
-| PR 번호 | 브랜치 이름 | 베이스 브랜치 | 주요 빌드 및 핵심 기능 | 상태 |
+| PR 번호 | 브랜치 (Head) | 베이스 브랜치 (Base) | 주요 빌드 및 핵심 기능 | 실제 GitHub 상태 |
 |---|---|---|---|---|
-| #15 | `a02/build-01-core-types` | `main` | BUILD-01: 공통 도메인 타입 및 계약 정의 | MERGED |
-| #16 | `a02/build-02-api-skeleton` | `a02/build-01-core-types` | BUILD-02: FastAPI 모의 백엔드 스켈레톤 | MERGED |
-| #20 | `a02/build-03-web-scaffold` | `a02/build-02-api-skeleton` | BUILD-03: Next.js 프론트엔드 스캐폴딩 | MERGED |
-| #22 | `a02/build-04-command-center` | `a02/build-03-web-scaffold` | BUILD-04: 커맨드 센터 이상 트리아지 화면 | MERGED |
-| #24 | `a02/build-05-equipment-intel` | `a02/build-04-command-center` | BUILD-05: 설비 인텔리전스 센서 차트 | MERGED |
-| #26 | `a02/build-06-wafer-trace` | `a02/build-05-equipment-intel` | BUILD-06: 웨이퍼 추적성 25매 맵 | MERGED |
-| #28 | `a02/build-07-workspace` | `a02/build-06-wafer-trace` | BUILD-07: 엔지니어링 워크스페이스 보드 | MERGED |
-| #30 | `a02/build-08-guided-tour` | `a02/build-07-workspace` | BUILD-08: Mode A 8단계 가이드 투어 | MERGED |
-| #32 | `a02/build-09-connected-mode-b` | `a02/build-08-guided-tour` | BUILD-09: Mode B 실시간 API 연동 | MERGED |
-| #34 | `a02/build-10-cross-nav` | `a02/build-09-connected-mode-b` | BUILD-10: 7개 화면 상호 내비게이션 | MERGED |
-| #36 | `a02/build-11-ci-e2e` | `a02/build-10-cross-nav` | BUILD-11: Playwright E2E 통합 테스트 | MERGED |
-| #38 | `a02/build-12-polish` | `a02/build-11-ci-e2e` | BUILD-12: 통합 UX 및 접근성 개선 | MERGED |
-| #40 | `a02/build-14-demo-release-candidate` | `a02/build-12-polish` | BUILD-14: 데모 릴리즈 캔디데이트 | OPEN (Draft) |
-| #42 | `a02/build-15-release-freeze` | `a02/build-14-demo-release-candidate` | BUILD-15: 릴리즈 프리즈 & 7개 화면 여정 검증 | OPEN (Draft, 본 PR) |
+| #15 | `a02/build-01-live-etch-demo` | `main` | [BUILD-01] 브라우저 조작형 Etch 데모 (Next.js + FastAPI + SQLite) | OPEN (non-Draft / unmerged) |
+| #16 | `a02/build-03-wafer-traceability` | `a02/build-01-live-etch-demo` | BUILD-03: Lot/Wafer Traceability and Chronological Process Timeline | OPEN (Draft / unmerged) |
+| #18 | `a02/build-04-engineering-knowledge-layer` | `a02/build-03-wafer-traceability` | BUILD-04: Engineering Knowledge Layer (EKL) and Domain Caveats | OPEN (Draft / unmerged) |
+| #20 | `a02/build-05-command-center` | `a02/build-04-engineering-knowledge-layer` | BUILD-05: FDC Command Center | OPEN (Draft / unmerged) |
+| #22 | `a02/build-06-equipment-intelligence` | `a02/build-05-command-center` | BUILD-06: Equipment Intelligence & Sensor Telemetry | OPEN (Draft / unmerged) |
+| #25 | `a02/build-07-fab-simulation` | `a02/build-06-equipment-intelligence` | BUILD-07: Virtual FAB Simulation User Journey MVP | OPEN (Draft / unmerged) |
+| #27 | `a02/build-08-engineering-workspace` | `a02/build-07-fab-simulation` | BUILD-08: Engineering Workspace Evidence-Hypothesis-Action Board | OPEN (Draft / unmerged) |
+| #29 | `a02/build-09-guided-demo` | `a02/build-08-engineering-workspace` | BUILD-09: FAB ONE Integrated Guided Demo Tour | OPEN (Draft / unmerged) |
+| #31 | `a02/build-10-integration-stabilization` | `a02/build-09-guided-demo` | BUILD-10: Integration Stabilization, Tour Return Lineage, QA Readiness | OPEN (Draft / unmerged) |
+| #33 | `a02/build-11-browser-smoke` | `a02/build-10-integration-stabilization` | BUILD-11: Actual Browser E2E Test Automation | OPEN (Draft / unmerged) |
+| #36 | `a02/build-12-connected-investigation` | `a02/build-11-browser-smoke` | BUILD-12: Mode B Connected Investigation, Case Analysis & Report Export | OPEN (Draft / unmerged) |
+| #38 | `a02/build-13-run-casebook` | `a02/build-12-connected-investigation` | BUILD-13: Run Casebook, Mode B Integrity, Truth Contract | OPEN (Draft / unmerged) |
+| #40 | `a02/build-14-demo-release-candidate` | `a02/build-13-run-casebook` | BUILD-14: Demo Release Candidate & Isolation | OPEN (Draft / unmerged) |
+| #42 | `a02/build-15-release-freeze` | `a02/build-14-demo-release-candidate` | BUILD-15: Release Freeze & Full-Journey Proof (본 PR) | OPEN (Draft / unmerged) |
 
-### 6.2 병합 순서 및 선행 조건 (Merge Order & Prerequisites)
-1. PR #40(`a02/build-14-demo-release-candidate`)이 A01 기획 에이전트 및 팀 검토를 거쳐 선행 병합됩니다.
-2. PR #40 병합 직후, 본 PR #42(`a02/build-15-release-freeze`)의 베이스 브랜치가 최신화되며 최종 병합 절차를 진행합니다.
-3. 모든 PR은 GitHub Actions CI 3개 작업(FastAPI backend-test, Next.js web-test-and-build, Playwright e2e-smoke-test) 통과가 필수 선행 조건입니다.
+### 6.2 타 에이전트 PR 현황 및 충돌 분석 (Conflict Analysis)
+- **A03 PR #11 (`[A03][Visual] White FAB ONE hi-fi prototype, emerald asset slots & EKL (#9)`)**:
+  - 브랜치: `a03/issue-9-white-emerald-visual` → `main` (OPEN / unmerged).
+  - 내용: 화이트/에메랄드 비주얼 프로토타입 및 EKL L3 인터랙션 디자인.
+  - 충돌 가능성: **파일별 실제 비교 전 미확인 (Unverified before actual diff)**. CSS/스타일 토큰 및 EKL 컴포넌트 마크업 영역에서 잠재적 오버랩이 존재할 수 있으므로, A01/오너 검토 전 임의로 충돌이 없다고 단정하지 않습니다.
+- **A02/ARCH PR #10 (`[A02][ARCH] Local-first 기술 검토 · 도메인 데이터 계약 · 시뮬레이션 재현성 (#8)`)**:
+  - 브랜치: `a02/issue-8-architecture-contracts` → `main` (OPEN / unmerged).
+  - 내용: Local-first 아키텍처 기술 검토 및 도메인 데이터 계약 문서.
+  - 충돌 가능성: **파일별 실제 비교 전 미확인 (Unverified before actual diff)**. 도메인 계약 및 타입 정의 변경 사항의 일치성을 향후 통합 단계에서 정밀 대조해야 합니다.
 
-### 6.3 A03(PR #11) 및 A06(PR #10)과의 충돌 분석 (Conflict Analysis)
-- **A03 PR #11 (머신러닝/데이터 파이프라인 분석)**:
-  - 작업 영역: `services/analytics/` 또는 독립된 ML 스크립트 디렉토리.
-  - 충돌 가능성: **없음 (Zero Conflict)**. 본 A02 작업은 `apps/web/` 및 `services/api/`에 국한되어 있으며, 공통 인터페이스 변경 없이 완전히 분리된 워크트리에서 작업되었습니다.
-- **A06 PR #10 (CI/CD 인프라 및 전역 문서화)**:
-  - 작업 영역: 루트 워크플로우 또는 전역 인프라 설정.
-  - 충돌 가능성: **최소 (Minimal/Isolated)**. `.github/workflows/ci.yml`의 테스트 카운트 주석 갱신 외에는 파일 충돌 요소가 없으며, 깃 계통상 완벽히 직교(Orthogonal)합니다.
+### 6.3 병합 및 롤백 제안 사항 (Governance & Proposals)
+> **[중요 원칙]**
+> 아래 병합 순서, 베이스 리타겟 및 롤백 전략은 기술적 제안(Proposal) 사항이며, **A01 기획 에이전트 및 리포지토리 오너의 명시적 승인 없이 통합 조작(merge, rebase, retarget, deploy 등)을 독단적으로 실행하지 않습니다.**
 
-### 6.4 롤백 전략 (Rollback Strategy)
-- 통합 또는 스테이징 배포 중 예상치 못한 치명적 결함이 발생할 경우:
-  1. 본 브랜치 `a02/build-15-release-freeze`의 변경사항을 즉시 롤백하고, 검증 완료된 직전 안정 베이스 커밋(`b6e44a225f99cfcc54b41efc383a944cbc79ce1a`, PR #40 HEAD)으로 복귀합니다.
-  2. Git CLI 롤백 명령어:
-     ```bash
-     git checkout a02/build-14-demo-release-candidate
-     git checkout -b rollback/build-15-hotfix
-     ```
-  3. Casebook 데이터는 `schemaVersion: 1` 하위 호환성을 유지하므로, 롤백 시에도 사용자의 기존 로컬 저장소 데이터 유실 없이 정상 작동합니다.
+1. **병합 제안 순서 (Proposed Linear Merge Order)**:
+   - #15 → #16 → #18 → #20 → #22 → #25 → #27 → #29 → #31 → #33 → #36 → #38 → #40 → #42 순차적 병합 및 베이스 리타겟.
+   - 선행 PR 병합 후 직후 PR의 베이스를 갱신하며 CI 3개 작업 통과 확인.
+2. **롤백 제안 전략 (Proposed Rollback Strategy)**:
+   - 통합 또는 스테이징 배포 중 치명적 결함 발생 시, 베이스 커밋(`b6e44a225f99cfcc54b41efc383a944cbc79ce1a`, PR #40 HEAD)으로 롤백 브랜치를 분기하여 안전하게 복귀.
+   - Casebook 데이터는 `schemaVersion: 1` 규격을 엄격 준수하므로 롤백 시에도 기존 사용자 저장 데이터와의 구조적 호환성이 보장됩니다.

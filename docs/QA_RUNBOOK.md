@@ -326,15 +326,16 @@ BUILD-14는 FAB ONE 데모 릴리즈 캔디데이트(Release Candidate) 완성 �
 
 ## 13. BUILD-15: Release Freeze & Full-Journey Proof (최종 대형 안정화 및 릴리즈 프리즈)
 
-BUILD-15는 FAB ONE 데모 플랫폼의 신규 기능 개발을 공식 동결(Feature Freeze)하고, 실시간 연동 조사(Mode B) 전체 7개 화면 사용자 여정 검증, Casebook의 완벽한 계통성 격리(Full Lineage Isolation), v1 엄격 스키마 무결성, 그리고 최종 통합 준비를 완료한 릴리즈 프리즈 단계입니다.
+BUILD-15는 FAB ONE 데모 플랫폼의 신규 기능 개발을 공식 동결(Feature Freeze)하고, 실시간 연동 조사(Mode B) 전체 7개 화면 사용자 여정 검증, Casebook의 완벽한 8대 계통성 격리(Full 8-Attribute Lineage Isolation), v1 엄격 스키마 무결성, 실제 파일 인풋 기반의 E2E 예외 검증, 그리고 최종 통합 준비를 완료한 릴리즈 프리즈 단계입니다.
 
 ### 13.1 Workstream A: P0 완전 계통성 격리 & 엄격 v1 스키마 무결성 (Lineage Isolation & Schema Invariants)
-1. **완전 계통성 일치 검증 (`isExactLineageMatch`):**
-   - 단순 `mode`와 `runId` 비교를 넘어, 7개 계통 속성(`mode`, `runId`, `alertId`, `sessionId`, `lotId`, `equipmentId`, `chamberId`)이 100% 일치할 때만 동일 활성 케이스로 인정(`isExactLineageMatch === true`)합니다.
-   - 동일 `runId`이더라도 `alertId`나 `sessionId`가 상이한 과거 케이스북 레코드 로드 시, 활성 워크스페이스 에디터 수정을 원천 차단하고 읽기 전용 모달(`#ws-historical-case-modal`)로 완전 격리하여 작성 중인 가설/조치/메모 오염을 방지합니다.
-   - 읽기 전용 모달 내 명확한 안내 배너(`"데이터 격리 안전 보호"`, Run/Alert/Session 계통 정보)를 표시하고, `#ws-btn-close-historical-case` 및 `#ws-btn-return-active-workspace`를 통한 안전한 복귀를 보장합니다.
+1. **엄격 8대 계통성 일치 검증 (`isExactLineageMatch`):**
+   - 단순 `mode`와 `runId` 비교를 넘어, 8개 전체 계통 속성(`mode`, `runId`, `alertId`, `sessionId`, `lotId`, `equipmentId`, `chamberId`, `dataOrigin`)이 모두 유효한 비어있지 않은 문자열(non-empty string)이고 100% 일치할 때만 동일 활성 케이스로 인정(`isExactLineageMatch === true`)합니다.
+   - 단 하나의 필드라도 누락되거나 빈 문자열이거나 값이 불일치할 경우 즉시 불일치(`false`)로 판정하는 Fail-Closed 방식을 강제하여, 과거 레코드 로드 시 활성 워크스페이스 에디터 수정을 원천 차단하고 읽기 전용 모달(`#ws-historical-case-modal`)로 완전 격리합니다.
+   - 읽기 전용 모달 내 명확한 안내 배너(`"데이터 격리 안전 보호"`, Run/Alert/Session/DataOrigin 계통 정보)를 표시하고, 하단에 본 데이터 출처(`dataOrigin`)가 FastAPI 합성 시뮬레이션 데모 라우트이며 실제 팹 물리 MES/챔버 제어가 아님을 명시하는 안전 고지 문구를 렌더링합니다. `#ws-btn-close-historical-case` 및 `#ws-btn-return-active-workspace`를 통한 안전한 복귀를 보장합니다.
 2. **엄격 v1 스키마 유효성 검증 (`isValidCasebookRecord`):**
    - `schemaVersion === 1` 필수 필드 강제 검증.
+   - 비어있지 않은 `sessionId`, 유효한 `dataOrigin` (`'synthetic' | 'live_api'`), 정수형 `seed`, 유효한 케이스 상태 enum (`'DRAFT' | 'REVIEWED' | 'DISPOSITIONED'`) 필수 검증.
    - 중첩 가설(`hypotheses`) 및 조치(`actions`) 배열의 각 항목에 대한 엄격한 필드 및 enum (`status`: `UNVERIFIED`, `SUPPORTED_FOR_REVIEW`, `NEEDS_MORE_DATA`, `RULED_OUT` 등) 유효성 검증.
    - 문자열 길이 상한선(ID ≤ 100자, 제목 ≤ 200자, 메모 ≤ 5,000자, Markdown 내용 ≤ 50,000자) 적용으로 메모리 고갈 및 DoS 방지.
 3. **안전한 백업 가져오기 및 저장소 보호 (`validateAndImportCasebookRecords`, `saveCasebookRecordToStorage`):**
@@ -344,18 +345,23 @@ BUILD-15는 FAB ONE 데모 플랫폼의 신규 기능 개발을 공식 동결(Fe
 
 ### 13.2 Workstream B: P1 7개 화면 연속 사용자 여정 및 반례 검증 (Real 7-Screen Journey Proof)
 1. **연속 7개 화면 실제 브라우저 여정 검증 (E2E Test 1):**
-   - 홈(`/`) `#hero-live-connected-card` -> 커맨드 센터 (`#cc-run-id-badge`) -> 설비 인텔리전스 (T7 챔버 압력/RF 파워 일탈 확인, `#ei-run-id-badge`) -> 웨이퍼 추적성 (`W-08` 노출 후보군 확인) -> 엔지니어링 워크스페이스 (증거 링크, 가설/조치/메모 편집, Markdown 보고서 내보내기, Casebook 저장) -> Casebook 탭 (저장된 레코드 확인) -> 과거 공정 Run 아카이브 스냅샷 뷰어 (`GET /api/v1/demo/runs/{run_id}`)까지 단절 없는 실시간 연속 흐름 완주.
+   - 홈(`/`) `#hero-live-connected-card` -> 커맨드 센터 (`#cc-run-id-badge`) -> 설비 인텔리전스 (T7 챔버 압력/RF 파워 일탈 확인, `#ei-run-id-badge`) -> 웨이퍼 추적성 (`/traceability`, `W-08` 노출 후보군 확인) -> 엔지니어링 워크스페이스 (증거 링크, 가설/조치/메모 편집, Markdown 보고서 내보내기, Casebook 저장) -> Casebook 탭 (저장된 레코드 확인) -> 과거 공정 Run 아카이브 스냅샷 뷰어 (`GET /api/v1/demo/runs/{run_id}`, `#ws-btn-open-historical-run` 클릭 후 `#ws-historical-run-panel` 확인 및 `#ws-btn-return-active-run` 복귀)까지 단절 없는 실시간 7화면 연속 흐름 완주.
 2. **계통성 분리 반례 검증 (E2E Test 7):**
-   - 동일 `runId`를 공유하지만 다른 `alertId`/`sessionId`를 가진 과거 케이스북 레코드를 로드할 때 활성 에디터 오염 없이 `#ws-historical-case-modal`로 격리 표시되고 현재 작성 메모가 보존됨을 검증.
-3. **엄격 v1 스키마 손상 백업 거부 반례 검증 (E2E Test 8):**
-   - 손상된 JSON, `schemaVersion` 누락, 가설/조치 필드 결함 데이터 가져오기 시 유효한 레코드만 선별 로드되고 오염 데이터는 차단됨을 검증.
+   - 동일 `runId`를 공유하지만 다른 `alertId`를 가진 과거 케이스북 레코드 로드 시 에디터 오염 없이 `#ws-historical-case-modal`로 격리 및 활성 메모 보존 검증.
+   - `sessionId`가 누락된 과거 레코드 로드 시 8대 계통성 검사 우회 불가 반례 검증 (모달 격리 확인).
+   - 상이한 `dataOrigin` (`mock_catalog` vs `live_api`)을 가진 과거 레코드 로드 시 격리 반례 검증.
+3. **실제 UI 파일 인풋 기반 손상 백업 거부 검증 (E2E Test 8):**
+   - 실제 브라우저 파일 업로드 인풋(`#ws-input-import-casebook-json`)에 `page.setInputFiles(...)`를 직접 호출하여 실제 E2E 파일 파싱/검증 트리거.
+   - 손상된 JSON 구문 파일 업로드 시 `#ws-casebook-error-banner` 표시 및 기존 저장소 불변 검증.
+   - 500KB 초과 대용량 파일 업로드 시 용량 초과 에러 배너 및 저장소 불변 검증.
+   - 중첩 가설 status enum 위조 파일 업로드 시 거부 배너 및 저장소 불변 검증.
 
 ### 13.3 Workstream C: P1 릴리즈 프리즈 & 통합 검증 매트릭스 (Release Freeze)
 1. **FastAPI 백엔드 단위 테스트 (16/16 PASS):**
    - `python3 -m unittest services/api/tests/test_api.py` (전체 16건 무결격 통과)
 2. **웹 단위 및 계약 테스트 (93/93 PASS):**
-   - `npm test` in `apps/web` (신규 BUILD-15 (a)~(e) 5건 계약 테스트 추가 및 전체 93건 통과)
-     - (a) Strict Lineage Isolation & `isExactLineageMatch` Contract
+   - `npm test` in `apps/web` (전체 93건 통과)
+     - (a) Strict 8-Attribute Lineage Isolation & `isExactLineageMatch` Contract
      - (b) Strict Schema v1 Validation & Invariant Enclosure Contract
      - (c) Payload Limit, Max Records & Backup Import Sanitization Contract
      - (d) LocalStorage Quota Failure & Error Handling Contract
@@ -367,4 +373,5 @@ BUILD-15는 FAB ONE 데모 플랫폼의 신규 기능 개발을 공식 동결(Fe
 5. **동결 및 QA 전환 상태 선언:**
    - 본 BUILD-15 이후 모든 신규 기능 개발은 동결(Feature Freeze)되며, 최종 QA 단계로 전환됩니다.
    - A04 독립 QA는 `NOT_RUN` 상태를 유지하며, PR은 검토용 Draft 및 미병합(Open) 상태를 유지합니다.
+
 

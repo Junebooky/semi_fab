@@ -4609,16 +4609,30 @@ test('BUILD-15 (a) Complete Lineage Validation & isExactLineageMatch Contract', 
   );
 
   assert.ok(contextSource.includes('function isExactLineageMatch('), 'Must export isExactLineageMatch');
+  assert.ok(contextSource.includes('expectedDataOrigin'), 'Must check expectedDataOrigin');
 
   function isExactLineageMatch(record, currentContext) {
     if (!record || typeof record !== 'object') return false;
     if (record.mode !== currentContext.mode) return false;
-    if (!record.runId || !currentContext.runId || record.runId.trim() !== currentContext.runId.trim()) return false;
-    if (!record.alertId || !currentContext.alertId || record.alertId.trim() !== currentContext.alertId.trim()) return false;
-    if (record.sessionId && currentContext.sessionId && record.sessionId.trim() !== currentContext.sessionId.trim()) return false;
-    if (record.lotId && currentContext.lotId && record.lotId.trim() !== currentContext.lotId.trim()) return false;
-    if (record.equipmentId && currentContext.equipmentId && record.equipmentId.trim() !== currentContext.equipmentId.trim()) return false;
-    if (record.chamberId && currentContext.chamberId && record.chamberId.trim() !== currentContext.chamberId.trim()) return false;
+
+    const expectedDataOrigin = currentContext.dataOrigin || (currentContext.mode === 'B' ? 'live_api' : 'synthetic');
+
+    const isStrictMatch = (a, b) => {
+      if (typeof a !== 'string' || typeof b !== 'string') return false;
+      const trimmedA = a.trim();
+      const trimmedB = b.trim();
+      if (trimmedA.length === 0 || trimmedB.length === 0) return false;
+      return trimmedA === trimmedB;
+    };
+
+    if (!isStrictMatch(record.runId, currentContext.runId)) return false;
+    if (!isStrictMatch(record.alertId, currentContext.alertId)) return false;
+    if (!isStrictMatch(record.sessionId, currentContext.sessionId)) return false;
+    if (!isStrictMatch(record.lotId, currentContext.lotId)) return false;
+    if (!isStrictMatch(record.equipmentId, currentContext.equipmentId)) return false;
+    if (!isStrictMatch(record.chamberId, currentContext.chamberId)) return false;
+    if (!isStrictMatch(record.dataOrigin, expectedDataOrigin)) return false;
+
     return true;
   }
 
@@ -4632,6 +4646,7 @@ test('BUILD-15 (a) Complete Lineage Validation & isExactLineageMatch Contract', 
     lotId: 'LOT-DEMO-815',
     equipmentId: 'ETCH-02',
     chamberId: 'CH-B',
+    dataOrigin: 'live_api',
   };
 
   const activeContext = {
@@ -4642,33 +4657,60 @@ test('BUILD-15 (a) Complete Lineage Validation & isExactLineageMatch Contract', 
     lotId: 'LOT-DEMO-815',
     equipmentId: 'ETCH-02',
     chamberId: 'CH-B',
+    dataOrigin: 'live_api',
   };
 
-  // 1. Exact match
+  // 1. Exact match with all 8 non-empty attributes
   assert.equal(isExactLineageMatch(baseRecord, activeContext), true, 'Exact match must pass');
 
-  // 2. Mismatched alertId (same runId) -> must be rejected
+  // 2. Missing or empty sessionId on record -> must be rejected (no bypass)
+  assert.equal(
+    isExactLineageMatch({ ...baseRecord, sessionId: undefined }, activeContext),
+    false,
+    'Missing sessionId on record must fail exact lineage match'
+  );
+  assert.equal(
+    isExactLineageMatch({ ...baseRecord, sessionId: '   ' }, activeContext),
+    false,
+    'Whitespace sessionId on record must fail exact lineage match'
+  );
+
+  // 3. Missing sessionId on activeContext -> must be rejected
+  assert.equal(
+    isExactLineageMatch(baseRecord, { ...activeContext, sessionId: undefined }),
+    false,
+    'Missing sessionId on active context must fail exact lineage match'
+  );
+
+  // 4. Disparate dataOrigin (e.g. mock_catalog vs live_api) -> must be rejected
+  assert.equal(
+    isExactLineageMatch({ ...baseRecord, dataOrigin: 'mock_catalog' }, activeContext),
+    false,
+    'Disparate dataOrigin must fail exact lineage match'
+  );
+
+  // 5. Mismatched alertId (same runId) -> must be rejected
   assert.equal(
     isExactLineageMatch(baseRecord, { ...activeContext, alertId: 'AL-DEMO-016' }),
     false,
     'Different alertId on same runId must fail exact lineage match'
   );
 
-  // 3. Mismatched sessionId -> must be rejected
+  // 6. Mismatched sessionId -> must be rejected
   assert.equal(
     isExactLineageMatch(baseRecord, { ...activeContext, sessionId: 'SESS-OTHER' }),
     false,
     'Different sessionId must fail exact lineage match'
   );
 
-  // 4. Mismatched mode -> must be rejected
+  // 7. Mismatched mode -> must be rejected
   assert.equal(
     isExactLineageMatch(baseRecord, { ...activeContext, mode: 'A' }),
     false,
     'Different mode must fail exact lineage match'
   );
 
-  // 5. Mismatched runId -> must be rejected
+  // 8. Mismatched runId -> must be rejected
   assert.equal(
     isExactLineageMatch(baseRecord, { ...activeContext, runId: 'RUN-DIFFERENT' }),
     false,
@@ -4683,6 +4725,8 @@ test('BUILD-15 (b) Strict Casebook Schema v1 & Missing Version Rejection Contrac
   );
 
   assert.ok(contextSource.includes('item.schemaVersion !== 1'), 'Must strictly require schemaVersion === 1');
+  assert.ok(contextSource.includes('typeof item.sessionId !== \'string\''), 'Must strictly validate sessionId');
+  assert.ok(contextSource.includes('typeof item.dataOrigin !== \'string\''), 'Must strictly validate dataOrigin');
 
   function isValidCasebookRecord(item) {
     if (!item || typeof item !== 'object') return false;
@@ -4690,11 +4734,15 @@ test('BUILD-15 (b) Strict Casebook Schema v1 & Missing Version Rejection Contrac
     if (typeof item.id !== 'string' || item.id.trim().length === 0 || item.id.length > 128) return false;
     if (typeof item.runId !== 'string' || item.runId.trim().length === 0 || item.runId.length > 64) return false;
     if (typeof item.alertId !== 'string' || item.alertId.trim().length === 0 || item.alertId.length > 64) return false;
+    if (typeof item.sessionId !== 'string' || item.sessionId.trim().length === 0 || item.sessionId.length > 128) return false;
     if (typeof item.lotId !== 'string' || item.lotId.trim().length === 0 || item.lotId.length > 64) return false;
     if (typeof item.equipmentId !== 'string' || item.equipmentId.trim().length === 0 || item.equipmentId.length > 64) return false;
     if (typeof item.chamberId !== 'string' || item.chamberId.trim().length === 0 || item.chamberId.length > 64) return false;
     if (item.mode !== 'A' && item.mode !== 'B') return false;
     if (typeof item.savedAtUtc !== 'string' || isNaN(Date.parse(item.savedAtUtc))) return false;
+    if (typeof item.dataOrigin !== 'string' || !['synthetic', 'live_api'].includes(item.dataOrigin)) return false;
+    if (item.seed === undefined || item.seed === null || !Number.isInteger(Number(item.seed)) || Number(item.seed) < 0 || Number(item.seed) > 2147483647) return false;
+    if (typeof item.status !== 'string' || !['DRAFT', 'REVIEWED', 'DISPOSITIONED'].includes(item.status)) return false;
     if (!Array.isArray(item.hypotheses) || item.hypotheses.length > 50) return false;
     if (!Array.isArray(item.actions) || item.actions.length > 50) return false;
     if (typeof item.userNotes !== 'string' || item.userNotes.length > 5000) return false;
@@ -4705,11 +4753,15 @@ test('BUILD-15 (b) Strict Casebook Schema v1 & Missing Version Rejection Contrac
     schemaVersion: 1,
     id: 'CASE-001',
     runId: 'RUN-001',
+    sessionId: 'SES-001',
     alertId: 'AL-001',
     lotId: 'LOT-001',
     equipmentId: 'ETCH-02',
     chamberId: 'CH-B',
     mode: 'B',
+    dataOrigin: 'live_api',
+    seed: 20261016,
+    status: 'REVIEWED',
     savedAtUtc: new Date().toISOString(),
     hypotheses: [],
     actions: [],
@@ -4719,6 +4771,12 @@ test('BUILD-15 (b) Strict Casebook Schema v1 & Missing Version Rejection Contrac
   assert.equal(isValidCasebookRecord(validSample), true, 'Valid sample passes');
   assert.equal(isValidCasebookRecord({ ...validSample, schemaVersion: undefined }), false, 'Missing schemaVersion must fail');
   assert.equal(isValidCasebookRecord({ ...validSample, schemaVersion: 2 }), false, 'Unsupported schemaVersion must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, sessionId: undefined }), false, 'Missing sessionId must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, sessionId: '   ' }), false, 'Empty sessionId must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, dataOrigin: undefined }), false, 'Missing dataOrigin must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, dataOrigin: 'physical_fab' }), false, 'Invalid dataOrigin must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, seed: undefined }), false, 'Missing seed must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, status: undefined }), false, 'Missing status must fail');
   assert.equal(isValidCasebookRecord({ ...validSample, userNotes: 'x'.repeat(5001) }), false, 'Exceeded notes must fail');
 });
 

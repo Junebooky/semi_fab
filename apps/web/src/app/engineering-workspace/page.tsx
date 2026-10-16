@@ -799,6 +799,7 @@ function EngineeringWorkspaceContent() {
         lotId,
         equipmentId,
         chamberId,
+        dataOrigin: mode === 'B' ? 'live_api' : 'synthetic',
       });
 
       if (isExactMatch) {
@@ -2119,6 +2120,7 @@ function EngineeringWorkspaceContent() {
                       lotId,
                       equipmentId,
                       chamberId,
+                      dataOrigin: mode === 'B' ? 'live_api' : 'synthetic',
                     });
                     return (
                       <div
@@ -2600,8 +2602,8 @@ function EngineeringWorkspaceContent() {
                 }}
               >
                 🔒 <strong>데이터 격리 안전 보호:</strong> 본 기록은 과거 조사 컨텍스트 (
-                Run: <strong>{historicalCaseRecord.runId}</strong>, Alert: <strong>{historicalCaseRecord.alertId}</strong>{historicalCaseRecord.sessionId ? `, Session: ${historicalCaseRecord.sessionId}` : ''}) 저장본입니다. 현재 활성 조사 (
-                Run: <strong>{runId}</strong>, Alert: <strong>{alertId}</strong>)의 워크스페이스 편집기를 덮어쓰지 않고 독립적으로 안전하게 열람 중입니다.
+                Run: <strong>{historicalCaseRecord.runId}</strong>, Alert: <strong>{historicalCaseRecord.alertId}</strong>, Session: <strong>{historicalCaseRecord.sessionId || '미지정'}</strong>, Origin: <strong>{historicalCaseRecord.dataOrigin || '미지정'}</strong>) 저장본입니다. 현재 활성 조사 (
+                Run: <strong>{runId}</strong>, Alert: <strong>{alertId}</strong>, Session: <strong>{sessionId}</strong>)와 8개 계통 속성이 100% 일치하지 않으므로 활성 워크스페이스 편집기를 덮어쓰지 않고 독립된 읽기 전용 모달로 안전하게 열람 중입니다. (출처 고지: {historicalCaseRecord.dataOrigin === 'live_api' ? 'FastAPI 합성 연동 경로 (합성 데이터)' : '합성 시뮬레이션 카탈로그'} · 실제 생산 FAB MES 제어가 아님)
               </div>
 
               {/* Modal Body */}
@@ -2623,6 +2625,12 @@ function EngineeringWorkspaceContent() {
                   </div>
                   <div>
                     <span style={{ color: "#64748B" }}>Alert ID:</span> <strong>{historicalCaseRecord.alertId}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>Session ID:</span> <strong>{historicalCaseRecord.sessionId || '미지정 (과거 레코드)'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>데이터 출처:</span> <strong>{historicalCaseRecord.dataOrigin === 'live_api' ? 'FastAPI 합성 연동 (Live API)' : '합성 카탈로그 (Synthetic)'}</strong>
                   </div>
                   <div>
                     <span style={{ color: "#64748B" }}>Mode:</span> <strong>{historicalCaseRecord.mode === "B" ? "Mode B (Connected)" : "Mode A (Guided)"}</strong>
