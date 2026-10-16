@@ -370,7 +370,7 @@ function EquipmentIntelligenceContent() {
           >
             {mode === 'A' ? 'Mode A (오프라인 합성 시뮬레이션)' : 'Mode B (FastAPI 연동)'}
           </span>
-          <span className="pill" style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE' }}>
+          <span id="ei-run-id-badge" className="pill" style={{ background: '#EFF6FF', color: '#1D4ED8', borderColor: '#BFDBFE' }}>
             Run: {activeRunId || '미가동'}
           </span>
           <span className="pill" style={{ background: '#F8FAFC', color: '#475569', borderColor: '#CBD5E1' }}>

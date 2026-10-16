@@ -4596,7 +4596,237 @@ test('BUILD-14 (g) Release Candidate Portfolio UI, Dual-Card Demo Chooser & Focu
   assert.ok(homePageSource.includes('id="btn-start-live-connected-case"'), 'Home must define #btn-start-live-connected-case');
 
   // 2. Release candidate branding
-  assert.ok(wsPageSource.includes('BUILD-14 Release Candidate'), 'Workspace must declare BUILD-14 Release Candidate in header');
+  assert.ok(
+    wsPageSource.includes('BUILD-14 Release Candidate') || wsPageSource.includes('BUILD-15 Release Freeze'),
+    'Workspace must declare release status in header'
+  );
+});
+
+test('BUILD-15 (a) Complete Lineage Validation & isExactLineageMatch Contract', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(contextSource.includes('function isExactLineageMatch('), 'Must export isExactLineageMatch');
+  assert.ok(contextSource.includes('expectedDataOrigin'), 'Must check expectedDataOrigin');
+
+  function isExactLineageMatch(record, currentContext) {
+    if (!record || typeof record !== 'object') return false;
+    if (record.mode !== currentContext.mode) return false;
+
+    const expectedDataOrigin = currentContext.dataOrigin || (currentContext.mode === 'B' ? 'live_api' : 'synthetic');
+
+    const isStrictMatch = (a, b) => {
+      if (typeof a !== 'string' || typeof b !== 'string') return false;
+      const trimmedA = a.trim();
+      const trimmedB = b.trim();
+      if (trimmedA.length === 0 || trimmedB.length === 0) return false;
+      return trimmedA === trimmedB;
+    };
+
+    if (!isStrictMatch(record.runId, currentContext.runId)) return false;
+    if (!isStrictMatch(record.alertId, currentContext.alertId)) return false;
+    if (!isStrictMatch(record.sessionId, currentContext.sessionId)) return false;
+    if (!isStrictMatch(record.lotId, currentContext.lotId)) return false;
+    if (!isStrictMatch(record.equipmentId, currentContext.equipmentId)) return false;
+    if (!isStrictMatch(record.chamberId, currentContext.chamberId)) return false;
+    if (!isStrictMatch(record.dataOrigin, expectedDataOrigin)) return false;
+
+    return true;
+  }
+
+  const baseRecord = {
+    schemaVersion: 1,
+    id: 'CASE-001',
+    mode: 'B',
+    runId: 'RUN-20261016-001',
+    alertId: 'AL-DEMO-015',
+    sessionId: 'SESS-001',
+    lotId: 'LOT-DEMO-815',
+    equipmentId: 'ETCH-02',
+    chamberId: 'CH-B',
+    dataOrigin: 'live_api',
+  };
+
+  const activeContext = {
+    mode: 'B',
+    runId: 'RUN-20261016-001',
+    alertId: 'AL-DEMO-015',
+    sessionId: 'SESS-001',
+    lotId: 'LOT-DEMO-815',
+    equipmentId: 'ETCH-02',
+    chamberId: 'CH-B',
+    dataOrigin: 'live_api',
+  };
+
+  // 1. Exact match with all 8 non-empty attributes
+  assert.equal(isExactLineageMatch(baseRecord, activeContext), true, 'Exact match must pass');
+
+  // 2. Missing or empty sessionId on record -> must be rejected (no bypass)
+  assert.equal(
+    isExactLineageMatch({ ...baseRecord, sessionId: undefined }, activeContext),
+    false,
+    'Missing sessionId on record must fail exact lineage match'
+  );
+  assert.equal(
+    isExactLineageMatch({ ...baseRecord, sessionId: '   ' }, activeContext),
+    false,
+    'Whitespace sessionId on record must fail exact lineage match'
+  );
+
+  // 3. Missing sessionId on activeContext -> must be rejected
+  assert.equal(
+    isExactLineageMatch(baseRecord, { ...activeContext, sessionId: undefined }),
+    false,
+    'Missing sessionId on active context must fail exact lineage match'
+  );
+
+  // 4. Disparate dataOrigin (e.g. mock_catalog vs live_api) -> must be rejected
+  assert.equal(
+    isExactLineageMatch({ ...baseRecord, dataOrigin: 'mock_catalog' }, activeContext),
+    false,
+    'Disparate dataOrigin must fail exact lineage match'
+  );
+
+  // 5. Mismatched alertId (same runId) -> must be rejected
+  assert.equal(
+    isExactLineageMatch(baseRecord, { ...activeContext, alertId: 'AL-DEMO-016' }),
+    false,
+    'Different alertId on same runId must fail exact lineage match'
+  );
+
+  // 6. Mismatched sessionId -> must be rejected
+  assert.equal(
+    isExactLineageMatch(baseRecord, { ...activeContext, sessionId: 'SESS-OTHER' }),
+    false,
+    'Different sessionId must fail exact lineage match'
+  );
+
+  // 7. Mismatched mode -> must be rejected
+  assert.equal(
+    isExactLineageMatch(baseRecord, { ...activeContext, mode: 'A' }),
+    false,
+    'Different mode must fail exact lineage match'
+  );
+
+  // 8. Mismatched runId -> must be rejected
+  assert.equal(
+    isExactLineageMatch(baseRecord, { ...activeContext, runId: 'RUN-DIFFERENT' }),
+    false,
+    'Different runId must fail exact lineage match'
+  );
+});
+
+test('BUILD-15 (b) Strict Casebook Schema v1 & Missing Version Rejection Contract', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(contextSource.includes('item.schemaVersion !== 1'), 'Must strictly require schemaVersion === 1');
+  assert.ok(contextSource.includes('typeof item.sessionId !== \'string\''), 'Must strictly validate sessionId');
+  assert.ok(contextSource.includes('typeof item.dataOrigin !== \'string\''), 'Must strictly validate dataOrigin');
+
+  function isValidCasebookRecord(item) {
+    if (!item || typeof item !== 'object') return false;
+    if (item.schemaVersion !== 1) return false;
+    if (typeof item.id !== 'string' || item.id.trim().length === 0 || item.id.length > 128) return false;
+    if (typeof item.runId !== 'string' || item.runId.trim().length === 0 || item.runId.length > 64) return false;
+    if (typeof item.alertId !== 'string' || item.alertId.trim().length === 0 || item.alertId.length > 64) return false;
+    if (typeof item.sessionId !== 'string' || item.sessionId.trim().length === 0 || item.sessionId.length > 128) return false;
+    if (typeof item.lotId !== 'string' || item.lotId.trim().length === 0 || item.lotId.length > 64) return false;
+    if (typeof item.equipmentId !== 'string' || item.equipmentId.trim().length === 0 || item.equipmentId.length > 64) return false;
+    if (typeof item.chamberId !== 'string' || item.chamberId.trim().length === 0 || item.chamberId.length > 64) return false;
+    if (item.mode !== 'A' && item.mode !== 'B') return false;
+    if (typeof item.savedAtUtc !== 'string' || isNaN(Date.parse(item.savedAtUtc))) return false;
+    if (typeof item.dataOrigin !== 'string' || !['synthetic', 'live_api'].includes(item.dataOrigin)) return false;
+    if (item.seed === undefined || item.seed === null || !Number.isInteger(Number(item.seed)) || Number(item.seed) < 0 || Number(item.seed) > 2147483647) return false;
+    if (typeof item.status !== 'string' || !['DRAFT', 'REVIEWED', 'DISPOSITIONED'].includes(item.status)) return false;
+    if (!Array.isArray(item.hypotheses) || item.hypotheses.length > 50) return false;
+    if (!Array.isArray(item.actions) || item.actions.length > 50) return false;
+    if (typeof item.userNotes !== 'string' || item.userNotes.length > 5000) return false;
+    return true;
+  }
+
+  const validSample = {
+    schemaVersion: 1,
+    id: 'CASE-001',
+    runId: 'RUN-001',
+    sessionId: 'SES-001',
+    alertId: 'AL-001',
+    lotId: 'LOT-001',
+    equipmentId: 'ETCH-02',
+    chamberId: 'CH-B',
+    mode: 'B',
+    dataOrigin: 'live_api',
+    seed: 20261016,
+    status: 'REVIEWED',
+    savedAtUtc: new Date().toISOString(),
+    hypotheses: [],
+    actions: [],
+    userNotes: 'Normal notes',
+  };
+
+  assert.equal(isValidCasebookRecord(validSample), true, 'Valid sample passes');
+  assert.equal(isValidCasebookRecord({ ...validSample, schemaVersion: undefined }), false, 'Missing schemaVersion must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, schemaVersion: 2 }), false, 'Unsupported schemaVersion must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, sessionId: undefined }), false, 'Missing sessionId must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, sessionId: '   ' }), false, 'Empty sessionId must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, dataOrigin: undefined }), false, 'Missing dataOrigin must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, dataOrigin: 'physical_fab' }), false, 'Invalid dataOrigin must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, seed: undefined }), false, 'Missing seed must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, status: undefined }), false, 'Missing status must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, userNotes: 'x'.repeat(5001) }), false, 'Exceeded notes must fail');
+});
+
+test('BUILD-15 (c) Import Size Bounds & Records Limit Contract', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(contextSource.includes('rawJson.length > 500000'), 'Must enforce 500KB JSON payload limit');
+  assert.ok(contextSource.includes('parsed.length > 100'), 'Must enforce 100 records limit per import');
+  assert.ok(contextSource.includes('PAYLOAD_TOO_LARGE'), 'Must return PAYLOAD_TOO_LARGE error');
+  assert.ok(contextSource.includes('TOO_MANY_RECORDS'), 'Must return TOO_MANY_RECORDS error');
+});
+
+test('BUILD-15 (d) Markdown Table & Cell Escaping Contract (Newline to <br/>)', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  function escapeMarkdownTableAndNotes(text) {
+    if (!text) return '';
+    return text
+      .replace(/\|/g, '\\|')
+      .replace(/\r\n/g, '<br/>')
+      .replace(/\n/g, '<br/>')
+      .replace(/\r/g, '<br/>');
+  }
+
+  const raw = '센서 일탈 A | 센서 일탈 B\n2행 메모\r\n3행 메모\r4행 메모';
+  const res = escapeMarkdownTableAndNotes(raw);
+
+  assert.ok(res.includes('\\|'), 'Pipes must be escaped');
+  assert.ok(!res.includes(' | '), 'Raw pipes must not remain');
+  assert.ok(res.includes('<br/>'), 'Newlines must be converted to <br/>');
+  assert.ok(!res.includes('\n'), 'No raw newline remaining');
+  assert.ok(!res.includes('\r'), 'No raw carriage return remaining');
+});
+
+test('BUILD-15 (e) Workspace Lineage Isolation UI Invariants Contract', () => {
+  const wsSource = readFileSync(
+    new URL('../src/app/engineering-workspace/page.tsx', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(wsSource.includes('isExactLineageMatch'), 'Workspace must use isExactLineageMatch');
+  assert.ok(wsSource.includes('BUILD-15 Release Freeze'), 'Workspace header must declare BUILD-15 Release Freeze');
+  assert.ok(wsSource.includes('상세 열람 (Read-Only) 👁'), 'Must render Read-Only button for mismatched lineage');
+  assert.ok(wsSource.includes('동일 Run 에디터로 불러오기 ↩'), 'Must render active run load button for matching lineage');
 });
 
 
