@@ -1029,116 +1029,127 @@ function FabOneDemoContent() {
           </div>
         </section>
 
-        {/* Interactive Playback Control Bar */}
-        <section className="control-bar-card" aria-label="데모 조작 제어판">
-          <div className="playback-controls">
-            <button
-              type="button"
-              id="btn-start-demo"
-              className="btn-primary"
-              onClick={handleStartDemo}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
-              데모 시작 (Start)
-            </button>
-
-            <button
-              type="button"
-              id="btn-toggle-play"
-              className="btn-secondary"
-              onClick={handleTogglePlay}
-            >
-              {isPlaying ? (
-                <>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="6" y="4" width="4" height="16"></rect>
-                    <rect x="14" y="4" width="4" height="16"></rect>
-                  </svg>
-                  일시정지 (Pause)
-                </>
-              ) : (
-                <>
+        {/* Interactive Playback Control Bar - Progressive Disclosure */}
+        <details className="ux-advanced-controls">
+          <summary className="ux-advanced-controls__summary">
+            <span className="ux-advanced-controls__summary-title">
+              <span>⚙️ 가상 공정 재생 조작 및 스텝 타임라인</span>
+              <span className="ux-advanced-controls__summary-badge">고급 기능</span>
+            </span>
+            <span style={{ fontSize: '12px', color: '#64748B' }}>펼치기 / 접기</span>
+          </summary>
+          <div className="ux-advanced-controls__body">
+            <section className="control-bar-card" aria-label="데모 조작 제어판">
+              <div className="playback-controls">
+                <button
+                  type="button"
+                  id="btn-start-demo"
+                  className="btn-primary"
+                  onClick={handleStartDemo}
+                >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
-                  재생 (Resume)
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              id="btn-step-forward"
-              className="btn-secondary"
-              onClick={handleStepForward}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polygon points="5 4 15 12 5 20 5 4"></polygon>
-                <line x1="19" y1="5" x2="19" y2="19"></line>
-              </svg>
-              다음 스텝 (+1)
-            </button>
-
-            <button
-              type="button"
-              id="btn-seek-anomaly"
-              className="btn-danger-outline"
-              onClick={handleSeekAnomaly}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
-              이상 시점 T7 보기
-            </button>
-
-            <button
-              type="button"
-              id="btn-change-seed"
-              className="btn-secondary"
-              onClick={handleChangeSeed}
-              title="동일 시나리오를 새로운 난수 시드로 다시 생성합니다"
-            >
-              시드 변경 (Seed: {seed})
-            </button>
-          </div>
-
-          {/* Step Timeline Indicator */}
-          <div className="timeline-tracker" aria-label="타임라인 단계">
-            <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', marginRight: '4px' }}>
-              스텝:
-            </span>
-            {[0, 1, 2, 3, 4, 5, 6, 7].map(step => {
-              const isCurrent = currentStep === step;
-              const stepSample = filteredSamples.find(s => s.step_index === step);
-              const isMissing = stepSample?.quality_flag === 'MISSING' || stepSample?.measured_value === null;
-              const isAnomaly = step === 7;
-              let classNames = "step-chip";
-              if (isCurrent) classNames += " active";
-              if (isMissing) classNames += " missing";
-              if (isAnomaly) classNames += " anomaly";
-
-              return (
-                <button
-                  key={step}
-                  type="button"
-                  id={`step-chip-t${step}`}
-                  className={classNames}
-                  onClick={() => {
-                    setIsPlaying(false);
-                    setCurrentStep(step);
-                  }}
-                  title={`시점 T${step} (클릭 시 이동)`}
-                >
-                  T{step}
+                  데모 시작 (Start)
                 </button>
-              );
-            })}
+
+                <button
+                  type="button"
+                  id="btn-toggle-play"
+                  className="btn-secondary"
+                  onClick={handleTogglePlay}
+                >
+                  {isPlaying ? (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="6" y="4" width="4" height="16"></rect>
+                        <rect x="14" y="4" width="4" height="16"></rect>
+                      </svg>
+                      일시정지 (Pause)
+                    </>
+                  ) : (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                      </svg>
+                      재생 (Resume)
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-step-forward"
+                  className="btn-secondary"
+                  onClick={handleStepForward}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                    <line x1="19" y1="5" x2="19" y2="19"></line>
+                  </svg>
+                  다음 스텝 (+1)
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-seek-anomaly"
+                  className="btn-danger-outline"
+                  onClick={handleSeekAnomaly}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                  이상 시점 T7 보기
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-change-seed"
+                  className="btn-secondary"
+                  onClick={handleChangeSeed}
+                  title="동일 시나리오를 새로운 난수 시드로 다시 생성합니다"
+                >
+                  시드 변경 (Seed: {seed})
+                </button>
+              </div>
+
+              {/* Step Timeline Indicator */}
+              <div className="timeline-tracker" aria-label="타임라인 단계">
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', marginRight: '4px' }}>
+                  스텝:
+                </span>
+                {[0, 1, 2, 3, 4, 5, 6, 7].map(step => {
+                  const isCurrent = currentStep === step;
+                  const stepSample = filteredSamples.find(s => s.step_index === step);
+                  const isMissing = stepSample?.quality_flag === 'MISSING' || stepSample?.measured_value === null;
+                  const isAnomaly = step === 7;
+                  let classNames = "step-chip";
+                  if (isCurrent) classNames += " active";
+                  if (isMissing) classNames += " missing";
+                  if (isAnomaly) classNames += " anomaly";
+
+                  return (
+                    <button
+                      key={step}
+                      type="button"
+                      id={`step-chip-t${step}`}
+                      className={classNames}
+                      onClick={() => {
+                        setIsPlaying(false);
+                        setCurrentStep(step);
+                      }}
+                      title={`시점 T${step} (클릭 시 이동)`}
+                    >
+                      T{step}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
           </div>
-        </section>
+        </details>
 
         {/* Notice Banner */}
         <div className="notice-box" role="status">
