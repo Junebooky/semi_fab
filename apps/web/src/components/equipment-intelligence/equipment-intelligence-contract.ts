@@ -276,6 +276,7 @@ export function validateSamplesSchema(samples: unknown): { valid: boolean; reaso
   }
 
   const expectedSensors: SensorId[] = ['RELATIVE_SIGNAL', 'CHAMBER_PRESSURE', 'RF_POWER'];
+  const allowedQualityFlags = new Set(['GOOD', 'SUSPECT', 'MISSING', 'BAD']);
 
   for (const sensorId of expectedSensors) {
     const sensorSamples = samples.filter((s) => s && s.sensor_id === sensorId);
@@ -319,6 +320,22 @@ export function validateSamplesSchema(samples: unknown): { valid: boolean; reaso
         };
       }
 
+      // Verify quality flag valid enum
+      if (!sample.quality_flag || typeof sample.quality_flag !== 'string' || !allowedQualityFlags.has(sample.quality_flag)) {
+        return {
+          valid: false,
+          reason: `센서 ${sensorId} T${sample.step_index}에 비정형 품질 플래그 (${sample.quality_flag})가 포함되어 있습니다.`,
+        };
+      }
+
+      // Verify data_origin presence and type
+      if (!sample.data_origin || typeof sample.data_origin !== 'string' || sample.data_origin.trim().length === 0) {
+        return {
+          valid: false,
+          reason: `센서 ${sensorId} T${sample.step_index}의 데이터 출처(data_origin) 규약이 유효하지 않습니다.`,
+        };
+      }
+
       // Verify measured value and quality flag invariants
       if (sensorId === 'RELATIVE_SIGNAL' && (sample.step_index === 4 || sample.step_index === 5)) {
         // T4 and T5 MUST be MISSING and measured_value MUST be strictly null (not 0, not string)
@@ -359,23 +376,99 @@ export function validateSamplesSchema(samples: unknown): { valid: boolean; reaso
 }
 
 /**
- * Validates alerts response structure.
+ * Validates alerts response structure and verifies run lineage.
+ * Supports expectedRunId scoping to ensure alarms strictly belong to the current active Run.
  */
-export function validateAlertsSchema(alerts: unknown): { valid: boolean; reason?: string } {
+export function validateAlertsSchema(
+  alerts: unknown,
+  expectedRunId?: string | null
+): { valid: boolean; reason?: string } {
   if (!Array.isArray(alerts)) {
     return { valid: false, reason: '알람 응답 데이터가 배열 형식이 아닙니다 (Fail-closed).' };
   }
+
+  // An empty array is a valid response (0 active alerts for this run)
+  if (alerts.length === 0) {
+    return { valid: true };
+  }
+
+  const allowedSeverities = new Set(['CRITICAL', 'WARNING', 'INFO']);
+  const allowedStatuses = new Set(['ACTIVE', 'CLEARED', 'ACKNOWLEDGED', 'RESOLVED']);
+  const seenAlertIds = new Set<string>();
+
   for (const alert of alerts) {
     if (!alert || typeof alert !== 'object') {
-      return { valid: false, reason: '유효하지 않은 알람 객체가 포함되어 있습니다.' };
+      return { valid: false, reason: '유효하지 않은 알람 객체가 포함되어 있습니다 (Fail-closed).' };
     }
-    if (!alert.alert_id || typeof alert.alert_id !== 'string') {
-      return { valid: false, reason: '알람 ID가 누락되었거나 유효하지 않습니다.' };
+
+    // Required identifier: alert_id
+    if (!alert.alert_id || typeof alert.alert_id !== 'string' || alert.alert_id.trim().length === 0) {
+      return { valid: false, reason: '알람 ID(alert_id)가 누락되었거나 유효하지 않습니다.' };
     }
-    if (!alert.severity || typeof alert.severity !== 'string') {
-      return { valid: false, reason: '알람 심각도(severity)가 누락되었습니다.' };
+    if (seenAlertIds.has(alert.alert_id)) {
+      return { valid: false, reason: `중복된 알람 ID (${alert.alert_id})가 감지되었습니다.` };
+    }
+    seenAlertIds.add(alert.alert_id);
+
+    // Required severity enum
+    if (!alert.severity || typeof alert.severity !== 'string' || !allowedSeverities.has(alert.severity)) {
+      return { valid: false, reason: `알람 ${alert.alert_id}의 심각도(severity: ${alert.severity})가 규격에 맞지 않습니다.` };
+    }
+
+    // Required status enum
+    if (alert.status && (typeof alert.status !== 'string' || !allowedStatuses.has(alert.status))) {
+      return { valid: false, reason: `알람 ${alert.alert_id}의 상태(status: ${alert.status})가 규격에 맞지 않습니다.` };
+    }
+
+    // Required equipment & chamber
+    if (!alert.equipment_id || typeof alert.equipment_id !== 'string') {
+      return { valid: false, reason: `알람 ${alert.alert_id}의 equipment_id가 누락되었습니다.` };
+    }
+    if (!alert.chamber_id || typeof alert.chamber_id !== 'string') {
+      return { valid: false, reason: `알람 ${alert.alert_id}의 chamber_id가 누락되었습니다.` };
+    }
+
+    // Required rule_code & message
+    if (!alert.rule_code || typeof alert.rule_code !== 'string') {
+      return { valid: false, reason: `알람 ${alert.alert_id}의 rule_code가 누락되었습니다.` };
+    }
+    if (!alert.message || typeof alert.message !== 'string') {
+      return { valid: false, reason: `알람 ${alert.alert_id}의 message가 누락되었습니다.` };
+    }
+
+    // Required event_time_utc
+    if (!alert.event_time_utc || typeof alert.event_time_utc !== 'string') {
+      return { valid: false, reason: `알람 ${alert.alert_id}의 event_time_utc가 누락되었습니다.` };
+    }
+
+    // Candidate wafers must be an array of strings
+    if (alert.candidate_wafers !== undefined && alert.candidate_wafers !== null) {
+      if (!Array.isArray(alert.candidate_wafers)) {
+        return { valid: false, reason: `알람 ${alert.alert_id}의 candidate_wafers가 배열 형식이 아닙니다.` };
+      }
+      for (const w of alert.candidate_wafers) {
+        if (typeof w !== 'string' || w.trim().length === 0) {
+          return { valid: false, reason: `알람 ${alert.alert_id}의 candidate_wafers에 비정형 웨이퍼 ID가 포함되어 있습니다.` };
+        }
+      }
+    }
+
+    // Candidate lot type validation
+    if (alert.candidate_lot !== undefined && alert.candidate_lot !== null && typeof alert.candidate_lot !== 'string') {
+      return { valid: false, reason: `알람 ${alert.alert_id}의 candidate_lot 형식이 올바르지 않습니다.` };
+    }
+
+    // Run Lineage Check: When querying alerts for a specific run, all alerts must match expectedRunId
+    if (expectedRunId) {
+      if (!alert.run_id || alert.run_id !== expectedRunId) {
+        return {
+          valid: false,
+          reason: `알람 ${alert.alert_id}의 Run ID (${alert.run_id})가 현재 활성 Run (${expectedRunId})과 일치하지 않습니다 (계통성 불일치, Fail-closed).`,
+        };
+      }
     }
   }
+
   return { valid: true };
 }
 

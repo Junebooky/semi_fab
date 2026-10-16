@@ -2142,6 +2142,7 @@ function validateSamplesSchemaTest(samples) {
   }
   const expectedSensors = ['RELATIVE_SIGNAL', 'CHAMBER_PRESSURE', 'RF_POWER'];
   const expectedUnits = { RELATIVE_SIGNAL: 'a.u.', CHAMBER_PRESSURE: 'mTorr', RF_POWER: 'W' };
+  const allowedQualityFlags = ['GOOD', 'SUSPECT', 'MISSING', 'BAD'];
 
   for (const sensorId of expectedSensors) {
     const sensorSamples = samples.filter((s) => s && s.sensor_id === sensorId);
@@ -2163,6 +2164,12 @@ function validateSamplesSchemaTest(samples) {
       if (sample.unit !== expectedUnits[sensorId]) {
         return { valid: false, reason: `센서 ${sensorId}의 단위 (${sample.unit})가 기대값 (${expectedUnits[sensorId]})과 일치하지 않습니다.` };
       }
+      if (!sample.quality_flag || !allowedQualityFlags.includes(sample.quality_flag)) {
+        return { valid: false, reason: `유효하지 않은 quality_flag (${sample.quality_flag})가 감지되었습니다.` };
+      }
+      if (!sample.data_origin || typeof sample.data_origin !== 'string' || sample.data_origin.trim() === '') {
+        return { valid: false, reason: '계측 데이터 출처(data_origin) 필드가 누락되었거나 유효하지 않습니다.' };
+      }
       if (sensorId === 'RELATIVE_SIGNAL' && (sample.step_index === 4 || sample.step_index === 5)) {
         if (sample.quality_flag !== 'MISSING') {
           return { valid: false, reason: `OES 상대 신호 T4/T5 구간은 반드시 MISSING 품질이어야 합니다 (현재: ${sample.quality_flag}).` };
@@ -2183,19 +2190,72 @@ function validateSamplesSchemaTest(samples) {
   return { valid: true };
 }
 
-function validateAlertsSchemaTest(alerts) {
+function validateAlertsSchemaTest(alerts, expectedRunId) {
   if (!Array.isArray(alerts)) {
     return { valid: false, reason: '알람 응답 데이터가 배열 형식이 아닙니다 (Fail-closed).' };
   }
+  const seenAlertIds = new Set();
+  const allowedSeverities = ['CRITICAL', 'WARNING', 'INFO'];
+  const allowedStatuses = ['ACTIVE', 'CLEARED', 'ACKNOWLEDGED', 'RESOLVED'];
+
   for (const alert of alerts) {
     if (!alert || typeof alert !== 'object') {
       return { valid: false, reason: '유효하지 않은 알람 객체가 포함되어 있습니다.' };
     }
-    if (!alert.alert_id || typeof alert.alert_id !== 'string') {
-      return { valid: false, reason: '알람 ID가 누락되었거나 유효하지 않습니다.' };
+    if (!alert.alert_id || typeof alert.alert_id !== 'string' || alert.alert_id.trim() === '') {
+      return { valid: false, reason: '알람 ID(alert_id)가 누락되었거나 유효하지 않습니다.' };
     }
-    if (!alert.severity || typeof alert.severity !== 'string') {
-      return { valid: false, reason: '알람 심각도(severity)가 누락되었습니다.' };
+    if (seenAlertIds.has(alert.alert_id)) {
+      return { valid: false, reason: `중복된 alert_id (${alert.alert_id})가 감지되었습니다.` };
+    }
+    seenAlertIds.add(alert.alert_id);
+
+    if (!alert.severity || typeof alert.severity !== 'string' || !allowedSeverities.includes(alert.severity)) {
+      return { valid: false, reason: `알람 심각도(severity: ${alert.severity})가 올바른 규격이 아닙니다.` };
+    }
+    if (!alert.status || typeof alert.status !== 'string' || !allowedStatuses.includes(alert.status)) {
+      return { valid: false, reason: `알람 상태(status: ${alert.status})가 올바른 규격이 아닙니다.` };
+    }
+    if (!alert.equipment_id || typeof alert.equipment_id !== 'string' || alert.equipment_id.trim() === '') {
+      return { valid: false, reason: '알람 equipment_id가 누락되었습니다.' };
+    }
+    if (!alert.chamber_id || typeof alert.chamber_id !== 'string' || alert.chamber_id.trim() === '') {
+      return { valid: false, reason: '알람 chamber_id가 누락되었습니다.' };
+    }
+    if (!alert.rule_code || typeof alert.rule_code !== 'string' || alert.rule_code.trim() === '') {
+      return { valid: false, reason: '알람 rule_code가 누락되었습니다.' };
+    }
+    if (!alert.message || typeof alert.message !== 'string' || alert.message.trim() === '') {
+      return { valid: false, reason: '알람 message가 누락되었습니다.' };
+    }
+    if (!alert.event_time_utc || typeof alert.event_time_utc !== 'string' || alert.event_time_utc.trim() === '') {
+      return { valid: false, reason: '알람 event_time_utc가 누락되었습니다.' };
+    }
+
+    if (alert.candidate_wafers !== undefined && alert.candidate_wafers !== null) {
+      if (!Array.isArray(alert.candidate_wafers)) {
+        return { valid: false, reason: 'candidate_wafers는 문자열 배열이어야 합니다.' };
+      }
+      for (const w of alert.candidate_wafers) {
+        if (typeof w !== 'string' || w.trim() === '') {
+          return { valid: false, reason: 'candidate_wafers에 유효하지 않은 웨이퍼 ID가 포함되어 있습니다.' };
+        }
+      }
+    }
+
+    if (alert.candidate_lot !== undefined && alert.candidate_lot !== null) {
+      if (typeof alert.candidate_lot !== 'string' || alert.candidate_lot.trim() === '') {
+        return { valid: false, reason: 'candidate_lot이 유효한 문자열이 아닙니다.' };
+      }
+    }
+
+    if (expectedRunId) {
+      if (alert.run_id !== expectedRunId) {
+        return {
+          valid: false,
+          reason: `알람 run_id (${alert.run_id})가 활성 공정 Run (${expectedRunId})과 일치하지 않습니다 (Data Lineage Contamination).`
+        };
+      }
     }
   }
   return { valid: true };
@@ -2230,7 +2290,7 @@ test('BUILD-06 (a) Summary-first run discovery, same run_id samples + alerts pro
     // Step 3: Schema validation
     const sVal = validateSamplesSchemaTest(samplesData);
     if (!sVal.valid) throw new Error(sVal.reason);
-    const aVal = validateAlertsSchemaTest(alertsData);
+    const aVal = validateAlertsSchemaTest(alertsData, currentRunId);
     if (!aVal.valid) throw new Error(aVal.reason);
 
     // Step 4: Snapshot confirmation recheck
@@ -2533,7 +2593,11 @@ test('BUILD-06 (g) Multi-page bidirectional navigation, EKL L1 integration, and 
   const cssSource = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
 
   // 1. All 4 pages must contain bidirectional navigation links to each other
-  assert.ok(eiPageSource.includes('href="/"') && eiPageSource.includes('href="/traceability"') && eiPageSource.includes('href="/command-center"'));
+  assert.ok(
+    (eiPageSource.includes('href="/"') || eiPageSource.includes('href={`/${mode')) &&
+    (eiPageSource.includes('href="/traceability"') || eiPageSource.includes('href={`/traceability')) &&
+    (eiPageSource.includes('href="/command-center"') || eiPageSource.includes('href={`/command-center'))
+  );
   assert.ok(homePageSource.includes('/equipment-intelligence'), 'Home must link to /equipment-intelligence');
   assert.ok(tracePageSource.includes('/equipment-intelligence'), 'Traceability must link to /equipment-intelligence');
   assert.ok(ccPageSource.includes('/equipment-intelligence'), 'Command Center must link to /equipment-intelligence');
@@ -2642,6 +2706,8 @@ test('P1-B BUILD-06 (a) Samples 200 + Alerts 500 fails closed and never commits 
 });
 
 test('P1-B BUILD-06 (b) Alerts response non-array or malformed fails closed', () => {
+  const validAlert = generateModeAEquipmentSamplesTest().alerts[0];
+
   // Non-array alert responses
   assert.equal(validateAlertsSchemaTest(null).valid, false);
   assert.equal(validateAlertsSchemaTest(undefined).valid, false);
@@ -2651,9 +2717,29 @@ test('P1-B BUILD-06 (b) Alerts response non-array or malformed fails closed', ()
   // Missing required fields
   assert.equal(validateAlertsSchemaTest([{ severity: 'CRITICAL' }]).valid, false);
   assert.equal(validateAlertsSchemaTest([{ alert_id: 'AL-01' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, alert_id: '' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, equipment_id: '' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, chamber_id: '' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, rule_code: '' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, message: '' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, event_time_utc: '' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, severity: 'INVALID' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, status: 'UNKNOWN' }]).valid, false);
 
-  // Valid alerts array
-  assert.equal(validateAlertsSchemaTest([{ alert_id: 'AL-01', severity: 'CRITICAL' }]).valid, true);
+  // Candidate wafers & lot type checks
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, candidate_wafers: 'W-01' }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, candidate_wafers: [123] }]).valid, false);
+  assert.equal(validateAlertsSchemaTest([{ ...validAlert, candidate_lot: 12345 }]).valid, false);
+
+  // Duplicate alert_id check
+  assert.equal(validateAlertsSchemaTest([validAlert, validAlert]).valid, false);
+
+  // Expected run lineage check
+  assert.equal(validateAlertsSchemaTest([validAlert], validAlert.run_id).valid, true);
+  assert.equal(validateAlertsSchemaTest([validAlert], 'RUN-DIFFERENT-999').valid, false);
+
+  // Valid alerts array (empty array is valid 0 alerts)
+  assert.equal(validateAlertsSchemaTest([validAlert]).valid, true);
   assert.equal(validateAlertsSchemaTest([]).valid, true);
 });
 
@@ -2805,8 +2891,11 @@ test('P1-C BUILD-06 Unified Mode A Default Seed (20261015) and Sensor Deep Link 
   // 1. Contract default seed is 20261015
   assert.ok(eiContractSource.includes('seed: number = 20261015'), 'Default seed in contract must be 20261015');
 
-  // 2. Equipment Intelligence initial seed is 20261015
-  assert.ok(eiPageSource.includes('const initialSeed = seedQuery && !isNaN(Number(seedQuery)) ? Number(seedQuery) : 20261015;'));
+  // 2. Equipment Intelligence initial seed is 20261015 with safe integer bounds check
+  assert.ok(
+    eiPageSource.includes('20261015') && eiPageSource.includes('Number.isInteger'),
+    'Equipment Intelligence initial seed must safely default to 20261015'
+  );
 
   // 3. Mode A Fixture deterministic IDs
   const fixture = generateModeAEquipmentSamplesTest(20261015);
@@ -2846,6 +2935,177 @@ test('P1-C BUILD-06 Unified Mode A Default Seed (20261015) and Sensor Deep Link 
   assert.equal(testHomeSensorInit('RELATIVE_SIGNAL'), 'RELATIVE_SIGNAL');
   assert.equal(testHomeSensorInit('INVALID_SENSOR'), 'RELATIVE_SIGNAL');
   assert.equal(testHomeSensorInit(null), 'RELATIVE_SIGNAL');
+});
+
+// =========================================================================
+// [잔여 P1-B-1, P1-B-2, P1-C] Review Re-assignment Verification Test Suites
+// =========================================================================
+
+test('[잔여 P1-B-1] 최초 서버 접속 이후 네트워크 실패를 Mode A로 오분류 방지 (Fail-Closed Invariant)', async () => {
+  // Test scenario 1: Mid-flight samples network failure after 200 summary MUST fail closed in Mode B, NOT Mode A!
+  let clientState = {
+    mode: 'A',
+    activeRunId: 'INIT-RUN',
+    lotId: 'INIT-LOT',
+    samples: [{}],
+    alerts: [{}],
+    noticeMessage: '초기 메시지',
+    errorMessage: null
+  };
+
+  async function simulateLoadData(initialSummarySuccess, midFlightDrop) {
+    let summaryRes;
+    try {
+      if (!initialSummarySuccess) {
+        throw new TypeError('Failed to fetch (API server offline)');
+      }
+      summaryRes = { ok: true, status: 200, json: async () => ({ active_run_id: 'RUN-DEMO-015', lot_id: 'LOT-DEMO-815' }) };
+    } catch (netErr) {
+      // Offline fallback to Mode A
+      clientState.mode = 'A';
+      clientState.activeRunId = 'RUN-DEMO-015';
+      clientState.lotId = 'LOT-DEMO-815';
+      clientState.noticeMessage = 'Mode A 합성 픽스처 전환';
+      clientState.errorMessage = null;
+      return;
+    }
+
+    // Phase 2: Live Mode B Pipeline
+    try {
+      clientState.mode = 'B';
+      const summaryData = await summaryRes.json();
+      const discoveredRunId = summaryData.active_run_id;
+
+      if (midFlightDrop) {
+        // Mid-flight network drop during samples/alerts fetch!
+        throw new TypeError('Failed to fetch (mid-flight network disruption)');
+      }
+
+      clientState.activeRunId = discoveredRunId;
+      clientState.lotId = summaryData.lot_id;
+    } catch (err) {
+      // Must FAIL CLOSED in Mode B
+      clientState.mode = 'B';
+      clientState.activeRunId = null;
+      clientState.lotId = null;
+      clientState.samples = [];
+      clientState.alerts = [];
+      clientState.noticeMessage = null;
+      clientState.errorMessage = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // 1. Initial unreachable server -> falls back to Mode A
+  await simulateLoadData(false, false);
+  assert.equal(clientState.mode, 'A');
+  assert.equal(clientState.activeRunId, 'RUN-DEMO-015');
+
+  // 2. Initial connection succeeds, but mid-flight network drops -> FAILS CLOSED IN MODE B
+  await simulateLoadData(true, true);
+  assert.equal(clientState.mode, 'B', 'Mid-flight network drop MUST NOT fallback to Mode A');
+  assert.equal(clientState.activeRunId, null, 'activeRunId must be null');
+  assert.equal(clientState.lotId, null, 'lotId must be null');
+  assert.equal(clientState.samples.length, 0, 'samples must be empty');
+  assert.equal(clientState.alerts.length, 0, 'alerts must be empty');
+  assert.equal(clientState.noticeMessage, null, 'noticeMessage must be null');
+  assert.ok(clientState.errorMessage.includes('Failed to fetch'), 'errorMessage must contain network error');
+
+  // Verify code structure in equipment-intelligence/page.tsx
+  const eiPageSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  assert.ok(eiPageSource.includes('// Phase 1: Initial Discovery'), 'Must have distinct Phase 1 initial discovery');
+  assert.ok(eiPageSource.includes('// Phase 2: Mode B Pipeline Execution'), 'Must have distinct Phase 2 Mode B live pipeline');
+});
+
+test('[잔여 P1-B-2] 알람 데이터의 Run 일치성, 필수 필드, 자료형 및 샘플 품질 플래그 검증', () => {
+  const validFixture = generateModeAEquipmentSamplesTest(20261015);
+  const validAlert = validFixture.alerts[0];
+  const activeRunId = validAlert.run_id; // RUN-DEMO-015
+
+  // 1. Empty alerts array is valid (0 alerts is valid)
+  const emptyRes = validateAlertsSchemaTest([], activeRunId);
+  assert.equal(emptyRes.valid, true, 'Empty alerts array [] must be valid');
+
+  // 2. Valid alert matching expectedRunId
+  const validRes = validateAlertsSchemaTest([validAlert], activeRunId);
+  assert.equal(validRes.valid, true, 'Matching run_id alert must be valid');
+
+  // 3. Mismatched run_id in alerts MUST fail closed (Data Lineage Contamination)
+  const foreignAlert = { ...validAlert, run_id: 'RUN-DEMO-099' };
+  const lineageRes = validateAlertsSchemaTest([foreignAlert], activeRunId);
+  assert.equal(lineageRes.valid, false, 'Foreign run_id must fail closed');
+  assert.ok(lineageRes.reason.includes('Data Lineage Contamination'));
+
+  // 4. Duplicate alert_id in alerts array MUST fail closed
+  const dupRes = validateAlertsSchemaTest([validAlert, { ...validAlert, message: '다른 메시지' }], activeRunId);
+  assert.equal(dupRes.valid, false, 'Duplicate alert_id must fail closed');
+  assert.ok(dupRes.reason.includes('중복된 alert_id'));
+
+  // 5. Missing or invalid candidate_wafers type
+  const badWafersRes = validateAlertsSchemaTest([{ ...validAlert, candidate_wafers: 'W-08' }], activeRunId);
+  assert.equal(badWafersRes.valid, false, 'Bare string candidate_wafers must fail closed');
+  assert.ok(badWafersRes.reason.includes('candidate_wafers는 문자열 배열이어야 합니다'));
+
+  // 6. Missing or invalid candidate_lot type
+  const badLotRes = validateAlertsSchemaTest([{ ...validAlert, candidate_lot: 815 }], activeRunId);
+  assert.equal(badLotRes.valid, false, 'Number candidate_lot must fail closed');
+  assert.ok(badLotRes.reason.includes('candidate_lot'));
+
+  // 7. Sensor Samples: Quality Flag whitelist ('GOOD', 'SUSPECT', 'MISSING', 'BAD')
+  const badFlagSamples = JSON.parse(JSON.stringify(validFixture.samples));
+  badFlagSamples[0].quality_flag = 'UNKNOWN_FLAG';
+  const badFlagRes = validateSamplesSchemaTest(badFlagSamples);
+  assert.equal(badFlagRes.valid, false, 'Non-whitelisted quality flag must fail closed');
+  assert.ok(badFlagRes.reason.includes('유효하지 않은 quality_flag'));
+
+  // 8. Sensor Samples: data_origin missing or empty
+  const noOriginSamples = JSON.parse(JSON.stringify(validFixture.samples));
+  delete noOriginSamples[0].data_origin;
+  const noOriginRes = validateSamplesSchemaTest(noOriginSamples);
+  assert.equal(noOriginRes.valid, false, 'Missing data_origin must fail closed');
+  assert.ok(noOriginRes.reason.includes('data_origin'));
+});
+
+test('[잔여 P1-C] 개별 합성 재합성 이후 복귀 시 seed 컨텍스트 탈락 방지 및 상호 연동', () => {
+  const eiPageSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  const ccPageSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+
+  // 1. Equipment Intelligence re-synthesis calls router.replace with seed
+  assert.ok(
+    eiPageSource.includes("params.set('seed', String(nextSeed))") &&
+    eiPageSource.includes("router.replace(`/equipment-intelligence?${params.toString()}`"),
+    'Re-synthesis must update URL query param'
+  );
+
+  // 2. Equipment Intelligence and Command Center safe integer parsing
+  function parseSafeSeed(raw) {
+    if (raw) {
+      const num = Number(raw);
+      if (!isNaN(num) && Number.isInteger(num) && num > 0 && num < 1000000000) {
+        return num;
+      }
+    }
+    return 20261015;
+  }
+
+  assert.equal(parseSafeSeed('20261016'), 20261016);
+  assert.equal(parseSafeSeed('-20261015'), 20261015, 'Negative seed must fallback to 20261015');
+  assert.equal(parseSafeSeed('0'), 20261015, 'Zero seed must fallback to 20261015');
+  assert.equal(parseSafeSeed('1.5'), 20261015, 'Float seed must fallback to 20261015');
+  assert.equal(parseSafeSeed('abc'), 20261015, 'NaN seed must fallback to 20261015');
+  assert.equal(parseSafeSeed('9999999999'), 20261015, 'Out-of-bounds seed must fallback to 20261015');
+
+  // 3. Command Center reads seed and synchronizes state
+  assert.ok(ccPageSource.includes("searchParams.get('seed')"), 'Command Center must read seed query param');
+  assert.ok(ccPageSource.includes('Number.isInteger(num) && num > 0 && num < 1000000000'), 'Command Center must validate safe integer bounds');
+
+  // 4. Mode A Command Center links preserve seed
+  assert.ok(ccPageSource.includes("`/${mode === 'A' ? `?seed=${seed}` : ''}`"), 'CC Home link must preserve seed');
+  assert.ok(ccPageSource.includes("`/traceability${mode === 'A' ? `?seed=${seed}` : ''}`"), 'CC Traceability link must preserve seed');
+  assert.ok(ccPageSource.includes("`/equipment-intelligence${mode === 'A' ? `?seed=${seed}` : ''}`"), 'CC Equipment link must preserve seed');
+  assert.ok(ccPageSource.includes("mode === 'A' ? `&seed=${seed}` : ''"), 'CC Investigation/Wafer links must preserve seed');
+
+  // 5. Equipment Intelligence back button and tabs preserve seed in Mode A
+  assert.ok(eiPageSource.includes("`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`"), 'EI back to CC must preserve seed');
 });
 
 

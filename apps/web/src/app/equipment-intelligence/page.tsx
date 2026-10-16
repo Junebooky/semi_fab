@@ -46,8 +46,20 @@ function EquipmentIntelligenceContent() {
 
   // Default seed synchronized with Home and Command Center (20261015 -> RUN-DEMO-015)
   const seedQuery = searchParams.get('seed');
-  const initialSeed = seedQuery && !isNaN(Number(seedQuery)) ? Number(seedQuery) : 20261015;
+  const initialSeed = seedQuery && !isNaN(Number(seedQuery)) && Number.isInteger(Number(seedQuery)) && Number(seedQuery) > 0 && Number(seedQuery) < 1000000000
+    ? Number(seedQuery)
+    : 20261015;
   const [seed, setSeed] = useState<number>(initialSeed);
+
+  // Synchronize seed when query parameter changes
+  useEffect(() => {
+    if (seedQuery) {
+      const num = Number(seedQuery);
+      if (!isNaN(num) && Number.isInteger(num) && num > 0 && num < 1000000000 && num !== seed) {
+        setSeed(num);
+      }
+    }
+  }, [seedQuery, seed]);
 
   // User Interactive Selection State
   const initialSensor = parseSensorQuery(searchParams.get('sensor'));
@@ -81,20 +93,44 @@ function EquipmentIntelligenceContent() {
 
     const activeSeed = forceSeed !== undefined ? forceSeed : seed;
 
+    // Phase 1: Initial Discovery Fetch
+    // ONLY genuine network failure at initial server reach triggers Mode A fallback.
+    let summaryRes: Response;
     try {
-      // 1. Fetch Summary from authoritative FastAPI origin to discover active_run_id
-      const summaryRes = await fetch(`${API_BASE}/api/v1/demo/summary`, { cache: 'no-store' });
+      summaryRes = await fetch(`${API_BASE}/api/v1/demo/summary`, { cache: 'no-store' });
+    } catch (netErr: any) {
+      if (currentToken !== requestTokenRef.current) return;
+      const fixture = generateModeAEquipmentSamples(activeSeed);
+      setMode('A');
+      setActiveRunId(fixture.summary.run_id);
+      setLotId(fixture.summary.lot_id);
+      setSamples(fixture.samples);
+      setAlerts(fixture.alerts);
+      setNoticeMessage(
+        `Mode A (오프라인 합성 시뮬레이션): API 서버 미연결 상태로 난수 시드(Seed: ${activeSeed}) 기반 결정론적 합성 데이터를 표출합니다.`
+      );
+      setErrorMessage(null);
+      setLoading(false);
+      return;
+    }
 
-      // Check if request was superseded during network flight
+    // Phase 2: Mode B Pipeline Execution
+    // Server presence is confirmed. Any subsequent failure (HTTP error, malformed JSON, mid-flight network disconnect,
+    // validation failure, or snapshot desync) MUST FAIL CLOSED in Mode B with full state isolation.
+    try {
       if (currentToken !== requestTokenRef.current) return;
 
       if (!summaryRes.ok) {
         throw new Error(`HTTP ${summaryRes.status}: 공정 요약 정보를 불러올 수 없습니다 (Fail-closed).`);
       }
 
-      const summaryData = await summaryRes.json().catch(() => {
+      let summaryData: any;
+      try {
+        summaryData = await summaryRes.json();
+      } catch {
         throw new Error('수신된 요약 데이터의 JSON 형식이 올바르지 않습니다 (Malformed JSON, Fail-closed).');
-      });
+      }
+
       if (currentToken !== requestTokenRef.current) return;
 
       const discoveredRunId = summaryData?.active_run_id;
@@ -118,22 +154,29 @@ function EquipmentIntelligenceContent() {
         throw new Error(`HTTP ${alertsRes.status}: 설비 FDC 알람 데이터를 불러올 수 없습니다 (Fail-closed).`);
       }
 
-      const rawSamples = await samplesRes.json().catch(() => {
+      let rawSamples: any;
+      try {
+        rawSamples = await samplesRes.json();
+      } catch {
         throw new Error('수신된 센서 계측 데이터의 JSON 형식이 올바르지 않습니다 (Malformed JSON, Fail-closed).');
-      });
-      const rawAlerts = await alertsRes.json().catch(() => {
+      }
+
+      let rawAlerts: any;
+      try {
+        rawAlerts = await alertsRes.json();
+      } catch {
         throw new Error('수신된 알람 데이터의 JSON 형식이 올바르지 않습니다 (Malformed JSON, Fail-closed).');
-      });
+      }
 
       if (currentToken !== requestTokenRef.current) return;
 
-      // 3. Strict Schema & Domain Invariant Validation
+      // 3. Strict Schema & Domain Invariant Validation (including run lineage for alerts)
       const sampleVal = validateSamplesSchema(rawSamples);
       if (!sampleVal.valid) {
         throw new Error(sampleVal.reason || '센서 계측 데이터 규약 검증 실패 (Fail-closed).');
       }
 
-      const alertVal = validateAlertsSchema(rawAlerts);
+      const alertVal = validateAlertsSchema(rawAlerts, discoveredRunId);
       if (!alertVal.valid) {
         throw new Error(alertVal.reason || '알람 데이터 규약 검증 실패 (Fail-closed).');
       }
@@ -141,11 +184,15 @@ function EquipmentIntelligenceContent() {
       // 4. Double-Check Summary Snapshot to prevent concurrent Run reset desynchronization
       const recheckSummaryRes = await fetch(`${API_BASE}/api/v1/demo/summary`, { cache: 'no-store' });
       if (!recheckSummaryRes.ok) {
-        throw new Error('공정 요약 재확인 실패 (Fail-closed).');
+        throw new Error(`HTTP ${recheckSummaryRes.status}: 공정 요약 재확인 실패 (Fail-closed).`);
       }
-      const recheckSummaryData = await recheckSummaryRes.json().catch(() => {
+
+      let recheckSummaryData: any;
+      try {
+        recheckSummaryData = await recheckSummaryRes.json();
+      } catch {
         throw new Error('공정 요약 재확인 데이터 형식이 올바르지 않습니다 (Fail-closed).');
-      });
+      }
 
       if (recheckSummaryData?.active_run_id !== discoveredRunId) {
         throw new Error(
@@ -167,35 +214,15 @@ function EquipmentIntelligenceContent() {
     } catch (err: any) {
       if (currentToken !== requestTokenRef.current) return;
 
-      // Offline Network Fallback to Mode A
-      const isOffline =
-        err instanceof TypeError ||
-        err.name === 'TypeError' ||
-        (err.message && err.message.includes('fetch'));
-
-      if (isOffline) {
-        const fixture = generateModeAEquipmentSamples(activeSeed);
-        setMode('A');
-        setActiveRunId(fixture.summary.run_id);
-        setLotId(fixture.summary.lot_id);
-        setSamples(fixture.samples);
-        setAlerts(fixture.alerts);
-        setNoticeMessage(
-          `Mode A (오프라인 합성 시뮬레이션): API 서버 미연결 상태로 난수 시드(Seed: ${activeSeed}) 기반 결정론적 합성 데이터를 표출합니다.`
-        );
-        setErrorMessage(null);
-        setLoading(false);
-      } else {
-        // Mode B Server Error (Fail-Closed): Clear prior state completely!
-        setMode('B');
-        setActiveRunId(null);
-        setLotId(null);
-        setSamples([]);
-        setAlerts([]);
-        setNoticeMessage(null);
-        setErrorMessage(err.message || '데이터 로드 실패 (Fail-closed)');
-        setLoading(false);
-      }
+      // Mode B Server or Mid-flight Network Error (Fail-Closed): Clear prior state completely!
+      setMode('B');
+      setActiveRunId(null);
+      setLotId(null);
+      setSamples([]);
+      setAlerts([]);
+      setNoticeMessage(null);
+      setErrorMessage(err.message || '데이터 로드 실패 (Fail-closed)');
+      setLoading(false);
     }
   };
 
@@ -261,14 +288,14 @@ function EquipmentIntelligenceContent() {
 
         {/* Navigation Tabs */}
         <nav style={{ display: 'flex', gap: '8px' }} aria-label="화면 탭">
-          <Link href="/" className="nav-tab-link">
+          <Link href={`/${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
               <polyline points="9 22 9 12 15 12 15 22"></polyline>
             </svg>
             홈 (FDC 모니터링)
           </Link>
-          <Link href="/traceability" className="nav-tab-link">
+          <Link href={`/traceability${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -276,14 +303,14 @@ function EquipmentIntelligenceContent() {
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
-          <Link href="/command-center" className="nav-tab-link">
+          <Link href={`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
             FDC 커맨드 센터 (Command Center)
           </Link>
-          <Link href="/equipment-intelligence" className="nav-tab-link active">
+          <Link href={`/equipment-intelligence${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
             </svg>
@@ -332,7 +359,13 @@ function EquipmentIntelligenceContent() {
                   type="button"
                   className="btn-secondary"
                   style={{ padding: '2px 8px', fontSize: '11px', background: '#FFFFFF' }}
-                  onClick={() => setSeed((s) => s + 1)}
+                  onClick={() => {
+                    const nextSeed = seed + 1;
+                    setSeed(nextSeed);
+                    const params = new URLSearchParams(searchParams.toString());
+                    params.set('seed', String(nextSeed));
+                    router.replace(`/equipment-intelligence?${params.toString()}`, { scroll: false });
+                  }}
                   title="난수 시드를 변경하여 새로운 합성 계측값을 생성합니다"
                 >
                   시드 변경 재합성 (Seed: {seed})
@@ -377,7 +410,7 @@ function EquipmentIntelligenceContent() {
               <button type="button" className="btn-primary" onClick={() => loadData()}>
                 다시 시도
               </button>
-              <Link href="/command-center" className="btn-secondary" style={{ textDecoration: 'none' }}>
+              <Link href={`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`} className="btn-secondary" style={{ textDecoration: 'none' }}>
                 FDC 커맨드 센터로 복귀
               </Link>
             </div>
@@ -847,7 +880,7 @@ function EquipmentIntelligenceContent() {
                   <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
                     <Link
                       id="ei-btn-back-command-center"
-                      href="/command-center"
+                      href={`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`}
                       className="btn-secondary"
                       style={{
                         display: 'block',
