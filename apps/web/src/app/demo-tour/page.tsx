@@ -17,6 +17,7 @@ import {
   getTourStepDetails,
   getTourNavLinks,
 } from '@/components/guided-demo/guided-demo-contract';
+import { buildCrossNavUrl } from '@/lib/investigation-context';
 
 function DemoTourContent() {
   const searchParams = useSearchParams();
@@ -114,14 +115,14 @@ function DemoTourContent() {
 
         {/* Unified 7-Tab Navigation Bar */}
         <nav style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }} aria-label="화면 탭">
-          <Link href={`/?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
             홈 (FDC 모니터링)
           </Link>
-          <Link href={`/traceability?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/traceability', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="8" x2="12" y2="12" />
@@ -129,27 +130,27 @@ function DemoTourContent() {
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
-          <Link href={`/command-center?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/command-center', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
             FDC 커맨드 센터 (Command Center)
           </Link>
-          <Link href={`/equipment-intelligence?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/equipment-intelligence', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
             </svg>
             설비 인텔리전스 (Equipment)
           </Link>
-          <Link href={`/fab-simulation?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/fab-simulation', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
             FAB 시뮬레이션 (Simulation)
           </Link>
-          <Link href={`/engineering-workspace?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/engineering-workspace', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
               <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
@@ -158,7 +159,7 @@ function DemoTourContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
-          <Link href={`/demo-tour?seed=${seed}`} className="nav-tab-link active">
+          <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: activeStepId })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />

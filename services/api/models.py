@@ -137,3 +137,28 @@ class WaferTraceDetail(BaseModel):
     related_alert_severity: Optional[str] = None
     investigation_id: Optional[str] = None
     timeline: List[WaferTimelineEvent] = Field(default_factory=list)
+
+
+class HistoricalRunSnapshot(BaseModel):
+    run_id: str
+    session_id: str
+    seed: int
+    is_active: bool
+    equipment_id: str
+    chamber_id: str
+    recipe_id: str
+    lot_id: str
+    start_time_utc: str
+    run_status: str
+    data_origin: str = "synthetic"
+    alert_id: Optional[str] = None
+    alert_severity: Optional[str] = None
+    alert_rule_code: Optional[str] = None
+    alert_message: Optional[str] = None
+    evidence_sensors: List[SensorEvidence] = Field(default_factory=list)
+    total_wafers: int = 25
+    confirmed_exposed_wafers: List[str] = Field(default_factory=list)
+    candidate_exposed_wafers: List[str] = Field(default_factory=list)
+    unexposed_wafers_count: int = 0
+    read_only: bool = True
+

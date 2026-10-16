@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
 import { TourReturnBanner } from '@/components/guided-demo';
+import { buildCrossNavUrl } from '@/lib/investigation-context';
 
 // Domain Interfaces
 interface WaferItem {
@@ -614,7 +615,7 @@ function TraceabilityContent() {
 
         {/* Navigation Tabs */}
         <nav style={{ display: 'flex', gap: '8px' }} aria-label="화면 탭">
-          <Link href="/" className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="7" height="7"></rect>
               <rect x="14" y="3" width="7" height="7"></rect>
@@ -623,34 +624,34 @@ function TraceabilityContent() {
             </svg>
             식각 챔버 시뮬레이터 (Home)
           </Link>
-          <Link href="/traceability" className="nav-tab-link active">
+          <Link href={buildCrossNavUrl('/traceability', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
-          <Link href="/command-center" className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/command-center', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
             FDC 커맨드 센터 (Command Center)
           </Link>
-          <Link href="/equipment-intelligence" className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
             </svg>
             설비 인텔리전스 (Equipment)
           </Link>
-          <Link href={`/fab-simulation${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/fab-simulation', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
             FAB 시뮬레이션 (Simulation)
           </Link>
-          <Link href={`/engineering-workspace${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId: activeRunId || undefined, waferId: selectedWaferId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
               <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
@@ -659,7 +660,7 @@ function TraceabilityContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
-          <Link href={`/demo-tour${mode === 'A' ? `?seed=${seed}${queryTourStep ? `&step=${queryTourStep}` : ''}` : (queryTourStep ? `?step=${queryTourStep}` : '')}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: queryTourStep || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />

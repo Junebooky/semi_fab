@@ -572,8 +572,54 @@ class TestEtchDemoAPI(unittest.TestCase):
         old_run_item = [r for r in runs2 if r["run_id"] == active_run["run_id"]][0]
         self.assertFalse(old_run_item["is_active"])
 
+    def test_16_historical_run_snapshot(self):
+        # 1. Fetch runs list to obtain both active and inactive run_ids
+        runs = self.client.get("/api/v1/demo/runs").json()
+        self.assertGreaterEqual(len(runs), 1)
+
+        active_run = [r for r in runs if r["is_active"]][0]
+        run_id = active_run["run_id"]
+
+        # 2. Query snapshot for active run
+        snap_res = self.client.get(f"/api/v1/demo/runs/{run_id}")
+        self.assertEqual(snap_res.status_code, 200)
+        snap = snap_res.json()
+        self.assertEqual(snap["run_id"], run_id)
+        self.assertTrue(snap["is_active"])
+        self.assertTrue(snap["read_only"])
+        self.assertEqual(snap["equipment_id"], "ETCH-02")
+        self.assertEqual(snap["chamber_id"], "CH-B")
+        self.assertIsInstance(snap["evidence_sensors"], list)
+        self.assertEqual(len(snap["evidence_sensors"]), 3)
+        self.assertEqual(snap["total_wafers"], 25)
+        self.assertEqual(len(snap["confirmed_exposed_wafers"]), 7)
+        self.assertEqual(len(snap["candidate_exposed_wafers"]), 5)
+        self.assertEqual(snap["unexposed_wafers_count"], 13)
+
+        # 3. Create a second run to turn first run into historical
+        self.client.post("/api/v1/demo/runs", json={
+            "seed": 20261017,
+            "scenario_id": "ETH-SYN-01",
+            "equipment_id": "ETCH-02",
+            "chamber_id": "CH-B"
+        })
+
+        # Query snapshot of the now-historical first run
+        hist_res = self.client.get(f"/api/v1/demo/runs/{run_id}")
+        self.assertEqual(hist_res.status_code, 200)
+        hist_snap = hist_res.json()
+        self.assertEqual(hist_snap["run_id"], run_id)
+        self.assertFalse(hist_snap["is_active"], "Previous run must now be marked inactive (historical)")
+        self.assertTrue(hist_snap["read_only"])
+        self.assertEqual(len(hist_snap["evidence_sensors"]), 3)
+
+        # 4. Non-existent run returns 404
+        bad_res = self.client.get("/api/v1/demo/runs/RUN-DOES-NOT-EXIST")
+        self.assertEqual(bad_res.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

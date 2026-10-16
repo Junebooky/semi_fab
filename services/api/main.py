@@ -20,6 +20,7 @@ from .models import (
     WaferTimelineEvent,
     WaferTraceDetail,
     CasebookRunItem,
+    HistoricalRunSnapshot,
 )
 from .generator import generate_etch_demo_dataset
 
@@ -290,6 +291,115 @@ def get_demo_runs():
                 data_origin=row["data_origin"] or "synthetic"
             ))
         return runs
+
+
+@app.get("/api/v1/demo/runs/{run_id}", response_model=HistoricalRunSnapshot)
+def get_historical_run_snapshot(run_id: str):
+    """
+    Returns complete, read-only snapshot of an active or historical process run.
+    Provides immutable evidence of past process excursions without live equipment pretence.
+    """
+    with db_session() as conn:
+        run = conn.execute(
+            """
+            SELECT r.run_id, r.session_id, s.seed, s.is_active,
+                   r.equipment_id, r.chamber_id, r.recipe_id, r.lot_id,
+                   r.start_time_utc, r.run_status, r.data_origin
+            FROM process_run r
+            JOIN simulation_session s ON r.session_id = s.session_id
+            WHERE r.run_id = ?;
+            """,
+            (run_id,)
+        ).fetchone()
+
+        if not run:
+            raise HTTPException(status_code=404, detail=f"Process run '{run_id}' not found in archive")
+
+        # Fetch associated alert
+        alert = conn.execute(
+            """
+            SELECT alert_id, severity, rule_code, message
+            FROM fdc_alert
+            WHERE run_id = ? AND session_id = ?
+            ORDER BY CASE WHEN severity = 'CRITICAL' THEN 1 WHEN severity = 'WARNING' THEN 2 ELSE 3 END, event_time_utc DESC
+            LIMIT 1;
+            """,
+            (run_id, run["session_id"])
+        ).fetchone()
+
+        # Fetch step 7 physical sensor measurements
+        sample_rows = conn.execute(
+            """
+            SELECT sensor_id, measured_value, unit, quality_flag
+            FROM sensor_measurement
+            WHERE run_id = ? AND session_id = ? AND step_index = 7;
+            """,
+            (run_id, run["session_id"])
+        ).fetchall()
+
+        meas_map = {row["sensor_id"]: row for row in sample_rows}
+        meta_configs = [
+            ("RELATIVE_SIGNAL", "광학 발광 상대 신호 (OES Relative Signal)", 65.0, 50.0),
+            ("CHAMBER_PRESSURE", "챔버 공정 진공 압력 (Capacitance Manometer)", 140.0, 120.0),
+            ("RF_POWER", "RF 플라즈마 전원 출력 (RF Generator Forward Power)", 1650.0, 1500.0)
+        ]
+
+        evidence_sensors = []
+        for s_id, s_name, ucl, tgt in meta_configs:
+            if s_id in meas_map and meas_map[s_id]["measured_value"] is not None:
+                val = float(meas_map[s_id]["measured_value"])
+                qf = meas_map[s_id]["quality_flag"]
+                dev = round(((val - tgt) / tgt) * 100.0, 1)
+                evidence_sensors.append(SensorEvidence(
+                    sensor_id=s_id,
+                    sensor_name=s_name,
+                    measured_value=val,
+                    unit=meas_map[s_id]["unit"],
+                    quality_flag=qf,
+                    ucl_threshold=ucl,
+                    target_value=tgt,
+                    deviation_percent=dev
+                ))
+
+        # Fetch wafer distributions
+        wafers = conn.execute(
+            """
+            SELECT wafer_id, exposure_status
+            FROM process_run_wafer
+            WHERE run_id = ? AND session_id = ?
+            ORDER BY slot_number ASC;
+            """,
+            (run_id, run["session_id"])
+        ).fetchall()
+
+        confirmed = [w["wafer_id"] for w in wafers if w["exposure_status"] == "CONFIRMED_EXPOSED"]
+        candidate = [w["wafer_id"] for w in wafers if w["exposure_status"] == "CANDIDATE_EXPOSED"]
+        unexposed = len([w for w in wafers if w["exposure_status"] == "NOT_EXPOSED"])
+
+        return HistoricalRunSnapshot(
+            run_id=run["run_id"],
+            session_id=run["session_id"],
+            seed=run["seed"],
+            is_active=bool(run["is_active"]),
+            equipment_id=run["equipment_id"],
+            chamber_id=run["chamber_id"],
+            recipe_id=run["recipe_id"],
+            lot_id=run["lot_id"],
+            start_time_utc=run["start_time_utc"],
+            run_status=run["run_status"],
+            data_origin=run["data_origin"] or "synthetic",
+            alert_id=alert["alert_id"] if alert else None,
+            alert_severity=alert["severity"] if alert else None,
+            alert_rule_code=alert["rule_code"] if alert else None,
+            alert_message=alert["message"] if alert else None,
+            evidence_sensors=evidence_sensors,
+            total_wafers=len(wafers) if wafers else 25,
+            confirmed_exposed_wafers=confirmed,
+            candidate_exposed_wafers=candidate,
+            unexposed_wafers_count=unexposed,
+            read_only=True
+        )
+
 
 @app.get("/api/v1/demo/runs/{run_id}/samples", response_model=List[SensorSample])
 def get_run_samples(run_id: str, sensor_id: Optional[str] = Query(default=None)):

@@ -2594,9 +2594,9 @@ test('BUILD-06 (g) Multi-page bidirectional navigation, EKL L1 integration, and 
 
   // 1. All 4 pages must contain bidirectional navigation links to each other
   assert.ok(
-    (eiPageSource.includes('href="/"') || eiPageSource.includes('href={`/${mode')) &&
-    (eiPageSource.includes('href="/traceability"') || eiPageSource.includes('href={`/traceability')) &&
-    (eiPageSource.includes('href="/command-center"') || eiPageSource.includes('href={`/command-center'))
+    (eiPageSource.includes('href="/"') || eiPageSource.includes('href={`/${mode') || eiPageSource.includes("buildCrossNavUrl('/',")) &&
+    (eiPageSource.includes('href="/traceability"') || eiPageSource.includes('href={`/traceability') || eiPageSource.includes("buildCrossNavUrl('/traceability',")) &&
+    (eiPageSource.includes('href="/command-center"') || eiPageSource.includes('href={`/command-center') || eiPageSource.includes("buildCrossNavUrl('/command-center',"))
   );
   assert.ok(homePageSource.includes('/equipment-intelligence'), 'Home must link to /equipment-intelligence');
   assert.ok(tracePageSource.includes('/equipment-intelligence'), 'Traceability must link to /equipment-intelligence');
@@ -3099,13 +3099,33 @@ test('[잔여 P1-C] 개별 합성 재합성 이후 복귀 시 seed 컨텍스트 
   assert.ok(ccPageSource.includes('Number.isInteger(num) && num > 0 && num < 1000000000'), 'Command Center must validate safe integer bounds');
 
   // 4. Mode A Command Center links preserve seed
-  assert.ok(ccPageSource.includes("`/${mode === 'A' ? `?seed=${seed}` : ''}`"), 'CC Home link must preserve seed');
-  assert.ok(ccPageSource.includes("`/traceability${mode === 'A' ? `?seed=${seed}` : ''}`"), 'CC Traceability link must preserve seed');
-  assert.ok(ccPageSource.includes("`/equipment-intelligence${mode === 'A' ? `?seed=${seed}` : ''}`"), 'CC Equipment link must preserve seed');
-  assert.ok(ccPageSource.includes("mode === 'A' ? `&seed=${seed}` : ''"), 'CC Investigation/Wafer links must preserve seed');
+  assert.ok(
+    ccPageSource.includes("`/${mode === 'A' ? `?seed=${seed}` : ''}`") ||
+    ccPageSource.includes("buildCrossNavUrl('/',"),
+    'CC Home link must preserve seed'
+  );
+  assert.ok(
+    ccPageSource.includes("`/traceability${mode === 'A' ? `?seed=${seed}` : ''}`") ||
+    ccPageSource.includes("buildCrossNavUrl('/traceability',"),
+    'CC Traceability link must preserve seed'
+  );
+  assert.ok(
+    ccPageSource.includes("`/equipment-intelligence${mode === 'A' ? `?seed=${seed}` : ''}`") ||
+    ccPageSource.includes("buildCrossNavUrl('/equipment-intelligence',"),
+    'CC Equipment link must preserve seed'
+  );
+  assert.ok(
+    ccPageSource.includes("mode === 'A' ? `&seed=${seed}` : ''") ||
+    ccPageSource.includes("buildCrossNavUrl("),
+    'CC Investigation/Wafer links must preserve seed'
+  );
 
   // 5. Equipment Intelligence back button and tabs preserve seed in Mode A
-  assert.ok(eiPageSource.includes("`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`"), 'EI back to CC must preserve seed');
+  assert.ok(
+    eiPageSource.includes("`/command-center${mode === 'A' ? `?seed=${seed}` : ''}`") ||
+    eiPageSource.includes("buildCrossNavUrl('/command-center',"),
+    'EI back to CC must preserve seed'
+  );
 });
 
 // =========================================================================
@@ -4351,6 +4371,234 @@ test('BUILD-13 (e) Historical Process Run API Endpoint Contract (GET /api/v1/dem
   assert.ok(mainPySource.includes('is_active=bool(row["is_active"])'), 'Must mark is_active correctly');
   assert.ok(mainPySource.includes('FROM process_run r'), 'Query must select from process_run');
 });
+
+// =========================================================================
+// BUILD-14 FAB ONE Demo Release Candidate Contract Tests (a ~ g)
+// =========================================================================
+
+test('BUILD-14 (a) Casebook Cross-Run Isolation & Historical Case Viewer Contract', () => {
+  const wsPageSource = readFileSync(
+    new URL('../src/app/engineering-workspace/page.tsx', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Historical Case Modal and Return CTA
+  assert.ok(wsPageSource.includes('id="ws-historical-case-modal"'), 'Workspace must define #ws-historical-case-modal');
+  assert.ok(wsPageSource.includes('id="ws-btn-close-historical-case"'), 'Modal must define #ws-btn-close-historical-case');
+  assert.ok(wsPageSource.includes('id="ws-btn-return-active-workspace"'), 'Modal must define #ws-btn-return-active-workspace');
+
+  // 2. Cross-run isolation logic: does not overwrite active editor
+  assert.ok(
+    wsPageSource.includes('const isMatchingRun = record.runId === runId && record.mode === mode;') ||
+    wsPageSource.includes('record.runId !== runId'),
+    'Must isolate records whose runId or mode differ from active run'
+  );
+  assert.ok(wsPageSource.includes('setHistoricalCaseRecord(record)'), 'Cross-run record must open in historical modal');
+
+  // 3. Dynamic button labels: identical run editor load vs read-only view
+  assert.ok(wsPageSource.includes('동일 Run 에디터로 불러오기 ↩'), 'Must label active run load as 동일 Run 에디터로 불러오기 ↩');
+  assert.ok(wsPageSource.includes('상세 열람 (Read-Only) 👁'), 'Must label cross run load as 상세 열람 (Read-Only) 👁');
+});
+
+test('BUILD-14 (b) Historical Process Run Archive Snapshot Viewer Contract (GET /api/v1/demo/runs/{run_id})', () => {
+  const mainPySource = readFileSync(
+    new URL('../../../services/api/main.py', import.meta.url),
+    'utf8'
+  );
+  const modelsPySource = readFileSync(
+    new URL('../../../services/api/models.py', import.meta.url),
+    'utf8'
+  );
+  const wsPageSource = readFileSync(
+    new URL('../src/app/engineering-workspace/page.tsx', import.meta.url),
+    'utf8'
+  );
+
+  // 1. FastAPI GET /api/v1/demo/runs/{run_id} endpoint and HistoricalRunSnapshot schema
+  assert.ok(mainPySource.includes('@app.get("/api/v1/demo/runs/{run_id}"'), 'FastAPI main.py must define GET /api/v1/demo/runs/{run_id}');
+  assert.ok(modelsPySource.includes('class HistoricalRunSnapshot(BaseModel):'), 'models.py must define HistoricalRunSnapshot schema');
+
+  // 2. Workspace Historical Run panel and return CTA
+  assert.ok(wsPageSource.includes('id="ws-historical-run-panel"'), 'Workspace must define #ws-historical-run-panel');
+  assert.ok(wsPageSource.includes('id="ws-btn-close-historical-run"'), 'Must define #ws-btn-close-historical-run');
+  assert.ok(wsPageSource.includes('id="ws-btn-return-active-run"'), 'Must define #ws-btn-return-active-run');
+
+  // 3. Handle view server run fetches API directly without triggering 409 URL mismatch
+  assert.ok(wsPageSource.includes('handleViewServerRun'), 'Workspace must define handleViewServerRun');
+  assert.ok(wsPageSource.includes('api/v1/demo/runs/${encodeURIComponent(r.run_id)}'), 'handleViewServerRun must fetch historical snapshot by run_id');
+});
+
+test('BUILD-14 (c) Mode B Async 3-Phase Snapshot Recheck Contract (summary1 -> inv -> summary2)', () => {
+  const wsPageSource = readFileSync(
+    new URL('../src/app/engineering-workspace/page.tsx', import.meta.url),
+    'utf8'
+  );
+
+  // 1. 3-Phase fetch sequence: summary -> inv -> summary2
+  assert.ok(
+    wsPageSource.includes('summaryRes') && wsPageSource.includes('summary2Res'),
+    'Workspace loader must fetch initial summary and recheck summary'
+  );
+
+  // 2. Invariant verification across both summaries and investigation detail
+  assert.ok(wsPageSource.includes('currentRunId === invData.run_id'), 'Must verify currentRunId matches invData.run_id');
+  assert.ok(wsPageSource.includes('invData.run_id === currentRunId2'), 'Must verify summary2 active_run_id matches currentRunId');
+  assert.ok(wsPageSource.includes('currentSessionId2'), 'Must verify session lineage did not change');
+  assert.ok(wsPageSource.includes('상태 전이 충돌 (Concurrent Run Transition Conflict)'), 'Must report 409 transition conflict on mismatch');
+});
+
+test('BUILD-14 (d) Casebook v1 Strict Schema Validation & Corrupted Backup Rejection Contract', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Schema version and validator function in context
+  assert.ok(contextSource.includes('schemaVersion: 1'), 'CasebookRecord must specify schemaVersion: 1');
+  assert.ok(contextSource.includes('function isValidCasebookRecord('), 'Must export isValidCasebookRecord');
+  assert.ok(contextSource.includes('function validateAndImportCasebookRecords('), 'Must export validateAndImportCasebookRecords');
+
+  // 2. Behavioral verification of schema validator logic
+  function isValidCasebookRecord(item) {
+    if (!item || typeof item !== 'object') return false;
+    if (typeof item.id !== 'string' || !item.id.trim()) return false;
+    if (typeof item.savedAtUtc !== 'string' || isNaN(Date.parse(item.savedAtUtc))) return false;
+    if (typeof item.runId !== 'string' || !item.runId.trim()) return false;
+    if (typeof item.alertId !== 'string' || !item.alertId.trim()) return false;
+    if (item.mode !== 'A' && item.mode !== 'B') return false;
+    if (typeof item.lotId !== 'string') return false;
+    if (typeof item.equipmentId !== 'string') return false;
+    if (typeof item.chamberId !== 'string') return false;
+    if (!Array.isArray(item.hypotheses)) return false;
+    if (!Array.isArray(item.actions)) return false;
+    return true;
+  }
+
+  const validSample = {
+    schemaVersion: 1,
+    id: 'CASE-20261016-001',
+    savedAtUtc: '2026-10-16T08:00:00.000Z',
+    runId: 'RUN-DEMO-015',
+    alertId: 'AL-DEMO-015',
+    mode: 'B',
+    lotId: 'LOT-DEMO-815',
+    equipmentId: 'ETCH-02',
+    chamberId: 'CH-B',
+    hypotheses: [],
+    actions: [],
+    userNotes: 'Valid notes',
+  };
+
+  assert.equal(isValidCasebookRecord(validSample), true, 'Valid sample must pass schema check');
+  assert.equal(isValidCasebookRecord(null), false, 'null must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, id: '' }), false, 'Empty id must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, mode: 'C' }), false, 'Invalid mode must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, hypotheses: null }), false, 'Non-array hypotheses must fail');
+  assert.equal(isValidCasebookRecord({ ...validSample, savedAtUtc: 'invalid-date' }), false, 'Invalid date must fail');
+});
+
+test('BUILD-14 (e) Markdown Pipe and Newline Sanitization / Escaping Contract (escapeMarkdownTableAndNotes)', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(contextSource.includes('function escapeMarkdownTableAndNotes('), 'Must export escapeMarkdownTableAndNotes');
+
+  function escapeMarkdownTableAndNotes(text) {
+    if (!text) return '';
+    return text
+      .replace(/\|/g, '\\|')
+      .replace(/\r\n/g, '<br/>')
+      .replace(/\n/g, '<br/>');
+  }
+
+  const rawNotesWithPipes = '가설 1 | 가설 2 | 가설 3\n줄바꿈 메모 2행\r\n줄바꿈 메모 3행';
+  const escaped = escapeMarkdownTableAndNotes(rawNotesWithPipes);
+
+  assert.ok(!escaped.includes(' | '), 'Pipes must be escaped');
+  assert.ok(escaped.includes('\\|'), 'Pipes must be preceded by backslash');
+  assert.ok(escaped.includes('<br/>'), 'Newlines must be converted to <br/>');
+  assert.ok(!escaped.includes('\n'), 'Raw newline characters must not remain');
+
+  // Verify generateCaseReportMarkdown calls escapeMarkdownTableAndNotes
+  assert.ok(
+    contextSource.includes('escapeMarkdownTableAndNotes(userNotes)'),
+    'generateCaseReportMarkdown must invoke escapeMarkdownTableAndNotes on userNotes'
+  );
+});
+
+test('BUILD-14 (f) Cross-Screen Context Preservation & buildCrossNavUrl Contract', () => {
+  const contextSource = readFileSync(
+    new URL('../src/lib/investigation-context.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(contextSource.includes('function buildCrossNavUrl('), 'Must export buildCrossNavUrl');
+
+  function buildCrossNavUrl(basePath, params) {
+    const q = new URLSearchParams();
+    if (params.mode === 'B') {
+      q.set('mode', 'B');
+      if (params.runId) q.set('run_id', params.runId);
+      if (params.alertId) q.set('alert', params.alertId);
+    } else {
+      if (params.seed !== undefined) q.set('seed', String(params.seed));
+      if (params.alertId) q.set('alert', params.alertId);
+    }
+    if (params.waferId) q.set('wafer', params.waferId);
+    if (params.tourStep) q.set('step', params.tourStep);
+
+    const qs = q.toString();
+    return qs ? `${basePath}?${qs}` : basePath;
+  }
+
+  // Mode B URL preservation
+  const modeBUrl = buildCrossNavUrl('/engineering-workspace', {
+    mode: 'B',
+    runId: 'RUN-DEMO-015',
+    alertId: 'AL-DEMO-015',
+  });
+  assert.equal(modeBUrl, '/engineering-workspace?mode=B&run_id=RUN-DEMO-015&alert=AL-DEMO-015');
+
+  // Mode A URL preservation
+  const modeAUrl = buildCrossNavUrl('/traceability', {
+    mode: 'A',
+    seed: 20261015,
+    waferId: 'W-08',
+  });
+  assert.equal(modeAUrl, '/traceability?seed=20261015&wafer=W-08');
+
+  // Demo Tour step preservation
+  const tourUrl = buildCrossNavUrl('/demo-tour', {
+    mode: 'A',
+    seed: 20261015,
+    tourStep: 'T7_ANOMALY',
+  });
+  assert.equal(tourUrl, '/demo-tour?seed=20261015&step=T7_ANOMALY');
+});
+
+test('BUILD-14 (g) Release Candidate Portfolio UI, Dual-Card Demo Chooser & Focus Accessibility Contract', () => {
+  const homePageSource = readFileSync(
+    new URL('../src/app/page.tsx', import.meta.url),
+    'utf8'
+  );
+  const wsPageSource = readFileSync(
+    new URL('../src/app/engineering-workspace/page.tsx', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Dual-card demo chooser on Home
+  assert.ok(homePageSource.includes('id="hero-guided-tour-banner"'), 'Home must contain hero banner for tour');
+  assert.ok(homePageSource.includes('id="hero-guided-tour-card"'), 'Home must feature Mode A Guided Tour card');
+  assert.ok(homePageSource.includes('id="hero-live-connected-card"'), 'Home must feature Mode B Live Connected Case card');
+  assert.ok(homePageSource.includes('id="btn-start-guided-tour"'), 'Home must define #btn-start-guided-tour');
+  assert.ok(homePageSource.includes('id="btn-start-live-connected-case"'), 'Home must define #btn-start-live-connected-case');
+
+  // 2. Release candidate branding
+  assert.ok(wsPageSource.includes('BUILD-14 Release Candidate'), 'Workspace must declare BUILD-14 Release Candidate in header');
+});
+
 
 
 

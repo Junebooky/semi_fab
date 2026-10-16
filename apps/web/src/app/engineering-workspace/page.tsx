@@ -28,9 +28,11 @@ import {
   loadSavedCasebookRecords,
   saveCasebookRecordToStorage,
   deleteCasebookRecordFromStorage,
+  validateAndImportCasebookRecords,
+  buildCrossNavUrl,
   FAB_ONE_CASEBOOK_STORAGE_KEY,
 } from '@/components/engineering-workspace/engineering-workspace-contract';
-import { TourReturnBanner } from '@/components/guided-demo';
+import { TourReturnBanner, getModeAT7ExcursionValues } from '@/components/guided-demo';
 
 interface WaferCassetteSummary {
   total: number;
@@ -126,6 +128,11 @@ function EngineeringWorkspaceContent() {
   const [savedCaseRecords, setSavedCaseRecords] = useState<CasebookRecord[]>([]);
   const [serverRuns, setServerRuns] = useState<Array<any>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Historical Record & Run Snapshot Viewers (Read-only isolation)
+  const [historicalCaseRecord, setHistoricalCaseRecord] = useState<CasebookRecord | null>(null);
+  const [historicalRunSnapshot, setHistoricalRunSnapshot] = useState<any | null>(null);
+  const [isLoadingHistoricalRun, setIsLoadingHistoricalRun] = useState<boolean>(false);
 
   // Nav links preserving active context
   const navLinks = useMemo(
@@ -377,6 +384,97 @@ function EngineeringWorkspaceContent() {
       return;
     }
 
+    // Step 4: Snapshot Recheck (P0 Invariant: Verify server active run did not transition during inflight fetch)
+    let summary2Res: Response;
+    try {
+      summary2Res = await fetch('http://localhost:8000/api/v1/demo/summary', { cache: 'no-store' });
+    } catch {
+      if (reqId !== activeReqIdRef.current) return;
+      setEvidence([]);
+      setIsSupportedAlert(false);
+      setErrorState({
+        status: 503,
+        title: '비동기 스냅샷 재확인 실패 (Snapshot Recheck Disrupted)',
+        message: '조사 데이터 확정 전 활성 공정 상태 재확인 중 네트워크 연결이 끊어졌습니다 (Fail-closed).',
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    if (reqId !== activeReqIdRef.current) return;
+
+    if (!summary2Res.ok) {
+      setEvidence([]);
+      setIsSupportedAlert(false);
+      setErrorState({
+        status: summary2Res.status,
+        title: `활성 공정 재확인 실패 (HTTP ${summary2Res.status})`,
+        message: '조사 확정 단계에서 서버 최신 요약 상태를 검증하지 못했습니다 (Fail-closed).',
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    let summary2Data: any;
+    try {
+      summary2Data = await summary2Res.json();
+    } catch {
+      if (reqId !== activeReqIdRef.current) return;
+      setEvidence([]);
+      setIsSupportedAlert(false);
+      setErrorState({
+        status: 502,
+        title: '스냅샷 재확인 응답 형식 오류 (HTTP 502)',
+        message: '서버 최신 요약 데이터가 올바른 JSON 형식이 아닙니다 (Fail-closed).',
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    if (reqId !== activeReqIdRef.current) return;
+
+    const currentRunId2 = summary2Data?.active_run_id;
+    const currentSessionId2 = summary2Data?.active_session_id;
+
+    // Snapshot Coherence Invariants (P0):
+    const isSnapshotCoherent =
+      currentRunId === invData.run_id &&
+      invData.run_id === currentRunId2 &&
+      summaryData.active_session_id === currentSessionId2 &&
+      summary2Data.lot_id === invData.lot_id &&
+      summary2Data.equipment_id === invData.equipment_id &&
+      summary2Data.chamber_id === invData.chamber_id;
+
+    if (!isSnapshotCoherent) {
+      setEvidence([]);
+      setIsSupportedAlert(false);
+      setErrorState({
+        status: 409,
+        title: '활성 공정 상태 전이 충돌 (Concurrent Run Transition Conflict)',
+        message: `조사 데이터 수신 중 서버의 활성 공정 Run이 변경되었거나 세션/장비/로트 계통성이 불일치합니다. (초기 Run: ${currentRunId}, 조사 Run: ${invData.run_id}, 최신 Run: ${currentRunId2}) 데이터 무결성을 위해 조회를 차단하고 최신 상태로 재동기화가 필요합니다.`,
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    if (
+      !invData.lot_id ||
+      !invData.alert_id ||
+      !Array.isArray(invData.evidence_sensors) ||
+      invData.evidence_sensors.length === 0 ||
+      !Array.isArray(invData.candidate_exposed_wafers)
+    ) {
+      setEvidence([]);
+      setIsSupportedAlert(false);
+      setErrorState({
+        status: 500,
+        title: '조사 상세 데이터 규격 결함 (Malformed Investigation Detail)',
+        message: '서버가 반환한 조사 상세 데이터에 필수 센서 증거 또는 웨이퍼 정보가 누락되었습니다 (Fail-closed).',
+      });
+      setIsLoading(false);
+      return;
+    }
+
     // Atomic state commit in Mode B
     setRunId(invData.run_id);
     setSessionId(summaryData.active_session_id || 'SES-SYN-01');
@@ -525,39 +623,40 @@ function EngineeringWorkspaceContent() {
         });
       }
     } else {
-      // In Mode A or fallback, map ONLY physical sensors from default baseline
+      // In Mode A or fallback, map ONLY physical sensors dynamically from seed via getModeAT7ExcursionValues
+      const modeAVals = getModeAT7ExcursionValues(seed);
       physicalSensorList.push(
         {
           sensorId: 'RELATIVE_SIGNAL',
           sensorName: '광학 발광 상대 신호 (OES Relative Signal)',
-          observedValue: 80.0,
+          observedValue: modeAVals.oesSignal,
           unit: 'a.u.',
           qualityFlag: 'SUSPECT',
-          uclThreshold: 65.0,
-          targetValue: 50.0,
-          deviationPercent: 23.1,
-          details: 'Step T7 관리한계(UCL 65.0) 초과 계측',
+          uclThreshold: modeAVals.uclLimit,
+          targetValue: modeAVals.baselineOes,
+          deviationPercent: +(((modeAVals.oesSignal - modeAVals.baselineOes) / modeAVals.baselineOes) * 100).toFixed(1),
+          details: `Step T7 관리한계(UCL ${modeAVals.uclLimit}) 초과 계측`,
         },
         {
           sensorId: 'CHAMBER_PRESSURE',
           sensorName: '챔버 공정 진공 압력 (Capacitance Manometer)',
-          observedValue: 168.5,
+          observedValue: modeAVals.chamberPressure,
           unit: 'mTorr',
           qualityFlag: 'SUSPECT',
           uclThreshold: 140.0,
-          targetValue: 120.0,
-          deviationPercent: 20.4,
+          targetValue: modeAVals.baselinePressure,
+          deviationPercent: +(((modeAVals.chamberPressure - modeAVals.baselinePressure) / modeAVals.baselinePressure) * 100).toFixed(1),
           details: 'Step T7 진공 압력 일탈',
         },
         {
           sensorId: 'RF_POWER',
           sensorName: 'RF 플라즈마 전원 출력 (RF Generator Forward Power)',
-          observedValue: 1820.0,
+          observedValue: modeAVals.rfPower,
           unit: 'W',
           qualityFlag: 'SUSPECT',
           uclThreshold: 1650.0,
-          targetValue: 1500.0,
-          deviationPercent: 10.3,
+          targetValue: modeAVals.baselineRf,
+          deviationPercent: +(((modeAVals.rfPower - modeAVals.baselineRf) / modeAVals.baselineRf) * 100).toFixed(1),
           details: 'Step T7 RF 전원 서지',
         }
       );
@@ -645,12 +744,13 @@ function EngineeringWorkspaceContent() {
     const recordId = `CASE-${runId}-${Date.now()}`;
     const record: CasebookRecord = {
       id: recordId,
+      schemaVersion: 1,
       runId,
       sessionId,
       alertId,
       seed,
       mode,
-      dataOrigin: 'synthetic',
+      dataOrigin: mode === 'B' ? 'live_api' : 'synthetic',
       equipmentId,
       chamberId,
       lotId,
@@ -678,45 +778,90 @@ function EngineeringWorkspaceContent() {
       reportExported: false,
     };
 
-    saveCasebookRecordToStorage(record);
-    setSavedCaseRecords(loadSavedCasebookRecords());
-    setCasebookNotice(`현재 사건(${runId} / ${alertId})이 Casebook에 성공적으로 저장되었습니다.`);
+    const saveRes = saveCasebookRecordToStorage(record);
+    if (saveRes.success) {
+      setSavedCaseRecords(loadSavedCasebookRecords());
+      setCasebookNotice(`현재 사건(${runId} / ${alertId})이 Casebook에 성공적으로 저장되었습니다.`);
+    } else {
+      setCasebookNotice(`저장 실패 (${saveRes.error}): ${saveRes.message}`);
+    }
   }, [isExportable, runId, sessionId, alertId, seed, mode, equipmentId, chamberId, lotId, hypotheses, actions, notes]);
 
-  // Load a saved Casebook record into Workspace
-  const handleLoadCasebookRecord = useCallback((record: CasebookRecord) => {
-    // Restore human decisions
-    setNotes(record.userNotes || '');
-    if (Array.isArray(record.hypotheses)) {
-      setHypotheses((prev) =>
-        prev.map((orig) => {
-          const matched = record.hypotheses.find((h) => h.id === orig.id);
-          if (matched) {
-            return {
-              ...orig,
-              status: matched.status as HypothesisStatus,
-              statusLabel: matched.statusLabel,
-              linkedEvidenceIds: matched.linkedEvidenceIds || [],
-            };
-          }
-          return orig;
-        })
-      );
-    }
-    if (Array.isArray(record.actions)) {
-      setActions((prev) =>
-        prev.map((orig) => {
-          const matched = record.actions.find((a) => a.id === orig.id);
-          if (matched) {
-            return { ...orig, completed: matched.completed };
-          }
-          return orig;
-        })
-      );
-    }
-    setActiveTab('INVESTIGATION');
-    setCasebookNotice(`Casebook 기록(${record.id})의 가설/조치/메모를 워크스페이스에 불러왔습니다.`);
-  }, []);
+  // Load a saved Casebook record into Workspace with Cross-Run Human Judgment Contamination Prevention (P0)
+  const handleLoadCasebookRecord = useCallback(
+    (record: CasebookRecord) => {
+      const isMatchingRun = record.runId === runId && record.mode === mode;
+      if (isMatchingRun) {
+        // Safe to load into active editor
+        setNotes(record.userNotes || '');
+        if (Array.isArray(record.hypotheses)) {
+          setHypotheses((prev) =>
+            prev.map((orig) => {
+              const matched = record.hypotheses.find((h) => h.id === orig.id);
+              if (matched) {
+                return {
+                  ...orig,
+                  status: matched.status as HypothesisStatus,
+                  statusLabel: matched.statusLabel,
+                  linkedEvidenceIds: matched.linkedEvidenceIds || [],
+                };
+              }
+              return orig;
+            })
+          );
+        }
+        if (Array.isArray(record.actions)) {
+          setActions((prev) =>
+            prev.map((orig) => {
+              const matched = record.actions.find((a) => a.id === orig.id);
+              if (matched) {
+                return { ...orig, completed: matched.completed };
+              }
+              return orig;
+            })
+          );
+        }
+        setActiveTab('INVESTIGATION');
+        setCasebookNotice(`동일 활성 Run (${record.runId})의 케이스북 기록을 에디터에 동기화했습니다.`);
+      } else {
+        // Cross-Run Read-Only Isolation: Open historical case detail modal
+        setHistoricalCaseRecord(record);
+        setCasebookNotice(
+          `[타 Run 저장 기록 열람]: 공정 Run (${record.runId}) 기록을 읽기 전용으로 열었습니다. 활성 Run (${runId}) 편집기는 보존됩니다.`
+        );
+      }
+    },
+    [runId, mode]
+  );
+
+  // View Server Process Run from SQLite (Historical Read-Only Snapshot vs Active Live Run)
+  const handleViewServerRun = useCallback(
+    async (r: any) => {
+      if (r.is_active && r.run_id === runId) {
+        setActiveTab('INVESTIGATION');
+        return;
+      }
+
+      setIsLoadingHistoricalRun(true);
+      try {
+        const res = await fetch(`http://localhost:8000/api/v1/demo/runs/${encodeURIComponent(r.run_id)}`, {
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const snap = await res.json();
+          setHistoricalRunSnapshot(snap);
+          setCasebookNotice(`과거 공정 Run (${r.run_id}) 아카이브 스냅샷을 열었습니다.`);
+        } else {
+          setCasebookNotice(`과거 공정 Run (${r.run_id}) 조회 실패 (HTTP ${res.status})`);
+        }
+      } catch {
+        setCasebookNotice(`과거 공정 Run (${r.run_id}) 조회 중 네트워크 연결에 실패했습니다.`);
+      } finally {
+        setIsLoadingHistoricalRun(false);
+      }
+    },
+    [runId]
+  );
 
   // Delete a saved Casebook record
   const handleDeleteCasebookRecord = useCallback((id: string) => {
@@ -739,27 +884,22 @@ function EngineeringWorkspaceContent() {
     URL.revokeObjectURL(url);
   }, []);
 
-  // Import Casebook backup from JSON
+  // Import Casebook backup from JSON with schema validation
   const handleImportFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target?.result as string);
-        if (Array.isArray(parsed)) {
-          let count = 0;
-          for (const item of parsed) {
-            if (item && item.id && item.runId) {
-              saveCasebookRecordToStorage(item);
-              count++;
-            }
-          }
-          setSavedCaseRecords(loadSavedCasebookRecords());
-          setCasebookNotice(`${count}건의 Casebook 사례를 성공적으로 가져왔습니다.`);
-        }
-      } catch {
-        setCasebookNotice('Casebook JSON 파일 파싱에 실패했습니다.');
+      const rawContent = event.target?.result as string;
+      const result = validateAndImportCasebookRecords(rawContent);
+      if (result.success) {
+        setSavedCaseRecords(result.records);
+        setCasebookNotice(result.message);
+      } else {
+        setCasebookNotice(`가져오기 실패 (${result.error}): ${result.message}`);
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
     };
     reader.readAsText(file);
@@ -799,21 +939,21 @@ function EngineeringWorkspaceContent() {
               FAB ONE
             </span>
             <span className="brand-subtitle" style={{ fontSize: '13px', color: '#64748B', marginLeft: '6px' }}>
-              · Engineering Workspace & Casebook (BUILD-13)
+              · Engineering Workspace & Casebook (BUILD-14 Release Candidate)
             </span>
           </div>
         </div>
 
         {/* Unified 6-Tab Navigation Bar */}
         <nav style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }} aria-label="화면 탭">
-          <Link href={`/?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
             홈 (FDC 모니터링)
           </Link>
-          <Link href={`/traceability?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/traceability', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="8" x2="12" y2="12" />
@@ -821,27 +961,27 @@ function EngineeringWorkspaceContent() {
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
-          <Link href={`/command-center?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/command-center', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
               <path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </svg>
             FDC 커맨드 센터 (Command Center)
           </Link>
-          <Link href={`/equipment-intelligence?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
             </svg>
             설비 인텔리전스 (Equipment)
           </Link>
-          <Link href={`/fab-simulation?seed=${seed}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/fab-simulation', { mode, seed, runId, alertId })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
             FAB 시뮬레이션 (Simulation)
           </Link>
-          <Link href={`/engineering-workspace?seed=${seed}`} className="nav-tab-link active">
+          <Link href={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId, alertId })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
               <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
@@ -851,7 +991,7 @@ function EngineeringWorkspaceContent() {
             엔지니어링 워크스페이스 (Workspace)
           </Link>
           <Link
-            href={queryTourStep ? `/demo-tour?seed=${seed}&step=${queryTourStep}` : `/demo-tour?seed=${seed}`}
+            href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: queryTourStep || undefined })}
             className="nav-tab-link"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1009,7 +1149,10 @@ function EngineeringWorkspaceContent() {
               role="tab"
               id="ws-tab-casebook"
               aria-selected={activeTab === 'CASEBOOK'}
-              onClick={() => setActiveTab('CASEBOOK')}
+              onClick={() => {
+                setActiveTab('CASEBOOK');
+                setSavedCaseRecords(loadSavedCasebookRecords());
+              }}
               style={{
                 padding: '8px 16px',
                 fontSize: '13px',
@@ -2007,37 +2150,37 @@ function EngineeringWorkspaceContent() {
                           </div>
                         )}
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
                           <button
                             type="button"
                             id={`casebook-btn-load-${rec.id}`}
                             onClick={() => handleLoadCasebookRecord(rec)}
                             style={{
-                              padding: '4px 10px',
-                              fontSize: '11px',
+                              padding: "4px 10px",
+                              fontSize: "11px",
                               fontWeight: 700,
-                              background: '#0B9F78',
-                              color: '#FFFFFF',
-                              border: 'none',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
+                              background: isCurrentLive ? "#0B9F78" : "#475569",
+                              color: "#FFFFFF",
+                              border: "none",
+                              borderRadius: "4px",
+                              cursor: "pointer",
                             }}
                           >
-                            워크스페이스로 불러오기 ↩
+                            {isCurrentLive ? "동일 Run 에디터로 불러오기 ↩" : "상세 열람 (Read-Only) 👁"}
                           </button>
                           <button
                             type="button"
                             id={`casebook-btn-delete-${rec.id}`}
                             onClick={() => handleDeleteCasebookRecord(rec.id)}
                             style={{
-                              padding: '4px 10px',
-                              fontSize: '11px',
+                              padding: "4px 10px",
+                              fontSize: "11px",
                               fontWeight: 700,
-                              background: '#F1F5F9',
-                              color: '#DC2626',
-                              border: '1px solid #FECACA',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
+                              background: "#F1F5F9",
+                              color: "#DC2626",
+                              border: "1px solid #FECACA",
+                              borderRadius: "4px",
+                              cursor: "pointer",
                             }}
                           >
                             삭제 🗑
@@ -2053,27 +2196,27 @@ function EngineeringWorkspaceContent() {
             {/* Section B: Server Process Runs from SQLite */}
             <section
               style={{
-                background: '#FFFFFF',
-                border: '1px solid #E2E8F0',
-                borderRadius: '10px',
-                padding: '18px 20px',
+                background: "#FFFFFF",
+                border: "1px solid #E2E8F0",
+                borderRadius: "10px",
+                padding: "18px 20px",
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <h3 style={{ fontSize: "14px", fontWeight: 800, color: "#0F172A", margin: 0 }}>
                   서버 공정 Run 이력 (FastAPI SQLite process_run)
                 </h3>
-                <span style={{ fontSize: '11px', color: '#64748B' }}>
-                  {serverRuns.length > 0 ? `${serverRuns.length}개 Run 검색됨` : '서버 미연결 (Mode A 오프라인)'}
+                <span style={{ fontSize: "11px", color: "#64748B" }}>
+                  {serverRuns.length > 0 ? `${serverRuns.length}개 Run 검색됨` : "서버 미연결 (Mode A 오프라인)"}
                 </span>
               </div>
-              <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '14px' }}>
+              <div style={{ fontSize: "11px", color: "#64748B", marginBottom: "14px" }}>
                 ※ 이전 Run은 <strong>&apos;HISTORICAL SNAPSHOT (Read-Only)&apos;</strong>으로 제공되며, 현재 설비 실시간 제어나 양산 MES 기록이 아닌 synthetic 시뮬레이션 데이터입니다.
               </div>
 
-              <div id="ws-casebook-server-runs-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div id="ws-casebook-server-runs-list" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {serverRuns.length === 0 ? (
-                  <div style={{ padding: '16px', textAlign: 'center', color: '#94A3B8', fontSize: '12px' }}>
+                  <div style={{ padding: "16px", textAlign: "center", color: "#94A3B8", fontSize: "12px" }}>
                     서버 Run 목록이 없거나 API 서버에 연결되지 않았습니다.
                   </div>
                 ) : (
@@ -2084,77 +2227,71 @@ function EngineeringWorkspaceContent() {
                         key={r.run_id}
                         id={`casebook-run-${r.run_id}`}
                         style={{
-                          border: isLive ? '2px solid #3B82F6' : '1px solid #E2E8F0',
-                          borderRadius: '6px',
-                          padding: '10px 14px',
-                          background: isLive ? '#EFF6FF' : '#FFFFFF',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          flexWrap: 'wrap',
-                          gap: '8px',
+                          border: isLive ? "2px solid #3B82F6" : "1px solid #E2E8F0",
+                          borderRadius: "6px",
+                          padding: "10px 14px",
+                          background: isLive ? "#EFF6FF" : "#FFFFFF",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: "8px",
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                           <span
                             style={{
-                              fontSize: '10px',
+                              fontSize: "10px",
                               fontWeight: 800,
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              background: isLive ? '#DBEAFE' : '#F1F5F9',
-                              color: isLive ? '#1D4ED8' : '#64748B',
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                              background: isLive ? "#DBEAFE" : "#F1F5F9",
+                              color: isLive ? "#1D4ED8" : "#64748B",
                             }}
                           >
-                            {isLive ? 'LIVE ACTIVE' : 'HISTORICAL SNAPSHOT'}
+                            {isLive ? "LIVE ACTIVE" : "HISTORICAL SNAPSHOT"}
                           </span>
-                          <span style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A' }}>
+                          <span style={{ fontSize: "12px", fontWeight: 800, color: "#0F172A" }}>
                             {r.run_id}
                           </span>
-                          <span style={{ fontSize: '11px', color: '#64748B' }}>
+                          <span style={{ fontSize: "11px", color: "#64748B" }}>
                             시드: {r.seed} · 로트: {r.lot_id} · 설비: {r.equipment_id}/{r.chamber_id}
                           </span>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                           {r.alert_id && (
                             <span
                               style={{
-                                fontSize: '10px',
+                                fontSize: "10px",
                                 fontWeight: 800,
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                background: r.alert_severity === 'CRITICAL' ? '#FEF2F2' : '#FFF7ED',
-                                color: r.alert_severity === 'CRITICAL' ? '#DC2626' : '#EA580C',
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                background: r.alert_severity === "CRITICAL" ? "#FEF2F2" : "#FFF7ED",
+                                color: r.alert_severity === "CRITICAL" ? "#DC2626" : "#EA580C",
                               }}
                             >
-                              {r.alert_id} ({r.alert_severity || 'ALERT'})
+                              {r.alert_id} ({r.alert_severity || "ALERT"})
                             </span>
                           )}
 
                           <button
                             type="button"
                             id={`casebook-btn-view-run-${r.run_id}`}
-                            onClick={() => {
-                              router.replace(
-                                `/engineering-workspace?mode=B&run_id=${encodeURIComponent(r.run_id)}${
-                                  r.alert_id ? `&alert=${encodeURIComponent(r.alert_id)}` : ''
-                                }`
-                              );
-                              setActiveTab('INVESTIGATION');
-                            }}
+                            onClick={() => handleViewServerRun(r)}
+                            disabled={isLoadingHistoricalRun}
                             style={{
-                              padding: '4px 10px',
-                              fontSize: '11px',
+                              padding: "4px 10px",
+                              fontSize: "11px",
                               fontWeight: 700,
-                              background: '#FFFFFF',
-                              color: '#2563EB',
-                              border: '1px solid #BFDBFE',
-                              borderRadius: '4px',
-                              cursor: 'pointer',
+                              background: "#FFFFFF",
+                              color: isLive ? "#059669" : "#2563EB",
+                              border: isLive ? "1px solid #A7F3D0" : "1px solid #BFDBFE",
+                              borderRadius: "4px",
+                              cursor: isLoadingHistoricalRun ? "wait" : "pointer",
                             }}
                           >
-                            해당 Run 열기 ↗
+                            {isLive ? "활성 조사로 이동 ↗" : "스냅샷 열람 (Read-Only) 👁"}
                           </button>
                         </div>
                       </div>
@@ -2335,6 +2472,595 @@ function EngineeringWorkspaceContent() {
             </li>
           </ul>
         </footer>
+
+        {/* Modal 1: Historical Casebook Record Modal (Read-Only Cross-Run Isolation) */}
+        {historicalCaseRecord && (
+          <div
+            id="ws-historical-case-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="historical-case-title"
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(15, 23, 42, 0.65)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              padding: "20px",
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: "#FFFFFF",
+                borderRadius: "12px",
+                width: "100%",
+                maxWidth: "780px",
+                maxHeight: "90vh",
+                overflowY: "auto",
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+                border: "1px solid #CBD5E1",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              {/* Modal Header */}
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: "1px solid #E2E8F0",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#F8FAFC",
+                  borderTopLeftRadius: "12px",
+                  borderTopRightRadius: "12px",
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 800,
+                        padding: "2px 8px",
+                        borderRadius: "10px",
+                        background: "#F1F5F9",
+                        color: "#475569",
+                        border: "1px solid #CBD5E1",
+                      }}
+                    >
+                      HISTORICAL CASEBOOK RECORD · READ-ONLY
+                    </span>
+                    <span style={{ fontSize: "11px", color: "#64748B" }}>
+                      Schema v{historicalCaseRecord.schemaVersion || 1}
+                    </span>
+                  </div>
+                  <h3 id="historical-case-title" style={{ fontSize: "16px", fontWeight: 800, color: "#0F172A", margin: "4px 0 0 0" }}>
+                    과거 조사 사례 열람 (Run: {historicalCaseRecord.runId})
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  id="ws-btn-close-historical-case"
+                  onClick={() => setHistoricalCaseRecord(null)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    fontSize: "20px",
+                    lineHeight: 1,
+                    color: "#64748B",
+                    cursor: "pointer",
+                    padding: "4px",
+                  }}
+                  aria-label="닫기"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Isolation Notice Banner */}
+              <div
+                style={{
+                  margin: "16px 20px 0 20px",
+                  padding: "10px 14px",
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  color: "#991B1B",
+                  lineHeight: 1.5,
+                }}
+              >
+                🔒 <strong>데이터 격리 안전 보호:</strong> 본 기록은 과거 Run (
+                <strong>{historicalCaseRecord.runId}</strong>) 저장본입니다. 현재 활성 Run (
+                <strong>{runId}</strong>)의 워크스페이스 편집기를 덮어쓰지 않고 독립적으로 안전하게 열람 중입니다.
+              </div>
+
+              {/* Modal Body */}
+              <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+                {/* Meta Attributes */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: "10px",
+                    background: "#F8FAFC",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  }}
+                >
+                  <div>
+                    <span style={{ color: "#64748B" }}>Run ID:</span> <strong>{historicalCaseRecord.runId}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>Alert ID:</span> <strong>{historicalCaseRecord.alertId}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>Mode:</span> <strong>{historicalCaseRecord.mode === "B" ? "Mode B (Connected)" : "Mode A (Guided)"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>Lot / 설비:</span> <strong>{historicalCaseRecord.lotId} / {historicalCaseRecord.equipmentId} ({historicalCaseRecord.chamberId})</strong>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <span style={{ color: "#64748B" }}>저장 일시:</span> <strong>{new Date(historicalCaseRecord.savedAtUtc).toLocaleString("ko-KR")} (UTC: {historicalCaseRecord.savedAtUtc})</strong>
+                  </div>
+                </div>
+
+                {/* Physical Sensor Snapshot */}
+                {historicalCaseRecord.physicalSensorSnapshot && (
+                  <div>
+                    <h4 style={{ fontSize: "13px", fontWeight: 800, color: "#1E293B", marginBottom: "8px" }}>
+                      저장 당시 물리 센서 계측치 스냅샷
+                    </h4>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                        gap: "8px",
+                      }}
+                    >
+                      {Object.entries(historicalCaseRecord.physicalSensorSnapshot).map(([key, val]) => (
+                        <div
+                          key={key}
+                          style={{
+                            background: "#F1F5F9",
+                            padding: "8px 10px",
+                            borderRadius: "6px",
+                            fontSize: "11px",
+                          }}
+                        >
+                          <div style={{ color: "#64748B", fontWeight: 600 }}>{key}</div>
+                          <div style={{ fontSize: "13px", fontWeight: 800, color: "#0F172A", marginTop: "2px" }}>
+                            {String(val)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Hypotheses */}
+                <div>
+                  <h4 style={{ fontSize: "13px", fontWeight: 800, color: "#1E293B", marginBottom: "8px" }}>
+                    가설 검증 기록 ({historicalCaseRecord.hypotheses?.length || 0}건)
+                  </h4>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {historicalCaseRecord.hypotheses?.map((h) => (
+                      <div
+                        key={h.id}
+                        style={{
+                          border: "1px solid #E2E8F0",
+                          borderRadius: "6px",
+                          padding: "8px 12px",
+                          background: "#FFFFFF",
+                          fontSize: "12px",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontWeight: 800, color: "#0F172A" }}>
+                            [{h.id}] {h.title}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: "10px",
+                              fontWeight: 800,
+                              padding: "2px 8px",
+                              borderRadius: "10px",
+                              background: "#EFF6FF",
+                              color: "#1D4ED8",
+                            }}
+                          >
+                            {h.statusLabel}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px" }}>
+                          {h.engineeringRationale}
+                        </div>
+                        <div style={{ fontSize: "10px", color: "#059669", marginTop: "4px" }}>
+                          연결 증거: {h.linkedEvidenceIds?.join(", ") || "없음"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div>
+                  <h4 style={{ fontSize: "13px", fontWeight: 800, color: "#1E293B", marginBottom: "8px" }}>
+                    조치 점검표 ({historicalCaseRecord.actions?.filter((a) => a.completed).length || 0} / {historicalCaseRecord.actions?.length || 0} 완료)
+                  </h4>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {historicalCaseRecord.actions?.map((a) => (
+                      <div
+                        key={a.id}
+                        style={{
+                          border: "1px solid #E2E8F0",
+                          borderRadius: "6px",
+                          padding: "6px 10px",
+                          background: a.completed ? "#F0FDF4" : "#FFFFFF",
+                          fontSize: "12px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span>{a.completed ? "☑" : "☐"}</span>
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontWeight: 700, color: a.completed ? "#166534" : "#1E293B" }}>
+                            {a.title}
+                          </span>
+                          <span style={{ fontSize: "11px", color: "#64748B", marginLeft: "6px" }}>
+                            ({a.assigneeRole} · {a.targetSystem})
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <h4 style={{ fontSize: "13px", fontWeight: 800, color: "#1E293B", marginBottom: "8px" }}>
+                    엔지니어링 메모
+                  </h4>
+                  <div
+                    style={{
+                      background: "#F8FAFC",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: "6px",
+                      padding: "10px 12px",
+                      fontSize: "12px",
+                      color: "#334155",
+                      whiteSpace: "pre-wrap",
+                      minHeight: "40px",
+                    }}
+                  >
+                    {historicalCaseRecord.userNotes || "(작성된 메모 없음)"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div
+                style={{
+                  padding: "14px 20px",
+                  borderTop: "1px solid #E2E8F0",
+                  background: "#F8FAFC",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  borderBottomLeftRadius: "12px",
+                  borderBottomRightRadius: "12px",
+                }}
+              >
+                <button
+                  type="button"
+                  id="ws-btn-return-active-workspace"
+                  onClick={() => {
+                    setHistoricalCaseRecord(null);
+                    setActiveTab("INVESTIGATION");
+                  }}
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    background: "#0B9F78",
+                    color: "#FFFFFF",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  현재 활성 Run ({runId}) 조사로 복귀 ↩
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal 2: Historical Server Run Snapshot Panel */}
+        {historicalRunSnapshot && (
+          <div
+            id="ws-historical-run-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="historical-run-title"
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(15, 23, 42, 0.65)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              padding: "20px",
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: "#FFFFFF",
+                borderRadius: "12px",
+                width: "100%",
+                maxWidth: "800px",
+                maxHeight: "90vh",
+                overflowY: "auto",
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+                border: "1px solid #CBD5E1",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: "1px solid #E2E8F0",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  background: "#F8FAFC",
+                  borderTopLeftRadius: "12px",
+                  borderTopRightRadius: "12px",
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 800,
+                        padding: "2px 8px",
+                        borderRadius: "10px",
+                        background: "#EFF6FF",
+                        color: "#1D4ED8",
+                        border: "1px solid #BFDBFE",
+                      }}
+                    >
+                      HISTORICAL SERVER RUN SNAPSHOT (READ-ONLY)
+                    </span>
+                    <span style={{ fontSize: "11px", color: "#64748B" }}>
+                      FastAPI SQLite Archive
+                    </span>
+                  </div>
+                  <h3 id="historical-run-title" style={{ fontSize: "16px", fontWeight: 800, color: "#0F172A", margin: "4px 0 0 0" }}>
+                    과거 공정 Run 아카이브 스냅샷: {historicalRunSnapshot.run_id}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  id="ws-btn-close-historical-run"
+                  onClick={() => setHistoricalRunSnapshot(null)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    fontSize: "20px",
+                    lineHeight: 1,
+                    color: "#64748B",
+                    cursor: "pointer",
+                    padding: "4px",
+                  }}
+                  aria-label="닫기"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Invariant Disclaimer */}
+              <div
+                style={{
+                  margin: "16px 20px 0 20px",
+                  padding: "10px 14px",
+                  background: "#F0FDF4",
+                  border: "1px solid #BBF7D0",
+                  borderRadius: "8px",
+                  fontSize: "12px",
+                  color: "#166534",
+                  lineHeight: 1.5,
+                }}
+              >
+                💡 <strong>과거 Run 진실 계약(Truth Contract):</strong> 본 스냅샷은 과거 완료된 공정 Run의 읽기 전용 계측 기록입니다. 활성 공정 일탈 Run(<strong>{runId}</strong>)과 격리되어 안전하게 조회되며, 현재 설비 실시간 제어나 양산 MES 기록이 아닌 synthetic 시뮬레이션 데이터입니다.
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+                {/* Run Metadata Grid */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: "10px",
+                    background: "#F8FAFC",
+                    padding: "12px",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  }}
+                >
+                  <div>
+                    <span style={{ color: "#64748B" }}>Run ID:</span> <strong>{historicalRunSnapshot.run_id}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>상태:</span> <strong>{historicalRunSnapshot.status}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>Seed:</span> <strong>{historicalRunSnapshot.seed}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>Session ID:</span> <strong>{historicalRunSnapshot.session_id}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>Lot ID:</span> <strong>{historicalRunSnapshot.lot_id}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>Equipment / Chamber:</span> <strong>{historicalRunSnapshot.equipment_id} / {historicalRunSnapshot.chamber_id}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>생성 일시:</span> <strong>{historicalRunSnapshot.created_at ? new Date(historicalRunSnapshot.created_at).toLocaleString("ko-KR") : "-"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748B" }}>완료 일시:</span> <strong>{historicalRunSnapshot.completed_at ? new Date(historicalRunSnapshot.completed_at).toLocaleString("ko-KR") : "-"}</strong>
+                  </div>
+                </div>
+
+                {/* Alert Info */}
+                {historicalRunSnapshot.alert && (
+                  <div
+                    style={{
+                      border: "1px solid #FECACA",
+                      background: "#FEF2F2",
+                      borderRadius: "8px",
+                      padding: "12px 14px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: "13px", fontWeight: 800, color: "#991B1B" }}>
+                        FDC 경보: {historicalRunSnapshot.alert.alert_id} ({historicalRunSnapshot.alert.severity})
+                      </span>
+                      <span style={{ fontSize: "11px", color: "#B91C1C" }}>
+                        {historicalRunSnapshot.alert.step_id} ({historicalRunSnapshot.alert.step_name})
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#7F1D1D", marginTop: "4px" }}>
+                      {historicalRunSnapshot.alert.message}
+                    </div>
+                  </div>
+                )}
+
+                {/* Evidence Sensors Table */}
+                <div>
+                  <h4 style={{ fontSize: "13px", fontWeight: 800, color: "#1E293B", marginBottom: "8px" }}>
+                    물리 센서 계측치 스냅샷 (Evidence Sensors)
+                  </h4>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                      <thead>
+                        <tr style={{ background: "#F1F5F9", textAlign: "left", color: "#475569" }}>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #CBD5E1" }}>센서명</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #CBD5E1" }}>관측값</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #CBD5E1" }}>단위</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #CBD5E1" }}>SPC 관리한계 (UCL)</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #CBD5E1" }}>일탈 여부</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #CBD5E1" }}>품질 플래그</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historicalRunSnapshot.evidence_sensors?.map((s: any) => (
+                          <tr key={s.sensor_name} style={{ borderBottom: "1px solid #E2E8F0" }}>
+                            <td style={{ padding: "8px", fontWeight: 700, color: "#0F172A" }}>{s.sensor_name}</td>
+                            <td style={{ padding: "8px", fontWeight: 700, color: s.is_excursion ? "#DC2626" : "#0B9F78" }}>
+                              {s.observed_value !== null ? s.observed_value : "미제공 (N/A)"}
+                            </td>
+                            <td style={{ padding: "8px", color: "#64748B" }}>{s.unit}</td>
+                            <td style={{ padding: "8px", color: "#64748B" }}>{s.ucl !== null ? s.ucl : "-"}</td>
+                            <td style={{ padding: "8px" }}>
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 800,
+                                  padding: "2px 6px",
+                                  borderRadius: "4px",
+                                  background: s.is_excursion ? "#FEF2F2" : "#ECFDF5",
+                                  color: s.is_excursion ? "#DC2626" : "#059669",
+                                }}
+                              >
+                                {s.is_excursion ? "EXCURSION" : "NORMAL"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px" }}>
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 800,
+                                  padding: "2px 6px",
+                                  borderRadius: "4px",
+                                  background: s.quality_flag === "CRITICAL" ? "#FEF2F2" : s.quality_flag === "SUSPECT" ? "#FFF7ED" : "#F1F5F9",
+                                  color: s.quality_flag === "CRITICAL" ? "#DC2626" : s.quality_flag === "SUSPECT" ? "#EA580C" : "#475569",
+                                }}
+                              >
+                                {s.quality_flag}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Wafer Summary */}
+                <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", fontSize: "12px" }}>
+                  <span style={{ fontWeight: 800, color: "#0F172A" }}>웨이퍼 분포 현황:</span> 총 {historicalRunSnapshot.wafer_count || 25}매 중 노출 확정(CONFIRMED_EXPOSED) {historicalRunSnapshot.exposed_wafers?.length || 0}매
+                  <div style={{ fontSize: "11px", color: "#64748B", marginTop: "4px" }}>
+                    ※ Excursion ≠ Defect: 설비 센서 일탈 노출이 웨이퍼의 물리적 결함을 단정하지 않으며, 추가 계측 대상 후보군으로 분류됩니다.
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div
+                style={{
+                  padding: "14px 20px",
+                  borderTop: "1px solid #E2E8F0",
+                  background: "#F8FAFC",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "10px",
+                  borderBottomLeftRadius: "12px",
+                  borderBottomRightRadius: "12px",
+                }}
+              >
+                <button
+                  type="button"
+                  id="ws-btn-return-active-run"
+                  onClick={() => {
+                    setHistoricalRunSnapshot(null);
+                    setActiveTab("INVESTIGATION");
+                  }}
+                  style={{
+                    padding: "8px 16px",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    background: "#0B9F78",
+                    color: "#FFFFFF",
+                    border: "none",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  현재 활성 Run ({runId}) 조사로 복귀 ↩
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

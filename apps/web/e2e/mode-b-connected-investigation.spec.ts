@@ -131,4 +131,134 @@ test.describe('BUILD-13 Mode B Integrated Investigation & Casebook E2E', () => {
     await expect(page.locator('#ws-unsupported-lock-panel')).not.toBeVisible();
     await expect(exportBtn).toBeEnabled();
   });
+
+  // Test 5: BUILD-14 Historical Casebook Record Isolation (Read-only modal, active editor preservation)
+  test('BUILD-14 Cross-Run Isolation: Historical Casebook record opens in read-only modal without contaminating active editor', async ({ page }) => {
+    const summaryResponse = await page.request.get('http://localhost:8000/api/v1/demo/summary');
+    const summary = await summaryResponse.json();
+    const activeRunId = summary.active_run_id;
+
+    await page.goto(`/engineering-workspace?mode=B&run_id=${activeRunId}`);
+    await expect(page.locator('#ws-mode-b-badge')).toBeVisible();
+
+    // 1. Set active editor note
+    const activeNote = '현재 활성 Run의 최신 엔지니어링 메모';
+    await page.locator('#engineering-workspace-notes').fill(activeNote);
+
+    // 2. Inject an older historical record with different runId into localStorage
+    const oldRecord = {
+      schemaVersion: 1,
+      id: 'CASE-HISTORICAL-999',
+      savedAtUtc: new Date().toISOString(),
+      runId: 'RUN-HISTORICAL-OLD',
+      alertId: 'AL-HISTORICAL-OLD',
+      mode: 'B',
+      lotId: 'LOT-HISTORICAL-OLD',
+      equipmentId: 'ETCH-01',
+      chamberId: 'CH-A',
+      hypotheses: [
+        {
+          id: 'HYPO-01',
+          title: '과거 챔버 리크 가설',
+          domain: 'CHAMBER',
+          status: 'SUPPORTED_FOR_REVIEW',
+          statusLabel: '검토 지지',
+          engineeringRationale: '과거 런 이력 근거',
+          linkedEvidenceIds: ['EVI-01'],
+        },
+      ],
+      actions: [
+        {
+          id: 'ACT-01',
+          title: '과거 O-링 교체 조치',
+          assigneeRole: '장비 엔지니어',
+          targetSystem: 'CH-A',
+          completed: true,
+          priority: 'HIGH',
+          detail: '과거 이행 완료',
+        },
+      ],
+      userNotes: '과거 Run 완료 후 작성된 아카이브 메모입니다.',
+    };
+
+    await page.evaluate((rec) => {
+      window.localStorage.setItem('fab_one_casebook_records_v1', JSON.stringify([rec]));
+    }, oldRecord);
+
+    // 3. Navigate to Casebook tab
+    await page.locator('#ws-tab-casebook').click();
+    await expect(page.locator('#ws-casebook-panel')).toBeVisible();
+
+    // 4. Verify the load button has label '상세 열람 (Read-Only) 👁'
+    const viewBtn = page.locator('#casebook-btn-load-CASE-HISTORICAL-999');
+    await expect(viewBtn).toBeVisible();
+    await expect(viewBtn).toContainText('상세 열람 (Read-Only) 👁');
+
+    // 5. Click to open historical modal
+    await viewBtn.click();
+
+    const histModal = page.locator('#ws-historical-case-modal');
+    await expect(histModal).toBeVisible();
+    await expect(histModal).toContainText('과거 조사 사례 열람 (Run: RUN-HISTORICAL-OLD)');
+    await expect(histModal).toContainText('데이터 격리 안전 보호');
+    await expect(histModal).toContainText('과거 Run 완료 후 작성된 아카이브 메모입니다.');
+
+    // 6. Click return to active workspace
+    const returnBtn = page.locator('#ws-btn-return-active-workspace');
+    await expect(returnBtn).toBeVisible();
+    await returnBtn.click();
+
+    // 7. Verify modal closed, active tab returned, and active editor notes are preserved
+    await expect(histModal).not.toBeVisible();
+    await expect(page.locator('#ws-tab-active-investigation')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#engineering-workspace-notes')).toHaveValue(activeNote);
+  });
+
+  // Test 6: BUILD-14 Historical Server Run Snapshot Viewer (GET /api/v1/demo/runs/{run_id})
+  test('BUILD-14 Historical Server Run: Viewing previous run fetches GET /api/v1/demo/runs/{run_id} and opens read-only snapshot panel without 409 mismatch error', async ({ page }) => {
+    // 1. Create a 2nd run to ensure the 1st run becomes historical
+    const createRunRes = await page.request.post('http://localhost:8000/api/v1/demo/runs', {
+      data: {
+        seed: 9999,
+        scenario_id: 'ETH-SYN-01',
+        equipment_id: 'ETCH-02',
+        chamber_id: 'CH-B',
+      },
+    });
+    expect(createRunRes.ok()).toBeTruthy();
+
+    const summaryResponse = await page.request.get('http://localhost:8000/api/v1/demo/summary');
+    const summary = await summaryResponse.json();
+    const activeRunId = summary.active_run_id;
+
+    // 2. Go to workspace with active run
+    await page.goto(`/engineering-workspace?mode=B&run_id=${activeRunId}`);
+    await expect(page.locator('#ws-mode-b-badge')).toBeVisible();
+
+    // 3. Switch to Casebook tab
+    await page.locator('#ws-tab-casebook').click();
+    await expect(page.locator('#ws-casebook-panel')).toBeVisible();
+
+    // 4. Find historical run in server runs list
+    const historicalRunBtn = page.locator('button[id^="casebook-btn-view-run-"]:has-text("스냅샷 열람")').first();
+    await expect(historicalRunBtn).toBeVisible();
+    await historicalRunBtn.click();
+
+    // 5. Verify Historical Run Panel opened
+    const runPanel = page.locator('#ws-historical-run-panel');
+    await expect(runPanel).toBeVisible();
+    await expect(runPanel).toContainText('HISTORICAL SERVER RUN SNAPSHOT (READ-ONLY)');
+    await expect(runPanel).toContainText('물리 센서 계측치 스냅샷 (Evidence Sensors)');
+
+    // Verify no 409 error banner is visible
+    await expect(page.locator('#ws-mode-b-error-banner')).not.toBeVisible();
+
+    // 6. Return to active run
+    const returnActiveBtn = page.locator('#ws-btn-return-active-run');
+    await expect(returnActiveBtn).toBeVisible();
+    await returnActiveBtn.click();
+
+    await expect(runPanel).not.toBeVisible();
+    await expect(page.locator('#ws-tab-active-investigation')).toHaveAttribute('aria-selected', 'true');
+  });
 });
