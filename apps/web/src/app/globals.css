@@ -1800,3 +1800,20 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .ux-intro *, .ux-home-choice * { animation: none !important; transition-duration: 0s !important; }
 }
+
+/* Issue #46 · Selected-alert decision before diagnostics */
+.ux-spotlight {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 20px;
+  border-radius: 21px; border: 1px solid #DBEDE3; background: #F4FBF7;
+  padding: 24px 28px; margin: 0 0 20px;
+}
+.ux-spotlight__eyebrow { font-size: 12px; font-weight: 800; color: #0B795F; margin: 0 0 7px; }
+.ux-spotlight__title { font-size: clamp(19px, 2vw, 25px); font-weight: 800; color: #17263B; margin: 0 0 7px; letter-spacing: -.025em; }
+.ux-spotlight__description { color: #48586D; font-size: 14px; line-height: 1.75; max-width: 750px; }
+.ux-spotlight .ux-btn { flex-shrink: 0; }
+.cc-kpi-bar { margin-top: 0; opacity: .95; }
+@media(max-width:600px) {
+  .ux-spotlight { padding: 20px 18px; }
+  .ux-spotlight .ux-btn { width: 100%; }
+}
