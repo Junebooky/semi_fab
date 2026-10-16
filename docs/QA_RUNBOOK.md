@@ -40,18 +40,34 @@ python3 -m uvicorn services.api.main:app --host 127.0.0.1 --port 8000 --reload
 
 ### 2.4 테스트 실행 명령어
 ```bash
-# 1. 프론트엔드 계약 및 컴포넌트 단위/통합 테스트 (Node test runner)
+# 1. 프론트엔드 계약 및 컴포넌트 단위/통합 테스트 (Node test runner, 71 tests)
 cd apps/web
 npm test
 
-# 2. 백엔드 API 단위 테스트 (Python unittest)
+# 2. 백엔드 API 단위 테스트 (Python unittest, 14 tests)
 cd ../..
 python3 -m unittest services/api/tests/test_api.py
 
 # 3. 프론트엔드 프로덕션 정적 빌드 검증 (10개 라우트 정적 생성)
 cd apps/web
 npm run build
+
+# 4. Playwright 실제 브라우저 E2E 스모크 테스트 (BUILD-11)
+cd apps/web
+npm run test:e2e
 ```
+
+### 2.5 Playwright 브라우저 E2E 실행 환경 안내
+- **설치 및 사전 준비:**
+  ```bash
+  cd apps/web
+  npm install
+  npx playwright install chromium
+  ```
+- **자동 웹서버 기동:** `playwright.config.ts`의 `webServer` 설정에 의해 `npm run dev`(`http://localhost:3000`)가 자동 실행 및 재사용됩니다.
+- **테스트 범위:** 8단계 Guided Tour 전체 여정 클릭 검증, 시드 보존 반례(seed 20261016), 미지원 알람 데이터 격리 락 반례(AL-STANDBY-001), 화면 간 T7 센서 계측치 정합성 검증.
+- **결과 아티팩트:** 실패 시 `apps/web/test-results/`에 스크린샷, 비디오, 트레이스(`.zip`)가 자동 저장되며, `npx playwright show-trace <trace.zip>`으로 재생 가능합니다.
+
 
 ---
 
@@ -136,7 +152,39 @@ A01 기획 에이전트의 전체 기능 완성 우선 및 기술 부채 등록 
 ## 8. QA 판정 및 역할 분담 원칙 (QA Policy)
 
 - **개발자 자체 검증 (Author Verification):**
-  - 개발 에이전트(A02)는 단위 테스트(`npm test`, `unittest`), 빌드 검증(`npm run build`), 정적 계약 검증을 자체 실행하고 결과를 PR 코멘트에 상세 보고합니다.
+  - 개발 에이전트(A02)는 단위 테스트(`npm test`, `unittest`), 빌드 검증(`npm run build`), 정적 계약 검증, 그리고 Playwright E2E 스모크 테스트(`npm run test:e2e`)를 자체 실행하고 결과를 PR 코멘트에 상세 보고합니다.
 - **독립 QA 판정 (A04 QA Agent Policy):**
   - 독립 브라우저 런타임 QA는 본 PR 단계에서 공식적으로 **`NOT_RUN`** 상태를 유지합니다.
   - 본 `QA_RUNBOOK.md`는 향후 독립 QA 에이전트 또는 엔지니어가 E2E 테스트 및 인수 검사를 수행할 수 있도록 준비된 공식 인계물입니다.
+
+---
+
+## 9. BUILD-11 Playwright 브라우저 E2E 테스트 명세 및 합성 데이터 정합성
+
+### 9.1 테스트 시나리오 구성 (`apps/web/e2e/guided-demo-journey.spec.ts`)
+1. **8단계 Guided Tour 전체 사용자 여정 클릭 테스트:**
+   - 홈(`/`) 진입 후 `#btn-start-guided-tour` 클릭으로 시작.
+   - `INTRO` → `SIMULATE` → 대상 화면 진입 및 `#btn-return-to-tour`로 투어 복귀 (단계 보존).
+   - `EXCURSION` (대표값 ~80.0 a.u., ~168.5 mTorr, ~1820 W 대조) → `ALARM` → 커맨드센터 복귀.
+   - `SENSOR` → 설비 인텔리전스 복귀 → `TRACE` → W-08 추적성 복귀.
+   - `WORKSPACE` → 엔지니어링 보드 가설 순환 클릭 → 복귀.
+   - `FINISH` → 5대 핵심 엔지니어링 판단 요약 패널(`#tour-completion-summary-panel`) 검증 및 이전 단계 역방향 이동.
+2. **반례 1: 비기본 시드(`seed=20261016`) 맥락 보존:**
+   - `/demo-tour?step=TRACE&seed=20261016`에서 W-08 대상 화면 진입 후 투어 복귀 시 URL의 `seed=20261016` 및 `step=TRACE`가 탈락 없이 보존되는지 검증.
+3. **반례 2: 미지원 알람 데이터 격리 락 (`#ws-unsupported-lock-panel`):**
+   - `/engineering-workspace?alert=AL-STANDBY-001&seed=20261015` 진입 시 3단 보드가 렌더링되지 않고 격리 잠금 패널이 노출되는지 확인.
+   - `#ws-btn-switch-active-alert-lock` 클릭 시 활성 알람(`AL-DEMO-015`)으로 정상 전환되어 보드가 복구되는지 검증.
+4. **화면 간 센서 계측치 정합성 및 도메인 불변식 검증:**
+   - 공통 헬퍼 `getModeAT7ExcursionValues(seed)`를 통해 Fab Simulation의 Step 5(T7_EXCURSION) 계측치와 Engineering Workspace EVI-02 카드의 계측치(167.1 mTorr, 1817.9 W)가 정확히 일치함을 검증.
+   - 모든 화면에서 `Excursion ≠ Defect`, `MISSING ≠ 0`, `CANDIDATE_EXPOSED` 도메인 면책 표기 확인.
+
+### 9.2 실패 아티팩트 및 트레이스 분석
+- 테스트 실패 시 `apps/web/test-results/`에 다음 아티팩트가 생성됩니다:
+  - `test-failed-1.png`: 실패 시점 스크린샷
+  - `video.webm`: 전체 인터랙션 브라우저 녹화 영상
+  - `trace.zip`: Playwright 상세 DOM 스냅샷 및 네트워크 트레이스
+- 트레이스 뷰어 실행:
+  ```bash
+  npx playwright show-trace apps/web/test-results/<디렉터리>/trace.zip
+  ```
+

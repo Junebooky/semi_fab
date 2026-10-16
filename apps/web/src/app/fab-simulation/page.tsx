@@ -669,7 +669,9 @@ function FabSimulationContent() {
                   </div>
                   <div style={{ fontSize: '10px', color: '#64748B', marginTop: '4px' }}>
                     {telemetry.is_excursion ? (
-                      <span style={{ color: '#B91C1C', fontWeight: 700 }}>압력 급증 (정상 120 → 168.5 mTorr)</span>
+                      <span style={{ color: '#B91C1C', fontWeight: 700 }}>
+                        압력 급증 (정상 120 → {telemetry.chamber_pressure} mTorr)
+                      </span>
                     ) : (
                       '안정 진공 유지 (Baseline ~120 mTorr)'
                     )}
@@ -696,7 +698,9 @@ function FabSimulationContent() {
                   </div>
                   <div style={{ fontSize: '10px', color: '#64748B', marginTop: '4px' }}>
                     {telemetry.is_excursion ? (
-                      <span style={{ color: '#B91C1C', fontWeight: 700 }}>전력 서지 (정상 1500 → 1820 W)</span>
+                      <span style={{ color: '#B91C1C', fontWeight: 700 }}>
+                        전력 서지 (정상 1500 → {telemetry.rf_power} W)
+                      </span>
                     ) : (
                       '공정 정합 출력 (Baseline ~1500 W)'
                     )}

@@ -399,7 +399,7 @@ function EngineeringWorkspaceContent() {
 
         {/* 3-Column Interactive Layout / Unsupported Alert Lock Panel */}
         {isSupportedAlert ? (
-          <div className="ws-boards-grid">
+          <div id="ws-investigation-board" className="ws-boards-grid">
           {/* Section 1: Evidence Board */}
           <section
             aria-labelledby="section-evidence-board"
