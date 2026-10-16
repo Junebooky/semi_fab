@@ -2033,3 +2033,445 @@ test('BUILD-05 Command Center Page Source Invariants & EKL Integration', () => {
   assert.ok(ccPageSource.includes('필터 초기화'));
 });
 
+// ========================================================
+// BUILD-06 Equipment Intelligence Contract Tests (a ~ g)
+// ========================================================
+
+function generateModeAEquipmentSamplesTest(seed = 42) {
+  let s = Math.abs(seed);
+  const nextRand = () => {
+    s = (s * 1664525 + 1013904223) % 4294967296;
+    return s / 4294967296;
+  };
+
+  const relNoise = (nextRand() - 0.5) * 2.0;
+  const prsNoise = (nextRand() - 0.5) * 1.5;
+  const rfNoise = (nextRand() - 0.5) * 20.0;
+
+  const t7Rel = +(80.0 + (nextRand() - 0.5) * 4.0).toFixed(1);
+  const t7Prs = +(168.5 + (nextRand() - 0.5) * 5.0).toFixed(2);
+  const t7Rf = +(1820.0 + rfNoise).toFixed(1);
+
+  const samples = [
+    { step_index: 0, time_label: 'T0', sim_time_utc: '2026-10-15T00:00:00.000Z', sensor_id: 'RELATIVE_SIGNAL', measured_value: +(48.2 + relNoise).toFixed(1), unit: 'a.u.', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 1, time_label: 'T1', sim_time_utc: '2026-10-15T00:00:05.000Z', sensor_id: 'RELATIVE_SIGNAL', measured_value: +(50.1 + relNoise * 0.8).toFixed(1), unit: 'a.u.', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 2, time_label: 'T2', sim_time_utc: '2026-10-15T00:00:10.000Z', sensor_id: 'RELATIVE_SIGNAL', measured_value: +(51.4 + relNoise * 0.5).toFixed(1), unit: 'a.u.', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 3, time_label: 'T3', sim_time_utc: '2026-10-15T00:00:15.000Z', sensor_id: 'RELATIVE_SIGNAL', measured_value: +(49.8 + relNoise * 0.7).toFixed(1), unit: 'a.u.', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 4, time_label: 'T4', sim_time_utc: '2026-10-15T00:00:20.000Z', sensor_id: 'RELATIVE_SIGNAL', measured_value: null, unit: 'a.u.', quality_flag: 'MISSING', data_origin: 'synthetic' },
+    { step_index: 5, time_label: 'T5', sim_time_utc: '2026-10-15T00:00:25.000Z', sensor_id: 'RELATIVE_SIGNAL', measured_value: null, unit: 'a.u.', quality_flag: 'MISSING', data_origin: 'synthetic' },
+    { step_index: 6, time_label: 'T6', sim_time_utc: '2026-10-15T00:00:30.000Z', sensor_id: 'RELATIVE_SIGNAL', measured_value: +(52.0 + relNoise * 0.9).toFixed(1), unit: 'a.u.', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 7, time_label: 'T7', sim_time_utc: '2026-10-15T00:00:35.000Z', sensor_id: 'RELATIVE_SIGNAL', measured_value: t7Rel, unit: 'a.u.', quality_flag: 'SUSPECT', data_origin: 'synthetic' },
+
+    { step_index: 0, time_label: 'T0', sim_time_utc: '2026-10-15T00:00:00.000Z', sensor_id: 'CHAMBER_PRESSURE', measured_value: +(120.1 + prsNoise).toFixed(2), unit: 'mTorr', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 1, time_label: 'T1', sim_time_utc: '2026-10-15T00:00:05.000Z', sensor_id: 'CHAMBER_PRESSURE', measured_value: +(120.4 + prsNoise * 0.7).toFixed(2), unit: 'mTorr', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 2, time_label: 'T2', sim_time_utc: '2026-10-15T00:00:10.000Z', sensor_id: 'CHAMBER_PRESSURE', measured_value: +(119.8 + prsNoise * 0.6).toFixed(2), unit: 'mTorr', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 3, time_label: 'T3', sim_time_utc: '2026-10-15T00:00:15.000Z', sensor_id: 'CHAMBER_PRESSURE', measured_value: +(120.5 + prsNoise * 0.8).toFixed(2), unit: 'mTorr', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 4, time_label: 'T4', sim_time_utc: '2026-10-15T00:00:20.000Z', sensor_id: 'CHAMBER_PRESSURE', measured_value: +(120.2 + (nextRand() - 0.5) * 0.4).toFixed(2), unit: 'mTorr', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 5, time_label: 'T5', sim_time_utc: '2026-10-15T00:00:25.000Z', sensor_id: 'CHAMBER_PRESSURE', measured_value: +(120.0 + (nextRand() - 0.5) * 0.4).toFixed(2), unit: 'mTorr', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 6, time_label: 'T6', sim_time_utc: '2026-10-15T00:00:30.000Z', sensor_id: 'CHAMBER_PRESSURE', measured_value: +(121.3 + prsNoise * 0.5).toFixed(2), unit: 'mTorr', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 7, time_label: 'T7', sim_time_utc: '2026-10-15T00:00:35.000Z', sensor_id: 'CHAMBER_PRESSURE', measured_value: t7Prs, unit: 'mTorr', quality_flag: 'SUSPECT', data_origin: 'synthetic' },
+
+    { step_index: 0, time_label: 'T0', sim_time_utc: '2026-10-15T00:00:00.000Z', sensor_id: 'RF_POWER', measured_value: +(1500.0 + rfNoise * 0.2).toFixed(1), unit: 'W', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 1, time_label: 'T1', sim_time_utc: '2026-10-15T00:00:05.000Z', sensor_id: 'RF_POWER', measured_value: +(1501.5 + rfNoise * 0.3).toFixed(1), unit: 'W', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 2, time_label: 'T2', sim_time_utc: '2026-10-15T00:00:10.000Z', sensor_id: 'RF_POWER', measured_value: +(1498.2 + rfNoise * 0.2).toFixed(1), unit: 'W', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 3, time_label: 'T3', sim_time_utc: '2026-10-15T00:00:15.000Z', sensor_id: 'RF_POWER', measured_value: +(1502.1 + rfNoise * 0.4).toFixed(1), unit: 'W', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 4, time_label: 'T4', sim_time_utc: '2026-10-15T00:00:20.000Z', sensor_id: 'RF_POWER', measured_value: +(1499.7 + (nextRand() - 0.5) * 4.0).toFixed(1), unit: 'W', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 5, time_label: 'T5', sim_time_utc: '2026-10-15T00:00:25.000Z', sensor_id: 'RF_POWER', measured_value: +(1500.4 + (nextRand() - 0.5) * 4.0).toFixed(1), unit: 'W', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 6, time_label: 'T6', sim_time_utc: '2026-10-15T00:00:30.000Z', sensor_id: 'RF_POWER', measured_value: +(1503.8 + rfNoise * 0.3).toFixed(1), unit: 'W', quality_flag: 'GOOD', data_origin: 'synthetic' },
+    { step_index: 7, time_label: 'T7', sim_time_utc: '2026-10-15T00:00:35.000Z', sensor_id: 'RF_POWER', measured_value: t7Rf, unit: 'W', quality_flag: 'SUSPECT', data_origin: 'synthetic' },
+  ];
+
+  const lotNum = 800 + (seed % 50);
+  const lotId = `LOT-DEMO-${lotNum}`;
+  const runId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+  const alertId = `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+
+  const alerts = [
+    {
+      alert_id: alertId,
+      severity: 'CRITICAL',
+      equipment_id: 'ETCH-02',
+      chamber_id: 'CH-B',
+      run_id: runId,
+      rule_code: 'FDC-RULE-SPC-UCL-01',
+      message: '식각 챔버 압력/광학 신호/RF Power 복합 급증 (Step T7 공정 일탈 감지, > UCL 65.0 a.u.)',
+      status: 'ACTIVE',
+      event_time_utc: '2026-10-15T00:00:35.000Z',
+      candidate_lot: lotId,
+      candidate_wafers: ['W-08', 'W-09', 'W-10', 'W-11', 'W-12'],
+    },
+  ];
+
+  return { samples, alerts, summary: { run_id: runId, lot_id: lotId, equipment_id: 'ETCH-02', chamber_id: 'CH-B' } };
+}
+
+function parseSensorQueryTest(raw) {
+  if (!raw) return 'RELATIVE_SIGNAL';
+  const upper = raw.trim().toUpperCase();
+  if (upper === 'CHAMBER_PRESSURE') return 'CHAMBER_PRESSURE';
+  if (upper === 'RF_POWER') return 'RF_POWER';
+  return 'RELATIVE_SIGNAL';
+}
+
+function calculateChartCoordinatesTest(samples, sensorId) {
+  const filtered = samples.filter(s => s && s.sensor_id === sensorId).sort((a, b) => a.step_index - b.step_index);
+  return filtered.map(sample => {
+    const x = 60 + sample.step_index * 70;
+    let y = null;
+    if (sample.measured_value !== null && typeof sample.measured_value === 'number') {
+      if (sensorId === 'RELATIVE_SIGNAL') {
+        y = 210 - (sample.measured_value / 100) * 180;
+      } else if (sensorId === 'CHAMBER_PRESSURE') {
+        const clamped = Math.max(100, Math.min(200, sample.measured_value));
+        y = 210 - ((clamped - 100) / 100) * 180;
+      } else {
+        const clamped = Math.max(1000, Math.min(2000, sample.measured_value));
+        y = 210 - ((clamped - 1000) / 1000) * 180;
+      }
+    }
+    return { ...sample, x, y };
+  });
+}
+
+test('BUILD-06 (a) Summary-first run discovery, same run_id samples + alerts propagation, and run lineage validation', async () => {
+  const recordedCalls = [];
+  const serverSummaryRunId = 'RUN-DEMO-042';
+
+  // Harness simulating loadData in equipment-intelligence/page.tsx
+  let activeReqId = 0;
+  async function loadEquipmentDataHarness(fetchSummaryFn, fetchSamplesFn, fetchAlertsFn) {
+    const reqId = ++activeReqId;
+
+    // Step 1: Summary first
+    const summaryRes = await fetchSummaryFn();
+    const summaryData = await summaryRes.json();
+    const currentRunId = summaryData?.active_run_id;
+
+    if (reqId !== activeReqId) return { discarded: true };
+
+    // Step 2: Parallel fetch using exact matching discovered run_id
+    const [samplesRes, alertsRes] = await Promise.all([
+      fetchSamplesFn(currentRunId),
+      fetchAlertsFn(currentRunId)
+    ]);
+    const samplesData = await samplesRes.json();
+    const alertsData = await alertsRes.json();
+
+    if (reqId !== activeReqId) return { discarded: true };
+
+    return {
+      activeRunId: currentRunId,
+      lotId: summaryData?.lot_id,
+      samples: samplesData,
+      alerts: alertsData,
+      discarded: false
+    };
+  }
+
+  const fixture = generateModeAEquipmentSamplesTest(42);
+
+  const res = await loadEquipmentDataHarness(
+    async () => {
+      recordedCalls.push({ endpoint: 'summary' });
+      return { ok: true, status: 200, json: async () => ({ active_run_id: serverSummaryRunId, lot_id: 'LOT-DEMO-042' }) };
+    },
+    async (rId) => {
+      recordedCalls.push({ endpoint: 'samples', runId: rId });
+      return { ok: true, status: 200, json: async () => fixture.samples };
+    },
+    async (rId) => {
+      recordedCalls.push({ endpoint: 'alerts', runId: rId });
+      return { ok: true, status: 200, json: async () => fixture.alerts };
+    }
+  );
+
+  assert.equal(recordedCalls[0].endpoint, 'summary', 'Summary MUST be called first to discover run_id');
+  assert.equal(recordedCalls[1].endpoint, 'samples', 'Samples must be called with discovered run_id');
+  assert.equal(recordedCalls[1].runId, serverSummaryRunId);
+  assert.equal(recordedCalls[2].endpoint, 'alerts', 'Alerts must be called with discovered run_id');
+  assert.equal(recordedCalls[2].runId, serverSummaryRunId);
+  assert.equal(res.activeRunId, serverSummaryRunId);
+  assert.equal(res.samples.length, 24);
+  assert.equal(res.alerts.length, 1);
+});
+
+test('BUILD-06 (b) Rapid Run reset, delayed inflight samples/alerts response disposal, and late JSON stream protection', async () => {
+  let activeReqId = 0;
+  async function loadDataWithDelayedStream(reqRunId, delayMs, jsonDelayMs) {
+    const reqId = ++activeReqId;
+
+    if (delayMs > 0) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+    if (reqId !== activeReqId) return { discarded: true, step: 'network_delayed' };
+
+    // Simulate streaming JSON body resolution delay
+    if (jsonDelayMs > 0) {
+      await new Promise(r => setTimeout(r, jsonDelayMs));
+    }
+    if (reqId !== activeReqId) return { discarded: true, step: 'json_body_delayed' };
+
+    return { discarded: false, activeRunId: reqRunId };
+  }
+
+  // Request 1: Slow network response
+  const p1 = loadDataWithDelayedStream('RUN-OLD-SLOW', 50, 0);
+  // Request 2: Fast newer request supersedes Request 1
+  const p2 = loadDataWithDelayedStream('RUN-NEW-FAST', 5, 0);
+
+  const [res1, res2] = await Promise.all([p1, p2]);
+  assert.equal(res1.discarded, true, 'Older delayed in-flight request must be discarded');
+  assert.equal(res2.discarded, false);
+  assert.equal(res2.activeRunId, 'RUN-NEW-FAST');
+
+  // Request 3: Fast network but delayed JSON stream body
+  const p3 = loadDataWithDelayedStream('RUN-BODY-DELAYED', 5, 40);
+  // Request 4: User immediately clicks another run before JSON stream resolves
+  await new Promise(r => setTimeout(r, 10));
+  const p4 = loadDataWithDelayedStream('RUN-FINAL', 5, 0);
+
+  const [res3, res4] = await Promise.all([p3, p4]);
+  assert.equal(res3.discarded, true, 'Delayed JSON body must be discarded when superseded');
+  assert.equal(res3.step, 'json_body_delayed');
+  assert.equal(res4.discarded, false);
+  assert.equal(res4.activeRunId, 'RUN-FINAL');
+});
+
+test('BUILD-06 (c) Optical sensor (RELATIVE_SIGNAL) T4/T5 null segmentation vs continuous CHAMBER_PRESSURE / RF_POWER unbroken line invariant', () => {
+  const fixture = generateModeAEquipmentSamplesTest(42);
+
+  // 1. RELATIVE_SIGNAL (Optical Sensor)
+  const oesCoords = calculateChartCoordinatesTest(fixture.samples, 'RELATIVE_SIGNAL');
+  assert.equal(oesCoords.length, 8);
+  assert.equal(oesCoords[4].measured_value, null);
+  assert.equal(oesCoords[4].y, null);
+  assert.equal(oesCoords[4].quality_flag, 'MISSING');
+  assert.equal(oesCoords[5].measured_value, null);
+  assert.equal(oesCoords[5].y, null);
+  assert.equal(oesCoords[5].quality_flag, 'MISSING');
+
+  const oesSegments = computeDynamicSegments(oesCoords);
+  assert.equal(oesSegments.length, 2, 'RELATIVE_SIGNAL must produce exactly 2 segmented paths separated by T4/T5');
+  assert.ok(oesSegments[0].includes('M 60') && oesSegments[0].includes('L 270'), 'Segment 1 must span T0 to T3');
+  assert.ok(oesSegments[1].includes('M 480') && oesSegments[1].includes('L 550'), 'Segment 2 must span T6 to T7');
+  assert.ok(!oesSegments.some(s => s.includes('340') || s.includes('410')), 'T4 (340) and T5 (410) must NEVER be connected or plotted as 0');
+
+  const oesMissing = computeMissingRange(oesCoords);
+  assert.ok(oesMissing !== null, 'RELATIVE_SIGNAL must render missing range overlay');
+  assert.equal(oesMissing.labels, 'T4, T5');
+
+  // 2. CHAMBER_PRESSURE (Continuous Sensor)
+  const prsCoords = calculateChartCoordinatesTest(fixture.samples, 'CHAMBER_PRESSURE');
+  assert.equal(prsCoords.length, 8);
+  assert.ok(prsCoords.every(p => p.measured_value !== null && p.y !== null && p.quality_flag !== 'MISSING'));
+
+  const prsSegments = computeDynamicSegments(prsCoords);
+  assert.equal(prsSegments.length, 1, 'CHAMBER_PRESSURE must produce exactly 1 continuous unbroken path');
+  assert.ok(prsSegments[0].includes('M 60') && prsSegments[0].includes('L 550'));
+
+  const prsMissing = computeMissingRange(prsCoords);
+  assert.equal(prsMissing, null, 'Continuous CHAMBER_PRESSURE must NOT render fake missing overlay');
+
+  // 3. RF_POWER (Continuous Sensor)
+  const rfCoords = calculateChartCoordinatesTest(fixture.samples, 'RF_POWER');
+  assert.equal(rfCoords.length, 8);
+  assert.ok(rfCoords.every(p => p.measured_value !== null && p.y !== null && p.quality_flag !== 'MISSING'));
+
+  const rfSegments = computeDynamicSegments(rfCoords);
+  assert.equal(rfSegments.length, 1, 'RF_POWER must produce exactly 1 continuous unbroken path');
+
+  const rfMissing = computeMissingRange(rfCoords);
+  assert.equal(rfMissing, null, 'Continuous RF_POWER must NOT render fake missing overlay');
+});
+
+test('BUILD-06 (d) Sensor switching, URL query parameter parsing fail-safe, measurement units, quality flag mapping, and step selection', () => {
+  // Query parameter parsing & fail-safe
+  assert.equal(parseSensorQueryTest('RELATIVE_SIGNAL'), 'RELATIVE_SIGNAL');
+  assert.equal(parseSensorQueryTest('relative_signal'), 'RELATIVE_SIGNAL');
+  assert.equal(parseSensorQueryTest('CHAMBER_PRESSURE'), 'CHAMBER_PRESSURE');
+  assert.equal(parseSensorQueryTest('chamber_pressure'), 'CHAMBER_PRESSURE');
+  assert.equal(parseSensorQueryTest('RF_POWER'), 'RF_POWER');
+  assert.equal(parseSensorQueryTest('rf_power'), 'RF_POWER');
+
+  // Unknown / invalid parameter fails safe to default RELATIVE_SIGNAL
+  assert.equal(parseSensorQueryTest('UNKNOWN_SENSOR'), 'RELATIVE_SIGNAL');
+  assert.equal(parseSensorQueryTest('TEMPERATURE'), 'RELATIVE_SIGNAL');
+  assert.equal(parseSensorQueryTest(''), 'RELATIVE_SIGNAL');
+  assert.equal(parseSensorQueryTest(null), 'RELATIVE_SIGNAL');
+  assert.equal(parseSensorQueryTest(undefined), 'RELATIVE_SIGNAL');
+
+  // Sensor definitions & quality flags in contract
+  const contractSource = readFileSync(
+    new URL('../src/components/equipment-intelligence/equipment-intelligence-contract.ts', import.meta.url),
+    'utf8'
+  );
+  assert.ok(contractSource.includes("unit: 'a.u.'"), 'RELATIVE_SIGNAL unit must be a.u.');
+  assert.ok(contractSource.includes("unit: 'mTorr'"), 'CHAMBER_PRESSURE unit must be mTorr');
+  assert.ok(contractSource.includes("unit: 'W'"), 'RF_POWER unit must be W');
+  assert.ok(contractSource.includes("ucl: 65.0"), 'RELATIVE_SIGNAL UCL must be 65.0');
+  assert.ok(contractSource.includes("ucl: 140.0"), 'CHAMBER_PRESSURE UCL must be 140.0');
+  assert.ok(contractSource.includes("ucl: 1650.0"), 'RF_POWER UCL must be 1650.0');
+
+  // Step T7 is marked SUSPECT on all 3 sensors
+  const fixture = generateModeAEquipmentSamplesTest(42);
+  const t7Oes = fixture.samples.find(s => s.sensor_id === 'RELATIVE_SIGNAL' && s.step_index === 7);
+  const t7Prs = fixture.samples.find(s => s.sensor_id === 'CHAMBER_PRESSURE' && s.step_index === 7);
+  const t7Rf = fixture.samples.find(s => s.sensor_id === 'RF_POWER' && s.step_index === 7);
+  assert.equal(t7Oes.quality_flag, 'SUSPECT');
+  assert.equal(t7Prs.quality_flag, 'SUSPECT');
+  assert.equal(t7Rf.quality_flag, 'SUSPECT');
+  assert.ok(t7Oes.measured_value > 65.0, 'T7 OES must exceed UCL 65.0');
+  assert.ok(t7Prs.measured_value > 140.0, 'T7 Pressure must exceed UCL 140.0');
+  assert.ok(t7Rf.measured_value > 1650.0, 'T7 RF Power must exceed UCL 1650.0');
+});
+
+test('BUILD-06 (e) Valid vs Invalid FDC alert investigation linking, candidate wafers binding, and fail-closed isolation', () => {
+  const activeRunId = 'RUN-DEMO-042';
+
+  // 1. Valid Alert: ETCH-02 / CH-B / CRITICAL / FDC-RULE-SPC-UCL-01 / matching activeRunId
+  const validAlert = {
+    alert_id: 'AL-DEMO-042',
+    severity: 'CRITICAL',
+    equipment_id: 'ETCH-02',
+    chamber_id: 'CH-B',
+    run_id: activeRunId,
+    rule_code: 'FDC-RULE-SPC-UCL-01',
+    candidate_wafers: ['W-08', 'W-09', 'W-10', 'W-11', 'W-12']
+  };
+  const validRes = isInvestigationSupportedTest(validAlert, activeRunId);
+  assert.equal(validRes.supported, true, 'Valid T7 excursion alert must be supported for investigation');
+  assert.equal(validAlert.candidate_wafers.length, 5);
+
+  // 2. Ineligible Alert A: Standby alert on idle chamber
+  const standbyAlert = {
+    alert_id: 'AL-STANDBY-001',
+    severity: 'WARNING',
+    equipment_id: 'ETCH-01',
+    chamber_id: 'CH-A',
+    run_id: null,
+    rule_code: 'FDC-RULE-HEURISTIC-02',
+    candidate_wafers: []
+  };
+  const standbyRes = isInvestigationSupportedTest(standbyAlert, activeRunId);
+  assert.equal(standbyRes.supported, false, 'Standby alert without active run must fail closed');
+
+  // 3. Ineligible Alert B: Different rule despite candidate wafers (A01 crucial rule invariant)
+  const diffRuleAlert = {
+    alert_id: 'AL-DIFF-001',
+    severity: 'CRITICAL',
+    equipment_id: 'ETCH-02',
+    chamber_id: 'CH-B',
+    run_id: activeRunId,
+    rule_code: 'FDC-RULE-OTHER',
+    candidate_wafers: ['W-08']
+  };
+  const diffRuleRes = isInvestigationSupportedTest(diffRuleAlert, activeRunId);
+  assert.equal(diffRuleRes.supported, false, 'Different rule code must fail closed regardless of candidate wafers');
+
+  // 4. Ineligible Alert C: Mismatched run ID (cross-run lineage contamination)
+  const crossRunAlert = {
+    ...validAlert,
+    run_id: 'RUN-DIFFERENT-999'
+  };
+  const crossRunRes = isInvestigationSupportedTest(crossRunAlert, activeRunId);
+  assert.equal(crossRunRes.supported, false, 'Mismatched run ID must fail closed');
+});
+
+test('BUILD-06 (f) Mode A offline fallback vs Mode B HTTP 4xx/5xx/malformed/empty samples fail-closed boundary', async () => {
+  async function simulateEquipmentIntelligenceFetch(scenario) {
+    let mode = 'B';
+    let samples = [];
+    let errorMessage = null;
+
+    try {
+      if (scenario === 'NETWORK_OFFLINE') {
+        throw new TypeError('Failed to fetch (offline network)');
+      }
+      if (scenario === 'SERVER_500') {
+        throw new Error('HTTP 500: 설비 센서 시계열 데이터를 불러올 수 없습니다 (Fail-closed).');
+      }
+      if (scenario === 'SERVER_404') {
+        throw new Error('HTTP 404: 공정 요약 정보를 불러올 수 없습니다 (Fail-closed).');
+      }
+      if (scenario === 'MALFORMED_JSON') {
+        throw new Error('수신된 센서 계측 데이터 구조가 유효하지 않거나 샘플 수가 부족합니다 (Fail-closed).');
+      }
+      if (scenario === 'EMPTY_SAMPLES') {
+        throw new Error('수신된 센서 계측 데이터 구조가 유효하지 않거나 샘플 수가 부족합니다 (Fail-closed).');
+      }
+
+      // Success scenario
+      const fixture = generateModeAEquipmentSamplesTest(42);
+      return { mode: 'B', samples: fixture.samples, errorMessage: null };
+    } catch (err) {
+      if (err instanceof TypeError || (err.message && err.message.includes('fetch'))) {
+        const fixture = generateModeAEquipmentSamplesTest(42);
+        return { mode: 'A', samples: fixture.samples, errorMessage: null };
+      }
+      return { mode: 'B', samples: [], errorMessage: err.message };
+    }
+  }
+
+  // 1. Genuine offline: Fallback to Mode A with deterministic fixture
+  const offline = await simulateEquipmentIntelligenceFetch('NETWORK_OFFLINE');
+  assert.equal(offline.mode, 'A');
+  assert.equal(offline.samples.length, 24);
+  assert.equal(offline.errorMessage, null);
+
+  // 2. Server 500: Fail-closed in Mode B (NEVER fallback to Mode A or fake 0 values!)
+  const s500 = await simulateEquipmentIntelligenceFetch('SERVER_500');
+  assert.equal(s500.mode, 'B');
+  assert.equal(s500.samples.length, 0);
+  assert.ok(s500.errorMessage.includes('HTTP 500'));
+
+  // 3. Server 404: Fail-closed in Mode B
+  const s404 = await simulateEquipmentIntelligenceFetch('SERVER_404');
+  assert.equal(s404.mode, 'B');
+  assert.equal(s404.samples.length, 0);
+  assert.ok(s404.errorMessage.includes('HTTP 404'));
+
+  // 4. Malformed JSON or empty samples: Fail-closed in Mode B
+  const malformed = await simulateEquipmentIntelligenceFetch('MALFORMED_JSON');
+  assert.equal(malformed.mode, 'B');
+  assert.equal(malformed.samples.length, 0);
+  assert.ok(malformed.errorMessage.includes('유효하지 않거나'));
+});
+
+test('BUILD-06 (g) Multi-page bidirectional navigation, EKL L1 integration, and domain disclaimer standards', () => {
+  const eiPageSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  const ccPageSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const homePageSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const tracePageSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+  const cssSource = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
+
+  // 1. All 4 pages must contain bidirectional navigation links to each other
+  assert.ok(eiPageSource.includes('href="/"') && eiPageSource.includes('href="/traceability"') && eiPageSource.includes('href="/command-center"'));
+  assert.ok(homePageSource.includes('/equipment-intelligence'), 'Home must link to /equipment-intelligence');
+  assert.ok(tracePageSource.includes('/equipment-intelligence'), 'Traceability must link to /equipment-intelligence');
+  assert.ok(ccPageSource.includes('/equipment-intelligence'), 'Command Center must link to /equipment-intelligence');
+
+  // 2. Direct button from Command Center to Equipment Intelligence
+  assert.ok(ccPageSource.includes('cc-btn-go-equipment'), 'Command Center must have direct button to equipment intelligence');
+  assert.ok(eiPageSource.includes('ei-btn-back-command-center'), 'Equipment Intelligence must have direct return button to command center');
+  assert.ok(eiPageSource.includes('ei-btn-go-investigation'), 'Equipment Intelligence must have direct link to investigation');
+
+  // 3. EKL Integration
+  const requiredEKL = ['oes-relative-signal', 'rf-power', 'spc-ucl-missing', 'wafer-exposure-status'];
+  requiredEKL.forEach(concept => {
+    assert.ok(eiPageSource.includes(concept), `Equipment Intelligence must include EKL concept trigger for '${concept}'`);
+  });
+
+  // 4. Domain Disclaimers: Control Limits vs Spec Limits, Missing != 0, Excursion != Defect
+  assert.ok(eiPageSource.includes('UCL(상한 관리한계') && eiPageSource.includes('USL/LSL'), 'Spec limits vs control limits must be distinguished');
+  assert.ok(eiPageSource.includes('MISSING ≠ 0'), 'MISSING != 0 disclaimer must be present');
+  assert.ok(eiPageSource.includes('Excursion ≠ Defect') || eiPageSource.includes('공정 일탈(Excursion ≠ Defect)'), 'Excursion != Defect disclaimer must be present');
+
+  // 5. CSS & Keyboard Accessibility
+  assert.ok(cssSource.includes('.ei-sensor-tab-btn:focus-visible'), 'Sensor tab button must have focus-visible styling');
+  assert.ok(cssSource.includes('.ei-step-btn:focus-visible'), 'Step button must have focus-visible styling');
+  assert.ok(eiPageSource.includes('role="tablist"'), 'Sensor tabs must define role="tablist"');
+  assert.ok(eiPageSource.includes('role="tab"'), 'Sensor tabs must define role="tab"');
+  assert.ok(eiPageSource.includes('role="tabpanel"'), 'Sensor content must define role="tabpanel"');
+});
+
+

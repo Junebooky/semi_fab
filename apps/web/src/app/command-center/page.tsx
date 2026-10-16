@@ -313,6 +313,12 @@ function CommandCenterContent() {
             </svg>
             FDC 커맨드 센터 (Command Center)
           </Link>
+          <Link href="/equipment-intelligence" className="nav-tab-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+            설비 인텔리전스 (Equipment)
+          </Link>
         </nav>
 
         <div className="top-status-pills">
@@ -775,6 +781,24 @@ function CommandCenterContent() {
                       style={{ textDecoration: 'none', padding: '10px 16px', fontSize: '13px', whiteSpace: 'nowrap', textAlign: 'center' }}
                     >
                       엔지니어링 조사 상세 보기 →
+                    </Link>
+                    <Link
+                      id="cc-btn-go-equipment"
+                      href="/equipment-intelligence?sensor=RELATIVE_SIGNAL"
+                      className="btn-secondary"
+                      style={{
+                        textDecoration: 'none',
+                        padding: '8px 14px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                        textAlign: 'center',
+                        borderColor: '#0B9F78',
+                        color: '#047857',
+                        background: '#FFFFFF',
+                      }}
+                    >
+                      설비 센서 계측 확인 (ETCH-02 / CH-B) →
                     </Link>
                   </div>
                 </div>
