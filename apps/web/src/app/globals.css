@@ -1593,5 +1593,28 @@ button:focus-visible, input:focus-visible {
   }
 }
 
+/* ========================================================
+   BUILD-07 FAB Simulation Styles & Animations
+   ======================================================== */
 
+@keyframes pulseGlow {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
 
+#sim-btn-prev:focus-visible,
+#sim-btn-next:focus-visible,
+#sim-btn-toggle-play:focus-visible,
+#sim-btn-reset:focus-visible,
+#sim-btn-resynthesize:focus-visible,
+[id^="sim-step-"]:focus-visible,
+[id^="foup-wafer-"]:focus-visible {
+  outline: 2px solid #0B9F78;
+  outline-offset: 2px;
+}
