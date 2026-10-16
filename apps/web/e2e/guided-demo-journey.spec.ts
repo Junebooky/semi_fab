@@ -82,11 +82,22 @@ test.describe('BUILD-11 Guided Demo E2E Browser Smoke & Invariants', () => {
     await expect(page).toHaveURL(/\/engineering-workspace\?seed=20261015&alert=AL-DEMO-015&tourStep=WORKSPACE/);
     await expect(page.locator('#tour-return-banner')).toBeVisible();
     await expect(page.locator('#ws-investigation-board')).toBeVisible();
-    // Test interactive hypothesis status cycle button
-    const cycleBtn = page.locator('#btn-cycle-status-HYP-01');
-    if (await cycleBtn.isVisible()) {
-      await cycleBtn.click();
-    }
+
+    // Test interactive hypothesis status cycle button (HYPO-01) unconditionally
+    const cycleBtn = page.locator('#btn-cycle-status-HYPO-01');
+    const statusBadge = page.locator('#status-badge-HYPO-01');
+    await expect(cycleBtn).toBeVisible();
+    await expect(statusBadge).toContainText('UNVERIFIED');
+    await cycleBtn.click();
+    await expect(statusBadge).toContainText('SUPPORTED_FOR_REVIEW');
+
+    // Test interactive action item checkbox (ACTION-01) unconditionally
+    const actionChk = page.locator('#chk-ACTION-01');
+    await expect(actionChk).toBeVisible();
+    await expect(actionChk).not.toBeChecked();
+    await actionChk.click();
+    await expect(actionChk).toBeChecked();
+
     await page.locator('#btn-return-to-tour').click();
     await expect(page).toHaveURL(/\/demo-tour\?step=WORKSPACE&seed=20261015/);
 
@@ -166,29 +177,55 @@ test.describe('BUILD-11 Guided Demo E2E Browser Smoke & Invariants', () => {
     await expect(page.locator('body')).toContainText('MISSING ≠ 0');
     await expect(page.locator('body')).toContainText('CANDIDATE_EXPOSED');
 
-    // Advance simulation to T7 Excursion step
-    // Simulation steps: READY -> FOUP_LOADED -> TRANSFER -> ETCH_RUNNING -> T7_EXCURSION
-    const nextStepBtn = page.locator('#btn-sim-next');
-    if (await nextStepBtn.isVisible()) {
-      await nextStepBtn.click(); // to FOUP_LOADED
-      await nextStepBtn.click(); // to TRANSFER
-      await nextStepBtn.click(); // to ETCH_RUNNING (T4/T5 null/missing)
-      await expect(page.locator('body')).toContainText('MISSING');
-      await nextStepBtn.click(); // to T7_EXCURSION
-      await expect(page.locator('#sim-step-badge')).toContainText('Step 5/7');
-      // Verify T7 telemetry dynamic readings are synchronized
-      await expect(page.locator('body')).toContainText(String(expectedT7.chamberPressure));
-      await expect(page.locator('body')).toContainText(String(expectedT7.rfPower));
-    }
+    // Advance simulation step-by-step through 4 real clicks unconditionally
+    // Sequence: READY -> FOUP_LOADED -> TRANSFER -> ETCH_RUNNING -> T7_EXCURSION
+    const nextStepBtn = page.locator('#sim-btn-next');
+    await expect(nextStepBtn).toBeVisible();
+
+    // 1. READY -> FOUP_LOADED
+    await nextStepBtn.click();
+    await expect(page.locator('#sim-step-badge')).toContainText('Step 2/7');
+
+    // 2. FOUP_LOADED -> TRANSFER
+    await nextStepBtn.click();
+    await expect(page.locator('#sim-step-badge')).toContainText('Step 3/7');
+
+    // 3. TRANSFER -> ETCH_RUNNING (T4/T5 null/missing optical gap)
+    await nextStepBtn.click();
+    await expect(page.locator('#sim-step-badge')).toContainText('Step 4/7');
+    await expect(page.locator('#sim-telemetry-oes')).toContainText('null (결측 / MISSING)');
+    await expect(page.locator('body')).toContainText('T4/T5 광학 신호 결측 (MISSING ≠ 0)');
+
+    // 4. ETCH_RUNNING -> T7_EXCURSION (multi-sensor excursion spike)
+    await nextStepBtn.click();
+    await expect(page.locator('#sim-step-badge')).toContainText('Step 5/7');
+    await expect(page.locator('#sim-step-heading')).toContainText('T7 공정 일탈');
+
+    // Verify T7 simulation DOM telemetry values match getModeAT7ExcursionValues
+    await expect(page.locator('#sim-telemetry-oes')).toContainText(`${expectedT7.oesSignal} a.u.`);
+    await expect(page.locator('#sim-telemetry-pressure')).toContainText(`${expectedT7.chamberPressure} mTorr`);
+    await expect(page.locator('#sim-telemetry-rf')).toContainText(`${expectedT7.rfPower} W`);
 
     // 2. Engineering Workspace EVI-02 T7 sensor consistency
     await page.goto(`/engineering-workspace?seed=${seed}`);
     await expect(page.locator('body')).toContainText('Excursion ≠ Defect');
     await expect(page.locator('body')).toContainText('MISSING ≠ 0');
-    // EVI-02 observed value check
+
+    // EVI-02 card check - values must match getModeAT7ExcursionValues exactly
     const evi02Card = page.locator('#evidence-card-EVI-02');
     await expect(evi02Card).toBeVisible();
     await expect(evi02Card).toContainText(String(expectedT7.chamberPressure));
     await expect(evi02Card).toContainText(String(expectedT7.rfPower));
+    await expect(evi02Card).toContainText(String(expectedT7.oesSignal));
+
+    // 3. Counter-verification with non-default seed 20261016 for EVI-02 consistency
+    const seed2 = 20261016;
+    const expectedT7Seed2 = getModeAT7ExcursionValues(seed2);
+    await page.goto(`/engineering-workspace?seed=${seed2}`);
+    const evi02CardSeed2 = page.locator('#evidence-card-EVI-02');
+    await expect(evi02CardSeed2).toBeVisible();
+    await expect(evi02CardSeed2).toContainText(String(expectedT7Seed2.chamberPressure));
+    await expect(evi02CardSeed2).toContainText(String(expectedT7Seed2.rfPower));
+    await expect(evi02CardSeed2).toContainText(String(expectedT7Seed2.oesSignal));
   });
 });
