@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
 import { TourReturnBanner, getModeAT7ExcursionValues } from '@/components/guided-demo';
+import { buildCrossNavUrl } from '@/lib/investigation-context';
 
 // Types
 interface SensorSample {
@@ -743,7 +744,7 @@ function FabOneDemoContent() {
 
         {/* Navigation Tabs */}
         <nav style={{ display: 'flex', gap: '8px' }} aria-label="화면 탭">
-          <Link href="/" className="nav-tab-link active">
+          <Link href={buildCrossNavUrl('/', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link active">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="3" y="3" width="7" height="7"></rect>
               <rect x="14" y="3" width="7" height="7"></rect>
@@ -752,34 +753,34 @@ function FabOneDemoContent() {
             </svg>
             식각 챔버 시뮬레이터 (Home)
           </Link>
-          <Link href="/traceability" className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/traceability', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
-          <Link href="/command-center" className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/command-center', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
             FDC 커맨드 센터 (Command Center)
           </Link>
-          <Link href="/equipment-intelligence" className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/equipment-intelligence', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
             </svg>
             설비 인텔리전스 (Equipment)
           </Link>
-          <Link href={`/fab-simulation${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/fab-simulation', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
             FAB 시뮬레이션 (Simulation)
           </Link>
-          <Link href={`/engineering-workspace${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/engineering-workspace', { mode, seed, runId: summary.active_run_id, alertId: selectedAlert?.alert_id })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
               <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
@@ -788,7 +789,7 @@ function FabOneDemoContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
-            <Link href={`/demo-tour?seed=${seed}${tourStepParam ? `&step=${tourStepParam}` : ''}`} className="nav-tab-link">
+          <Link href={buildCrossNavUrl('/demo-tour', { mode: 'A', seed, tourStep: tourStepParam || undefined })} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
@@ -843,84 +844,178 @@ function FabOneDemoContent() {
         {/* BUILD-10 Tour Return Banner */}
         <TourReturnBanner tourStep={tourStepParam} seed={seed} />
 
-        {/* BUILD-09 Guided Demo Tour CTA Hero Banner */}
-        <div
+        {/* BUILD-14 Dual-Card Demo Chooser Banner (Mode A Guided Tour vs Mode B Live Connected Case) */}
+        <section
           id="hero-guided-tour-banner"
+          aria-label="데모 진입 경로 선택"
           style={{
-            background: 'linear-gradient(135deg, #ECFDF5 0%, #F0FDF4 100%)',
-            border: '1px solid #A7F3D0',
-            borderRadius: '12px',
-            padding: '16px 20px',
-            marginBottom: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '12px',
-            boxShadow: '0 2px 6px rgba(11, 159, 120, 0.08)',
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: "16px",
+            marginBottom: "16px",
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div
-              style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '10px',
-                background: '#0B9F78',
-                color: '#FFFFFF',
-                display: 'grid',
-                placeItems: 'center',
-                fontSize: '20px',
-                flexShrink: 0,
-              }}
-            >
-              🧭
+          {/* Card A: Mode A Guided Tour */}
+          <div
+            id="hero-guided-tour-card"
+            style={{
+              background: "linear-gradient(135deg, #ECFDF5 0%, #F0FDF4 100%)",
+              border: "1px solid #A7F3D0",
+              borderRadius: "12px",
+              padding: "16px 20px",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              gap: "14px",
+              boxShadow: "0 2px 6px rgba(11, 159, 120, 0.08)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <div
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "10px",
+                  background: "#0B9F78",
+                  color: "#FFFFFF",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: "20px",
+                  flexShrink: 0,
+                }}
+              >
+                🧭
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "15px", fontWeight: 800, color: "#065F46" }}>
+                    Mode A · 3~5분 완결 가이드 투어
+                  </span>
+                  <span
+                    style={{
+                      background: "#DCFCE7",
+                      color: "#166534",
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      fontSize: "10px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    8단계 인터랙티브 코스
+                  </span>
+                </div>
+                <div style={{ fontSize: "12px", color: "#047857", marginTop: "4px", lineHeight: 1.4 }}>
+                  브라우저 독립 동작(오프라인 보장). 시뮬레이터(T7) → FDC 경보 → 센서 원본 → W-08 추적성 → 워크스페이스 순차 학습.
+                </div>
+              </div>
             </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '15px', fontWeight: 800, color: '#065F46' }}>
-                  FAB ONE 3~5분 완결 가이드 투어 (Guided Demo Tour)
-                </span>
-                <span
-                  style={{
-                    background: '#DCFCE7',
-                    color: '#166534',
-                    padding: '2px 8px',
-                    borderRadius: '10px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                  }}
-                >
-                  8단계 인터랙티브 코스
-                </span>
-              </div>
-              <div style={{ fontSize: '12px', color: '#047857', marginTop: '2px' }}>
-                가상 식각 시뮬레이션 → Step T7 일탈 → FDC 실시간 경보 → 센서 원본 검증 → 웨이퍼 추적성(W-08) → 엔지니어링 가설·조치 백보드
-              </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+              <Link
+                id="btn-start-guided-tour"
+                href={`/demo-tour?step=INTRO&seed=${seed}`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  background: "#0B9F78",
+                  color: "#FFFFFF",
+                  borderRadius: "8px",
+                  padding: "9px 16px",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  textDecoration: "none",
+                  boxShadow: "0 2px 4px rgba(11, 159, 120, 0.25)",
+                }}
+              >
+                가이드 투어 시작 (Start Tour) ➔
+              </Link>
             </div>
           </div>
 
-          <Link
-            id="btn-start-guided-tour"
-            href={`/demo-tour?step=INTRO&seed=${seed}`}
+          {/* Card B: Mode B Live Connected Case */}
+          <div
+            id="hero-live-connected-card"
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: '#0B9F78',
-              color: '#FFFFFF',
-              borderRadius: '8px',
-              padding: '10px 18px',
-              fontSize: '13px',
-              fontWeight: 800,
-              textDecoration: 'none',
-              boxShadow: '0 2px 4px rgba(11, 159, 120, 0.25)',
-              transition: 'background 0.15s ease-in-out',
+              background: "linear-gradient(135deg, #EFF6FF 0%, #F0FDF4 100%)",
+              border: "1px solid #BFDBFE",
+              borderRadius: "12px",
+              padding: "16px 20px",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "space-between",
+              gap: "14px",
+              boxShadow: "0 2px 6px rgba(59, 130, 246, 0.08)",
             }}
           >
-            가이드 투어 시작 (Start Tour) ➔
-          </Link>
-        </div>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+              <div
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "10px",
+                  background: "#2563EB",
+                  color: "#FFFFFF",
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: "20px",
+                  flexShrink: 0,
+                }}
+              >
+                ⚡
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "15px", fontWeight: 800, color: "#1E40AF" }}>
+                    Mode B · 실시간 연계 조사 케이스
+                  </span>
+                  <span
+                    style={{
+                      background: mode === "B" ? "#DBEAFE" : "#FEF3C7",
+                      color: mode === "B" ? "#1E40AF" : "#92400E",
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      fontSize: "10px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {mode === "B" ? "FastAPI SQLite 연계 중" : "API 재연결 대기"}
+                  </span>
+                </div>
+                <div style={{ fontSize: "12px", color: "#1E3A8A", marginTop: "4px", lineHeight: 1.4 }}>
+                  FastAPI 백엔드 + SQLite 실시간 시뮬레이션 Run 생성, FDC 알람 큐 정렬, W-08 추적성 검증, Casebook 저장(5~8 클릭 완결).
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "8px" }}>
+              <Link
+                id="btn-start-live-connected-case"
+                href={buildCrossNavUrl('/command-center', {
+                  mode: 'B',
+                  seed,
+                  runId: summary.active_run_id,
+                  alertId: selectedAlert?.alert_id,
+                })}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  background: "#2563EB",
+                  color: "#FFFFFF",
+                  borderRadius: "8px",
+                  padding: "9px 16px",
+                  fontSize: "12px",
+                  fontWeight: 800,
+                  textDecoration: "none",
+                  boxShadow: "0 2px 4px rgba(37, 99, 235, 0.25)",
+                }}
+              >
+                실시간 연계 케이스 시작 (Live Mode B) ➔
+              </Link>
+            </div>
+          </div>
+        </section>
 
         {/* Interactive Playback Control Bar */}
         <section className="control-bar-card" aria-label="데모 조작 제어판">
