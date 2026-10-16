@@ -91,3 +91,32 @@ class InvestigationDetail(BaseModel):
     disclaimer: str
     recommended_dispositions: List[str]
 
+class WaferTimelineEvent(BaseModel):
+    step_index: int
+    step_name: str
+    time_label: str
+    timestamp_utc: str
+    equipment_id: str
+    chamber_id: str
+    event_type: str  # "LOAD", "ALIGN", "PROCESS", "INTERLOCK", "HOLD"
+    status: str      # "COMPLETED", "INTERRUPTED", "HELD", "SKIPPED", "PENDING"
+    description: str
+
+class WaferTraceDetail(BaseModel):
+    wafer_id: str
+    lot_id: str
+    slot_number: int
+    sequence: int
+    exposure_status: str  # "CONFIRMED_EXPOSED", "CANDIDATE_EXPOSED", "NOT_EXPOSED"
+    equipment_id: str
+    chamber_id: str
+    run_id: str
+    recipe_id: str
+    start_time_utc: str
+    data_origin: str = "synthetic"
+    is_synthetic: bool = True
+    related_alert_id: Optional[str] = None
+    related_alert_rule: Optional[str] = None
+    related_alert_severity: Optional[str] = None
+    investigation_id: Optional[str] = None
+    timeline: List[WaferTimelineEvent] = Field(default_factory=list)

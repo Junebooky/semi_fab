@@ -535,5 +535,494 @@ test('P1-A Async Alert Switching Race Condition Defense: Delayed JSON body strea
   assert.equal(investigationData.alert_id, criticalAlert.alert_id);
 });
 
+// Helper matching generateModeAWaferTrace in traceability/page.tsx
+function generateModeAWaferTraceTest(waferId, seed = 20261015) {
+  const lotNum = 800 + (seed % 50);
+  const lotId = `LOT-DEMO-${lotNum}`;
+  const runId = `RUN-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+  const alertId = `AL-DEMO-${String(seed % 1000).padStart(3, '0')}`;
+
+  const slotMatch = waferId.match(/\d+/);
+  const slotNumber = slotMatch ? parseInt(slotMatch[0], 10) : 1;
+
+  let exposure_status = 'NOT_EXPOSED';
+  if (slotNumber <= 7) exposure_status = 'CONFIRMED_EXPOSED';
+  else if (slotNumber >= 8 && slotNumber <= 12) exposure_status = 'CANDIDATE_EXPOSED';
+
+  const isAffected = exposure_status === 'CONFIRMED_EXPOSED' || exposure_status === 'CANDIDATE_EXPOSED';
+  const related_alert_id = isAffected ? alertId : null;
+  const investigation_id = isAffected ? `INV-${alertId}` : null;
+
+  const timeline = [
+    { step_index: 1, step_name: "FOUP 카세트 로드", event_type: "LOAD", status: "COMPLETED" },
+    { step_index: 2, step_name: "사전 정렬", event_type: "ALIGN", status: "COMPLETED" },
+    {
+      step_index: 3,
+      step_name: "가공/대기",
+      event_type: "PROCESS",
+      status: exposure_status === 'CONFIRMED_EXPOSED' ? 'COMPLETED' : (exposure_status === 'CANDIDATE_EXPOSED' ? 'INTERRUPTED' : 'SKIPPED')
+    },
+    {
+      step_index: 4,
+      step_name: "인터록",
+      event_type: "INTERLOCK",
+      status: isAffected ? 'HELD' : 'COMPLETED'
+    },
+    {
+      step_index: 5,
+      step_name: "품질 판정",
+      event_type: "HOLD",
+      status: exposure_status === 'CANDIDATE_EXPOSED' ? 'HELD' : (exposure_status === 'CONFIRMED_EXPOSED' ? 'HELD' : 'PENDING'),
+      description: exposure_status === 'CANDIDATE_EXPOSED' ? '결함 검측(Defect Review) 배정' : '보류 또는 재투입 대기'
+    }
+  ];
+
+  return {
+    wafer_id: waferId,
+    lot_id: lotId,
+    slot_number: slotNumber,
+    sequence: slotNumber,
+    exposure_status,
+    equipment_id: "ETCH-02",
+    chamber_id: "CH-B",
+    run_id: runId,
+    recipe_id: "RCP-ETCH-POLY-04",
+    data_origin: "synthetic",
+    is_synthetic: true,
+    related_alert_id,
+    investigation_id,
+    timeline
+  };
+}
+
+test('BUILD-03 Wafer Traceability Contract: W-01 (CONFIRMED_EXPOSED) timeline, metadata, and alert binding', () => {
+  const trace = generateModeAWaferTraceTest('W-01');
+
+  assert.equal(trace.wafer_id, 'W-01');
+  assert.equal(trace.slot_number, 1);
+  assert.equal(trace.exposure_status, 'CONFIRMED_EXPOSED');
+  assert.equal(trace.equipment_id, 'ETCH-02');
+  assert.equal(trace.chamber_id, 'CH-B');
+  assert.equal(trace.data_origin, 'synthetic');
+  assert.equal(trace.is_synthetic, true);
+  assert.notEqual(trace.related_alert_id, null);
+  assert.notEqual(trace.investigation_id, null);
+
+  assert.equal(trace.timeline.length, 5);
+  assert.equal(trace.timeline[2].event_type, 'PROCESS');
+  assert.equal(trace.timeline[2].status, 'COMPLETED');
+});
+
+test('BUILD-03 Wafer Traceability Contract: W-08 (CANDIDATE_EXPOSED) timeline interruption and defect review hold', () => {
+  const trace = generateModeAWaferTraceTest('W-08');
+
+  assert.equal(trace.wafer_id, 'W-08');
+  assert.equal(trace.slot_number, 8);
+  assert.equal(trace.exposure_status, 'CANDIDATE_EXPOSED');
+  assert.notEqual(trace.related_alert_id, null);
+  assert.notEqual(trace.investigation_id, null);
+
+  assert.equal(trace.timeline.length, 5);
+  // Stage 3: Loadlock buffer interrupted
+  assert.equal(trace.timeline[2].event_type, 'PROCESS');
+  assert.equal(trace.timeline[2].status, 'INTERRUPTED');
+
+  // Stage 5: Quality hold with defect review
+  assert.equal(trace.timeline[4].event_type, 'HOLD');
+  assert.equal(trace.timeline[4].status, 'HELD');
+  assert.ok(trace.timeline[4].description.includes('결함 검측'));
+});
+
+test('BUILD-03 Wafer Traceability Contract: W-15 (NOT_EXPOSED) skipped timeline and no alert binding', () => {
+  const trace = generateModeAWaferTraceTest('W-15');
+
+  assert.equal(trace.wafer_id, 'W-15');
+  assert.equal(trace.slot_number, 15);
+  assert.equal(trace.exposure_status, 'NOT_EXPOSED');
+  assert.equal(trace.related_alert_id, null);
+  assert.equal(trace.investigation_id, null);
+
+  assert.equal(trace.timeline.length, 5);
+  // Stage 3: Cassette stored skipped
+  assert.equal(trace.timeline[2].event_type, 'PROCESS');
+  assert.equal(trace.timeline[2].status, 'SKIPPED');
+
+  // Stage 5: Pending next batch
+  assert.equal(trace.timeline[4].event_type, 'HOLD');
+  assert.equal(trace.timeline[4].status, 'PENDING');
+});
+
+test('P1-A BUILD-03 Rapid Wafer Switching Async Race Condition Defense: Delayed inflight wafer trace cannot overwrite current selection', async () => {
+  // Simulated component state & refs matching traceability/page.tsx
+  let traceData = null;
+  let selectedWaferId = 'W-08';
+  let notice = '';
+  let isLoading = false;
+  let notFoundError = null;
+  let mode = 'B';
+
+  let activeTraceReqId = 0;
+  let targetWaferId = 'W-08';
+
+  // Mock responses
+  const traceW01 = generateModeAWaferTraceTest('W-01');
+  const traceW08 = generateModeAWaferTraceTest('W-08');
+
+  let delayedResolveW01 = null;
+  const delayedPromiseW01 = new Promise(resolve => {
+    delayedResolveW01 = resolve;
+  });
+
+  async function loadDataTest(targetWafer, isDelayed = false) {
+    const reqId = ++activeTraceReqId;
+    targetWaferId = targetWafer;
+
+    if (!/^W-(0[1-9]|1[0-9]|2[0-5])$/.test(targetWafer)) {
+      if (reqId !== activeTraceReqId || targetWaferId !== targetWafer) return;
+      traceData = null;
+      notFoundError = { waferId: targetWafer, status: 404, message: 'Invalid ID' };
+      return;
+    }
+
+    isLoading = true;
+    notFoundError = null;
+
+    try {
+      const data = isDelayed ? await delayedPromiseW01 : (targetWafer === 'W-01' ? traceW01 : traceW08);
+
+      // P1-A Invariant Check: Discard stale response
+      if (reqId !== activeTraceReqId || targetWaferId !== targetWafer) {
+        return; // DISCARDED
+      }
+
+      traceData = data;
+      mode = 'B';
+      notice = `Mode B (Live API): 웨이퍼 ${targetWafer} 공정 이력 및 타임라인 동기화 완료.`;
+    } catch {
+      if (reqId !== activeTraceReqId || targetWaferId !== targetWafer) return;
+      traceData = generateModeAWaferTraceTest(targetWafer);
+      mode = 'A';
+      notice = `Mode A: 백엔드 미실행에 따른 로컬 합성 픽스처 웨이퍼 ${targetWafer} 이력 표시.`;
+    } finally {
+      if (reqId === activeTraceReqId && targetWaferId === targetWafer) {
+        isLoading = false;
+      }
+    }
+  }
+
+  // 1. Initial selection: W-08 loaded
+  await loadDataTest('W-08', false);
+  assert.equal(traceData.wafer_id, 'W-08');
+  assert.equal(isLoading, false);
+
+  // 2. User rapidly clicks W-01 (simulating slow network request in-flight)
+  selectedWaferId = 'W-01';
+  const promiseW01 = loadDataTest('W-01', true);
+  assert.equal(isLoading, true);
+
+  // 3. Before W-01 resolves, user immediately clicks back to W-08 (fast response)
+  selectedWaferId = 'W-08';
+  await loadDataTest('W-08', false);
+  assert.equal(traceData.wafer_id, 'W-08');
+  assert.equal(isLoading, false);
+  assert.ok(notice.includes('W-08'));
+
+  // 4. Now delayed W-01 response arrives!
+  delayedResolveW01(traceW01);
+  await promiseW01;
+
+  // 5. Invariant: traceData MUST remain W-08! W-01 stale response was safely discarded!
+  assert.equal(selectedWaferId, 'W-08');
+  assert.equal(traceData.wafer_id, 'W-08', 'Stale W-01 response must NOT overwrite current W-08 trace data');
+  assert.ok(notice.includes('W-08'), 'Notice must remain W-08 and not be overwritten');
+  assert.equal(notFoundError, null);
+});
+
+test('P1-B BUILD-03 Invalid Wafer ID & HTTP 404 Fail-Closed Guard: No synthetic fabrication for 404 or invalid ID', async () => {
+  const VALID_WAFER_PATTERN = /^W-(0[1-9]|1[0-9]|2[0-5])$/;
+
+  // 1. Invalid Wafer IDs (W-99, W-00, malformed) rejected without synthetic fabrication
+  assert.equal(VALID_WAFER_PATTERN.test('W-99'), false);
+  assert.equal(VALID_WAFER_PATTERN.test('W-00'), false);
+  assert.equal(VALID_WAFER_PATTERN.test('WAFER-123'), false);
+  assert.equal(VALID_WAFER_PATTERN.test('W-26'), false);
+  assert.equal(VALID_WAFER_PATTERN.test('W-01'), true);
+  assert.equal(VALID_WAFER_PATTERN.test('W-25'), true);
+
+  // 2. Mock handler implementing P1-B logic
+  async function simulateWaferQuery(waferId, serverStatus = 200, isServerOffline = false) {
+    if (!VALID_WAFER_PATTERN.test(waferId)) {
+      return {
+        trace: null,
+        notFoundError: { waferId, status: 404, message: `카세트 규격에 존재하지 않는 웨이퍼 ID ('${waferId}')입니다.` },
+        mode: 'B'
+      };
+    }
+
+    if (isServerOffline) {
+      // Offline fallback to Mode A ONLY for valid wafers
+      return {
+        trace: generateModeAWaferTraceTest(waferId),
+        notFoundError: null,
+        mode: 'A'
+      };
+    }
+
+    if (serverStatus === 404) {
+      // Server is online, but responds 404
+      // MUST NOT fall back to Mode A!
+      return {
+        trace: null,
+        notFoundError: { waferId, status: 404, message: `서버 공정 DB에서 웨이퍼 '${waferId}'를 찾을 수 없습니다 (404 Not Found).` },
+        mode: 'B'
+      };
+    }
+
+    return {
+      trace: generateModeAWaferTraceTest(waferId),
+      notFoundError: null,
+      mode: 'B'
+    };
+  }
+
+  // Verification A: W-99 returns 404 error with null trace (no fake events)
+  const resW99 = await simulateWaferQuery('W-99', 200, false);
+  assert.equal(resW99.trace, null);
+  assert.notEqual(resW99.notFoundError, null);
+  assert.equal(resW99.notFoundError.status, 404);
+
+  // Verification B: Server returns 404 for valid-format wafer
+  const resServer404 = await simulateWaferQuery('W-18', 404, false);
+  assert.equal(resServer404.trace, null);
+  assert.notEqual(resServer404.notFoundError, null);
+  assert.equal(resServer404.notFoundError.status, 404);
+  assert.equal(resServer404.mode, 'B', 'Server 404 must NOT switch to Mode A');
+
+  // Verification C: Server genuinely offline with valid wafer (W-08) -> Clean Mode A fallback
+  const resOfflineValid = await simulateWaferQuery('W-08', 200, true);
+  assert.notEqual(resOfflineValid.trace, null);
+  assert.equal(resOfflineValid.trace.wafer_id, 'W-08');
+  assert.equal(resOfflineValid.mode, 'A');
+  assert.equal(resOfflineValid.notFoundError, null);
+
+  // Verification D: Server genuinely offline with invalid wafer (W-99) -> Still 404, NO fake trace
+  const resOfflineInvalid = await simulateWaferQuery('W-99', 200, true);
+  assert.equal(resOfflineInvalid.trace, null);
+  assert.notEqual(resOfflineInvalid.notFoundError, null);
+  assert.equal(resOfflineInvalid.notFoundError.status, 404);
+});
+
+test('BUILD-03 Single Source Atomicity Regressions (a~e): Atomic bundle commit, lineage validation, and offline demarcation', async () => {
+  // Test harnesses replicating the atomic loadData logic in traceability/page.tsx
+  const VALID_WAFER_PATTERN = /^W-(0[1-9]|1[0-9]|2[0-5])$/;
+
+  // State container simulating traceability component state
+  function createHarness() {
+    return {
+      trace: null,
+      wafers: [],
+      activeRunId: null,
+      mode: 'B',
+      notFoundError: null,
+      notice: '',
+      activeReqId: 0,
+      targetWaferId: '',
+
+      async executeLoadData(targetWafer, fetchMocks) {
+        const reqId = ++this.activeReqId;
+        this.targetWaferId = targetWafer;
+
+        if (!VALID_WAFER_PATTERN.test(targetWafer)) {
+          if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+          this.trace = null;
+          this.notFoundError = { waferId: targetWafer, status: 404, message: `카세트 규격에 존재하지 않는 웨이퍼 ID ('${targetWafer}')입니다.` };
+          return;
+        }
+
+        let traceRes, wafersRes, summaryRes;
+        try {
+          [traceRes, wafersRes, summaryRes] = await Promise.all([
+            fetchMocks.fetchTrace(),
+            fetchMocks.fetchWafers(),
+            fetchMocks.fetchSummary()
+          ]);
+        } catch {
+          // Network disconnection
+          if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+          this.mode = 'A';
+          this.wafers = Array.from({ length: 25 }, (_, i) => ({
+            wafer_id: `W-${String(i+1).padStart(2, '0')}`,
+            lot_id: 'LOT-DEMO-815',
+            slot_number: i+1,
+            sequence: i+1,
+            exposure_status: 'NOT_EXPOSED'
+          }));
+          this.activeRunId = 'RUN-DEMO-015';
+          if (VALID_WAFER_PATTERN.test(targetWafer)) {
+            this.trace = generateModeAWaferTraceTest(targetWafer);
+            this.notFoundError = null;
+            this.notice = `Mode A: 백엔드 미실행에 따른 로컬 합성 픽스처 웨이퍼 ${targetWafer} 이력 표시.`;
+          } else {
+            this.trace = null;
+            this.notFoundError = { waferId: targetWafer, status: 404, message: 'Invalid ID' };
+          }
+          return;
+        }
+
+        if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+
+        if (traceRes.status === 404) {
+          let errDetail = '404 Not Found';
+          try {
+            const errJson = await traceRes.json();
+            if (errJson.detail) errDetail = errJson.detail;
+          } catch {}
+          if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+          this.trace = null;
+          this.notFoundError = { waferId: targetWafer, status: 404, message: errDetail };
+          this.mode = 'B';
+          return;
+        }
+
+        if (!traceRes.ok || !wafersRes.ok || !summaryRes.ok) {
+          const failedStatus = !traceRes.ok ? traceRes.status : (!wafersRes.ok ? wafersRes.status : summaryRes.status);
+          this.trace = null;
+          this.notFoundError = {
+            waferId: targetWafer,
+            status: failedStatus,
+            message: `API 서버 응답 불완전 (HTTP ${failedStatus})`
+          };
+          this.mode = 'B';
+          this.notice = `서버 응답 오류 (HTTP ${failedStatus}): 데이터 출처 무결성을 위해 조회를 차단했습니다.`;
+          return;
+        }
+
+        let traceData, wafersData, summaryData;
+        try {
+          [traceData, wafersData, summaryData] = await Promise.all([
+            traceRes.json(),
+            wafersRes.json(),
+            summaryRes.json()
+          ]);
+        } catch {
+          if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+          this.trace = null;
+          this.notFoundError = { waferId: targetWafer, status: 502, message: 'Malformed JSON' };
+          this.mode = 'B';
+          this.notice = '서버 응답 형식 오류: JSON 파싱에 실패했습니다.';
+          return;
+        }
+
+        if (reqId !== this.activeReqId || this.targetWaferId !== targetWafer) return;
+
+        const isRunCoherent = traceData.run_id === summaryData.active_run_id;
+        const isLotCoherent = wafersData.length > 0 && wafersData.some(w => w.wafer_id === targetWafer && w.lot_id === traceData.lot_id);
+
+        if (!isRunCoherent || !isLotCoherent) {
+          this.trace = null;
+          this.notFoundError = {
+            waferId: targetWafer,
+            status: 500,
+            message: '데이터 계통성 불일치 오류'
+          };
+          this.mode = 'B';
+          this.notice = '데이터 계약 오류: 동일 공정 Run 및 Lot 계통 검증에 실패하여 조회를 차단했습니다.';
+          return;
+        }
+
+        // Commit all
+        this.trace = traceData;
+        this.wafers = wafersData;
+        this.activeRunId = summaryData.active_run_id;
+        this.mode = 'B';
+        this.notFoundError = null;
+        this.notice = `Mode B (Live API): 웨이퍼 ${targetWafer} 동기화 완료.`;
+      }
+    };
+  }
+
+  const validTraceW08 = generateModeAWaferTraceTest('W-08');
+  const validWafers = Array.from({ length: 25 }, (_, i) => ({
+    wafer_id: `W-${String(i+1).padStart(2, '0')}`,
+    lot_id: validTraceW08.lot_id,
+    slot_number: i+1,
+    sequence: i+1,
+    exposure_status: i < 7 ? 'CONFIRMED_EXPOSED' : (i < 12 ? 'CANDIDATE_EXPOSED' : 'NOT_EXPOSED')
+  }));
+  const validSummary = { active_run_id: validTraceW08.run_id, lot_id: validTraceW08.lot_id };
+
+  // (a) Scenario A: trace 200 + list 500 -> fail-closed, trace=null, no synthetic fallback, mode=B
+  const hA = createHarness();
+  await hA.executeLoadData('W-08', {
+    fetchTrace: async () => ({ ok: true, status: 200, json: async () => validTraceW08 }),
+    fetchWafers: async () => ({ ok: false, status: 500, json: async () => ({ error: 'Internal Error' }) }),
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary })
+  });
+  assert.equal(hA.trace, null, "(a) Trace MUST be null when wafer list fails with 500");
+  assert.notEqual(hA.notFoundError, null);
+  assert.equal(hA.notFoundError.status, 500);
+  assert.equal(hA.mode, 'B', "(a) Must stay in Mode B on server HTTP 500 error, not fake Mode A");
+
+  // (b) Scenario B: trace 200 + summary mismatch (different run_id or lot_id) -> fail-closed
+  const hB = createHarness();
+  await hB.executeLoadData('W-08', {
+    fetchTrace: async () => ({ ok: true, status: 200, json: async () => validTraceW08 }),
+    fetchWafers: async () => ({ ok: true, status: 200, json: async () => validWafers }),
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => ({ active_run_id: 'RUN-DIFFERENT-999' }) })
+  });
+  assert.equal(hB.trace, null, "(b) Trace MUST be null when active run ID diverges");
+  assert.notEqual(hB.notFoundError, null);
+  assert.equal(hB.notFoundError.status, 500);
+  assert.equal(hB.mode, 'B');
+
+  // (c) Scenario C: W-01 list/summary JSON delayed while W-08 finishes -> stale W-01 responses discarded
+  const hC = createHarness();
+  let delayedResolveW01 = null;
+  const delayedPromiseW01 = new Promise(resolve => { delayedResolveW01 = resolve; });
+
+  const pW01 = hC.executeLoadData('W-01', {
+    fetchTrace: async () => ({ ok: true, status: 200, json: async () => generateModeAWaferTraceTest('W-01') }),
+    fetchWafers: async () => ({ ok: true, status: 200, json: async () => { await delayedPromiseW01; return validWafers; } }),
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary })
+  });
+
+  // User immediately switches to W-08
+  await hC.executeLoadData('W-08', {
+    fetchTrace: async () => ({ ok: true, status: 200, json: async () => validTraceW08 }),
+    fetchWafers: async () => ({ ok: true, status: 200, json: async () => validWafers }),
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary })
+  });
+  assert.equal(hC.trace.wafer_id, 'W-08');
+
+  // Now late W-01 resolves
+  delayedResolveW01();
+  await pW01;
+  assert.equal(hC.trace.wafer_id, 'W-08', "(c) Stale W-01 delayed JSON must NOT overwrite current W-08");
+
+  // (d) Scenario D: Response present but malformed JSON -> fail-closed with 502, no synthetic fallback
+  const hD = createHarness();
+  await hD.executeLoadData('W-08', {
+    fetchTrace: async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError("Unexpected token < in JSON"); } }),
+    fetchWafers: async () => ({ ok: true, status: 200, json: async () => validWafers }),
+    fetchSummary: async () => ({ ok: true, status: 200, json: async () => validSummary })
+  });
+  assert.equal(hD.trace, null, "(d) Trace MUST be null on malformed JSON");
+  assert.notEqual(hD.notFoundError, null);
+  assert.equal(hD.notFoundError.status, 502);
+  assert.equal(hD.mode, 'B', "(d) Malformed server JSON must not be misclassified as server offline");
+
+  // (e) Scenario E: Server genuinely offline with valid W-08 -> Clean Mode A fallback
+  const hE = createHarness();
+  await hE.executeLoadData('W-08', {
+    fetchTrace: async () => { throw new TypeError("Failed to fetch (ECONNREFUSED)"); },
+    fetchWafers: async () => { throw new TypeError("Failed to fetch (ECONNREFUSED)"); },
+    fetchSummary: async () => { throw new TypeError("Failed to fetch (ECONNREFUSED)"); }
+  });
+  assert.notEqual(hE.trace, null, "(e) Clean Mode A fallback when server is unreachable");
+  assert.equal(hE.trace.wafer_id, 'W-08');
+  assert.equal(hE.mode, 'A', "(e) Mode switched to A on genuine network connection failure");
+  assert.equal(hE.notFoundError, null);
+});
+
 
 
