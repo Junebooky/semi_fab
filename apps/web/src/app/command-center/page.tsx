@@ -384,10 +384,10 @@ function CommandCenterContent() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <div>
                 <h2 style={{ fontSize: '15px', fontWeight: 800, color: '#17263B', margin: 0 }}>
-                  🚨 실시간 FDC 알람 큐
+                  🚨 가상 FDC 알람 큐 (합성 시뮬레이션)
                 </h2>
                 <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                  호스트 팹 FDC 시스템 알람 이벤트 수집 목록 (Run 계통성 검증 완료)
+                  FAB ONE 반도체 식각 가상 FDC 알람 이벤트 큐 (합성 데이터 · Run 계통성 검증 완료)
                 </div>
               </div>
               <span className="pill" style={{ background: '#F1F5F9', color: '#475569', fontSize: '11px' }}>
@@ -722,7 +722,7 @@ function CommandCenterContent() {
                       </strong>
                     </div>
                     <div style={{ fontSize: '12px', color: '#7F1D1D', marginTop: '6px', lineHeight: '1.5' }}>
-                      식각 설비({selectedAlert.equipment_id}) 챔버({selectedAlert.chamber_id}) 활성 공정({selectedAlert.run_id})의 스텝 T7 구간 시계열 센서(RF Power, OES 상대 신호, 압력) 급증 계측 근거 및 영향 카세트 웨이퍼 분석이 지원됩니다.
+                      현재 합성 시나리오의 조사 연결 지원 조건(활성 Run {selectedAlert.run_id}, {selectedAlert.equipment_id} / {selectedAlert.chamber_id}, 스텝 T7 구간 시계열 센서 급증)을 충족합니다. (진입 후 실제 백엔드 세션/레코드 부재 시 fail-closed 안내 유지)
                     </div>
 
                     {/* Candidate Wafers Preview (Rendered exclusively when verified candidate wafers exist) */}

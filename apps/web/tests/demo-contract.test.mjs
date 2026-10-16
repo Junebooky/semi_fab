@@ -1517,39 +1517,54 @@ function isInvestigationSupportedTest(alert, activeRunId) {
   if (!alert) {
     return { supported: false, reason: '선택된 알람이 없습니다.' };
   }
+  // 1. Active Run presence check
+  if (!activeRunId || typeof activeRunId !== 'string' || activeRunId.trim().length === 0) {
+    return {
+      supported: false,
+      reason: '현재 활성화된 공정 Run이 존재하지 않아 이상 조회를 지원할 수 없습니다.'
+    };
+  }
+  // 2. Standby check (null run_id)
   if (!alert.run_id) {
     return {
       supported: false,
       reason: '대기 설비(Standby) 알람으로 연결된 활성 공정 Run 및 웨이퍼 가공 이력이 없습니다.'
     };
   }
-  if (activeRunId && alert.run_id !== activeRunId) {
+  // 3. Active Run Lineage check
+  if (alert.run_id !== activeRunId) {
     return {
       supported: false,
       reason: `알람 소속 Run (${alert.run_id})이 현재 활성 Run (${activeRunId})과 일치하지 않아 조회를 차단했습니다.`
     };
   }
-  const isTargetChamber = alert.equipment_id === 'ETCH-02' && alert.chamber_id === 'CH-B';
-  const hasSpcExcursionRule =
-    alert.rule_code === 'FDC-RULE-SPC-UCL-01' ||
-    (alert.candidate_wafers && alert.candidate_wafers.length > 0);
-
-  if (alert.severity === 'CRITICAL') {
-    if (isTargetChamber && hasSpcExcursionRule) {
-      return {
-        supported: true,
-        reason: '식각 챔버(CH-B) 스텝 T7 구간의 시계열 센서(RF Power, OES, 압력) 급증 계측 근거 및 영향 카세트 웨이퍼 분석 가능'
-      };
-    } else {
-      return {
-        supported: false,
-        reason: `해당 CRITICAL 경보(${alert.equipment_id} / ${alert.chamber_id})는 스텝 T7 센서 이상 계측 근거가 등록되지 않은 설비/챔버입니다. 허위 이상 계측 화면으로의 연결을 차단합니다 (Fail-closed).`
-      };
-    }
+  // 4. Severity check: Non-critical alerts are not sensor excursion investigations
+  if (alert.severity !== 'CRITICAL') {
+    return {
+      supported: false,
+      reason: `단순 상태/경고 경보(${alert.severity})로 센서 시계열 이상 조사 대상이 아닙니다.`
+    };
   }
+  // 5. Equipment & Chamber Verification: T7 sensor excursion is exclusively recorded on ETCH-02 / CH-B
+  const isTargetChamber = alert.equipment_id === 'ETCH-02' && alert.chamber_id === 'CH-B';
+  if (!isTargetChamber) {
+    return {
+      supported: false,
+      reason: `해당 CRITICAL 경보(${alert.equipment_id} / ${alert.chamber_id})는 스텝 T7 센서 이상 계측 근거가 등록되지 않은 설비/챔버입니다. 허위 이상 계측 화면으로의 연결을 차단합니다 (Fail-closed).`
+    };
+  }
+  // 6. Explicit Rule Verification: Must be the scenario-supported SPC excursion rule (candidate wafers alone cannot grant support)
+  const isTargetRule = alert.rule_code === 'FDC-RULE-SPC-UCL-01';
+  if (!isTargetRule) {
+    return {
+      supported: false,
+      reason: `해당 CRITICAL 경보의 규칙(${alert.rule_code})은 스텝 T7 시계열 센서 이상 계측 근거가 등록되지 않은 규칙입니다. 후보 웨이퍼 표기 유무와 무관하게 허위 조사 연결을 차단합니다 (Fail-closed).`
+    };
+  }
+  // 7. All positive criteria strictly satisfied for the synthetic demonstration scenario
   return {
-    supported: false,
-    reason: `단순 상태/경고 경보(${alert.severity})로 센서 시계열 이상 조사 대상이 아닙니다.`
+    supported: true,
+    reason: `현재 합성 시나리오의 조사 연결 지원 조건(활성 Run ${activeRunId}, ETCH-02 / CH-B, 스텝 T7 OES/압력/RF Power 복합 급증)을 충족합니다.`
   };
 }
 
@@ -1819,7 +1834,25 @@ test('P1-B BUILD-05 Keyboard Accessibility Contract: Semantic button rows, Tab/E
 test('P1-C BUILD-05 Investigation Telemetry Verification Contract: Counterexamples, chamber/rule provenance, and fail-closed isolation', () => {
   const activeRunId = 'RUN-DEMO-015';
 
-  // 1. Nominal Active Excursion: ETCH-02 / CH-B / CRITICAL / FDC-RULE-SPC-UCL-01
+  // 0. Verify the actual source code contract in command-center-contract.ts directly
+  const contractSource = readFileSync(
+    new URL('../src/components/command-center/command-center-contract.ts', import.meta.url),
+    'utf8'
+  );
+  assert.ok(
+    contractSource.includes("const isTargetRule = alert.rule_code === 'FDC-RULE-SPC-UCL-01';"),
+    'Source contract must strictly require FDC-RULE-SPC-UCL-01'
+  );
+  assert.ok(
+    !contractSource.includes('|| (alert.candidate_wafers'),
+    'Source contract must NOT use candidate_wafers in an OR condition for telemetry verification'
+  );
+  assert.ok(
+    contractSource.includes("if (!activeRunId || typeof activeRunId !== 'string'"),
+    'Source contract must strictly validate activeRunId presence before checking alert.run_id'
+  );
+
+  // 1. Nominal Active Excursion (a): ETCH-02 / CH-B / CRITICAL / FDC-RULE-SPC-UCL-01
   const nominalAlert = {
     alert_id: 'AL-DEMO-015',
     severity: 'CRITICAL',
@@ -1830,10 +1863,39 @@ test('P1-C BUILD-05 Investigation Telemetry Verification Contract: Counterexampl
     candidate_wafers: ['W-08', 'W-09', 'W-10', 'W-11', 'W-12']
   };
   const nominalRes = isInvestigationSupportedTest(nominalAlert, activeRunId);
-  assert.equal(nominalRes.supported, true);
-  assert.ok(nominalRes.reason.includes('스텝 T7 구간의 시계열 센서'));
+  assert.equal(nominalRes.supported, true, '(a) Nominal active T7 excursion must be supported');
+  assert.ok(nominalRes.reason.includes('현재 합성 시나리오의 조사 연결 지원 조건'));
 
-  // 2. Counterexample A: Standby Alert (run_id is null)
+  // 2. Counterexample (b) [A01 Crucial Counterexample]:
+  // Same Run + ETCH-02 + CH-B + CRITICAL + DIFFERENT RULE + NON-EMPTY candidate_wafers
+  // MUST FAIL CLOSED: Candidate wafers alone do not prove T7 sensor excursion telemetry!
+  const ruleMismatchWithWafersAlert = {
+    alert_id: 'AL-DEMO-DIFF-RULE',
+    severity: 'CRITICAL',
+    equipment_id: 'ETCH-02',
+    chamber_id: 'CH-B',
+    run_id: activeRunId,
+    rule_code: 'FDC-RULE-OTHER',
+    candidate_wafers: ['W-08', 'W-09']
+  };
+  const ruleMismatchRes = isInvestigationSupportedTest(ruleMismatchWithWafersAlert, activeRunId);
+  assert.equal(
+    ruleMismatchRes.supported,
+    false,
+    '(b) CRITICAL alert on target chamber with different rule must fail closed despite candidate_wafers!'
+  );
+  assert.ok(ruleMismatchRes.reason.includes('스텝 T7 시계열 센서 이상 계측 근거가 등록되지 않은 규칙입니다'));
+  assert.ok(ruleMismatchRes.reason.includes('후보 웨이퍼 표기 유무와 무관하게 허위 조사 연결을 차단'));
+
+  // 3. Counterexample (c): activeRunId is null or empty string
+  const nullActiveRunRes = isInvestigationSupportedTest(nominalAlert, null);
+  assert.equal(nullActiveRunRes.supported, false, '(c) activeRunId=null must fail closed');
+  assert.ok(nullActiveRunRes.reason.includes('현재 활성화된 공정 Run이 존재하지 않아'));
+
+  const emptyActiveRunRes = isInvestigationSupportedTest(nominalAlert, '   ');
+  assert.equal(emptyActiveRunRes.supported, false, '(c) activeRunId="" must fail closed');
+
+  // 4. Counterexample (d1): Standby Alert (run_id is null)
   const standbyAlert = {
     alert_id: 'AL-STANDBY-001',
     severity: 'WARNING',
@@ -1844,20 +1906,20 @@ test('P1-C BUILD-05 Investigation Telemetry Verification Contract: Counterexampl
     candidate_wafers: []
   };
   const standbyRes = isInvestigationSupportedTest(standbyAlert, activeRunId);
-  assert.equal(standbyRes.supported, false);
+  assert.equal(standbyRes.supported, false, '(d1) Standby alert must fail closed');
   assert.ok(standbyRes.reason.includes('대기 설비(Standby)'));
 
-  // 3. Counterexample B: Conflicting Run Alert (cross-run lineage mismatch)
+  // 5. Counterexample (d2): Conflicting Run Alert (cross-run lineage mismatch)
   const crossRunAlert = {
     ...nominalAlert,
     alert_id: 'AL-CROSS-999',
     run_id: 'RUN-DIFF-888'
   };
   const crossRunRes = isInvestigationSupportedTest(crossRunAlert, activeRunId);
-  assert.equal(crossRunRes.supported, false);
+  assert.equal(crossRunRes.supported, false, '(d2) Cross-run alert must fail closed');
   assert.ok(crossRunRes.reason.includes('일치하지 않아'));
 
-  // 4. Counterexample C: Arbitrary CRITICAL Alert without T7 excursion evidence (e.g. ETCH-01 / CH-A)
+  // 6. Counterexample (d3): Arbitrary CRITICAL Alert without T7 excursion evidence on different equipment/chamber
   const arbitraryCriticalAlert = {
     alert_id: 'AL-CRIT-999',
     severity: 'CRITICAL',
@@ -1868,10 +1930,10 @@ test('P1-C BUILD-05 Investigation Telemetry Verification Contract: Counterexampl
     candidate_wafers: []
   };
   const arbitraryRes = isInvestigationSupportedTest(arbitraryCriticalAlert, activeRunId);
-  assert.equal(arbitraryRes.supported, false, 'Arbitrary CRITICAL alert without T7 evidence must fail closed');
+  assert.equal(arbitraryRes.supported, false, '(d3) Arbitrary CRITICAL on ETCH-01/CH-A must fail closed');
   assert.ok(arbitraryRes.reason.includes('스텝 T7 센서 이상 계측 근거가 등록되지 않은 설비/챔버입니다'));
 
-  // 5. Counterexample D: Non-critical alerts (INFO / WARNING)
+  // 7. Counterexample (d4): Non-critical alerts (INFO / WARNING)
   const infoAlert = {
     alert_id: 'AL-INFO-001',
     severity: 'INFO',
@@ -1882,7 +1944,7 @@ test('P1-C BUILD-05 Investigation Telemetry Verification Contract: Counterexampl
     candidate_wafers: []
   };
   const infoRes = isInvestigationSupportedTest(infoAlert, activeRunId);
-  assert.equal(infoRes.supported, false);
+  assert.equal(infoRes.supported, false, '(d4) INFO alert must fail closed');
   assert.ok(infoRes.reason.includes('단순 상태/경고 경보'));
 });
 

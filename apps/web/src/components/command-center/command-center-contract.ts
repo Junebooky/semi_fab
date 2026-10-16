@@ -97,7 +97,8 @@ export function generateModeACommandCenterAlarms(seed: number): FdcAlert[] {
 /**
  * Evaluates whether an alert possesses verified engineering investigation telemetry (P1-C compliant).
  * Guarantees strict provenance: only active run CRITICAL alerts on equipment ETCH-02 / chamber CH-B
- * with recorded T7 sensor excursions are eligible. All others fail-closed with explicit reasons.
+ * with rule 'FDC-RULE-SPC-UCL-01' and a verified activeRunId are eligible.
+ * All others fail-closed with explicit reasons (candidate_wafers count alone cannot grant support).
  */
 export function isInvestigationSupported(
   alert: FdcAlert | null,
@@ -107,7 +108,15 @@ export function isInvestigationSupported(
     return { supported: false, reason: '선택된 알람이 없습니다.' };
   }
 
-  // 1. Standby check (null run_id)
+  // 1. Active Run presence check
+  if (!activeRunId || typeof activeRunId !== 'string' || activeRunId.trim().length === 0) {
+    return {
+      supported: false,
+      reason: '현재 활성화된 공정 Run이 존재하지 않아 이상 조회를 지원할 수 없습니다.'
+    };
+  }
+
+  // 2. Standby check (null run_id)
   if (!alert.run_id) {
     return {
       supported: false,
@@ -115,38 +124,44 @@ export function isInvestigationSupported(
     };
   }
 
-  // 2. Active Run Lineage check
-  if (activeRunId && alert.run_id !== activeRunId) {
+  // 3. Active Run Lineage check
+  if (alert.run_id !== activeRunId) {
     return {
       supported: false,
       reason: `알람 소속 Run (${alert.run_id})이 현재 활성 Run (${activeRunId})과 일치하지 않아 조회를 차단했습니다.`
     };
   }
 
-  // 3. Equipment & Chamber Verification: T7 sensor excursion is exclusively recorded on ETCH-02 / CH-B
-  const isTargetChamber = alert.equipment_id === 'ETCH-02' && alert.chamber_id === 'CH-B';
-  const hasSpcExcursionRule =
-    alert.rule_code === 'FDC-RULE-SPC-UCL-01' ||
-    (alert.candidate_wafers && alert.candidate_wafers.length > 0);
-
-  if (alert.severity === 'CRITICAL') {
-    if (isTargetChamber && hasSpcExcursionRule) {
-      return {
-        supported: true,
-        reason: '식각 챔버(CH-B) 스텝 T7 구간의 시계열 센서(RF Power, OES, 압력) 급증 계측 근거 및 영향 카세트 웨이퍼 분석 가능'
-      };
-    } else {
-      return {
-        supported: false,
-        reason: `해당 CRITICAL 경보(${alert.equipment_id} / ${alert.chamber_id})는 스텝 T7 센서 이상 계측 근거가 등록되지 않은 설비/챔버입니다. 허위 이상 계측 화면으로의 연결을 차단합니다 (Fail-closed).`
-      };
-    }
+  // 4. Severity check: Non-critical alerts are not sensor excursion investigations
+  if (alert.severity !== 'CRITICAL') {
+    return {
+      supported: false,
+      reason: `단순 상태/경고 경보(${alert.severity})로 센서 시계열 이상 조사 대상이 아닙니다.`
+    };
   }
 
-  // 4. Non-critical alerts (WARNING / INFO)
+  // 5. Equipment & Chamber Verification: T7 sensor excursion is exclusively recorded on ETCH-02 / CH-B
+  const isTargetChamber = alert.equipment_id === 'ETCH-02' && alert.chamber_id === 'CH-B';
+  if (!isTargetChamber) {
+    return {
+      supported: false,
+      reason: `해당 CRITICAL 경보(${alert.equipment_id} / ${alert.chamber_id})는 스텝 T7 센서 이상 계측 근거가 등록되지 않은 설비/챔버입니다. 허위 이상 계측 화면으로의 연결을 차단합니다 (Fail-closed).`
+    };
+  }
+
+  // 6. Explicit Rule Verification: Must be the scenario-supported SPC excursion rule (candidate wafers alone cannot grant support)
+  const isTargetRule = alert.rule_code === 'FDC-RULE-SPC-UCL-01';
+  if (!isTargetRule) {
+    return {
+      supported: false,
+      reason: `해당 CRITICAL 경보의 규칙(${alert.rule_code})은 스텝 T7 시계열 센서 이상 계측 근거가 등록되지 않은 규칙입니다. 후보 웨이퍼 표기 유무와 무관하게 허위 조사 연결을 차단합니다 (Fail-closed).`
+    };
+  }
+
+  // 7. All positive criteria strictly satisfied for the synthetic demonstration scenario
   return {
-    supported: false,
-    reason: `단순 상태/경고 경보(${alert.severity})로 센서 시계열 이상 조사 대상이 아닙니다.`
+    supported: true,
+    reason: `현재 합성 시나리오의 조사 연결 지원 조건(활성 Run ${activeRunId}, ETCH-02 / CH-B, 스텝 T7 OES/압력/RF Power 복합 급증)을 충족합니다.`
   };
 }
 
