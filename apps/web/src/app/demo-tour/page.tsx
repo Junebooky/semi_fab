@@ -532,7 +532,7 @@ function DemoTourContent() {
               }}
             >
               <h3 style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', marginBottom: '12px' }}>
-                🎓 FAB ONE에서 경험한 5대 엔지니어링 판단 요약
+                🎓 데모 내 엔지니어링 상황 판단 (5대 핵심 판단 요약)
               </h3>
 
               <div

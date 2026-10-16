@@ -27,6 +27,7 @@ import {
   EngineeringTermTrigger,
   EngineeringDeepDivePanel,
 } from '../../components/ekl';
+import { TourReturnBanner } from '../../components/guided-demo';
 
 const API_BASE = 'http://localhost:8000';
 
@@ -46,6 +47,7 @@ function EquipmentIntelligenceContent() {
 
   // Default seed synchronized with Home and Command Center (20261015 -> RUN-DEMO-015)
   const seedQuery = searchParams.get('seed');
+  const queryTourStep = searchParams.get('tourStep');
   const initialSeed = seedQuery && !isNaN(Number(seedQuery)) && Number.isInteger(Number(seedQuery)) && Number(seedQuery) > 0 && Number(seedQuery) < 1000000000
     ? Number(seedQuery)
     : 20261015;
@@ -332,7 +334,7 @@ function EquipmentIntelligenceContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
-          <Link href={`/demo-tour${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+          <Link href={`/demo-tour${mode === 'A' ? `?seed=${seed}${queryTourStep ? `&step=${queryTourStep}` : ''}` : (queryTourStep ? `?step=${queryTourStep}` : '')}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
@@ -364,6 +366,9 @@ function EquipmentIntelligenceContent() {
 
       {/* Main Content Area */}
       <main className="main-content">
+        {/* BUILD-10 Tour Return Banner */}
+        <TourReturnBanner tourStep={queryTourStep} seed={seed} />
+
         {/* Notice Banner */}
         {noticeMessage && (
           <div

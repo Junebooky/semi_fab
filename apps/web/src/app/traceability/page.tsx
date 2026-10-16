@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } fr
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
+import { TourReturnBanner } from '@/components/guided-demo';
 
 // Domain Interfaces
 interface WaferItem {
@@ -257,6 +258,7 @@ function TraceabilityContent() {
   const router = useRouter();
 
   const queryWafer = searchParams.get('wafer') || 'W-08';
+  const queryTourStep = searchParams.get('tourStep');
 
   const [mode, setMode] = useState<'A' | 'B'>('A');
   const [seed, setSeed] = useState<number>(20261015);
@@ -607,7 +609,7 @@ function TraceabilityContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
-          <Link href={`/demo-tour${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+          <Link href={`/demo-tour${mode === 'A' ? `?seed=${seed}${queryTourStep ? `&step=${queryTourStep}` : ''}` : (queryTourStep ? `?step=${queryTourStep}` : '')}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
@@ -638,6 +640,9 @@ function TraceabilityContent() {
 
       {/* Main Container */}
       <main className="main-wrapper">
+        {/* BUILD-10 Tour Return Banner */}
+        <TourReturnBanner tourStep={queryTourStep} seed={seed} />
+
         {/* Notice Box */}
         <div className="notice-box" role="status">
           <strong>추적 상태 안내:</strong> {notice}

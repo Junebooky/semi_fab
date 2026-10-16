@@ -66,16 +66,19 @@ button:focus-visible, input:focus-visible {
 }
 
 .top-nav {
-  height: 64px;
+  min-height: 64px;
+  height: auto;
   background: #FFFFFF;
   border-bottom: 1px solid var(--line-soft);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 28px;
+  padding: 8px 24px;
   position: sticky;
   top: 0;
   z-index: 30;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .brand-section {
@@ -1617,4 +1620,20 @@ button:focus-visible, input:focus-visible {
 [id^="foup-wafer-"]:focus-visible {
   outline: 2px solid #0B9F78;
   outline-offset: 2px;
+}
+
+/* ========================================================
+   BUILD-10 Engineering Workspace Responsive Layout
+   ======================================================== */
+.ws-boards-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.2fr) minmax(320px, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1100px) {
+  .ws-boards-grid {
+    grid-template-columns: 1fr;
+  }
 }

@@ -14,6 +14,7 @@ import {
   getSimulationNavLinks,
 } from '@/components/fab-simulation/fab-simulation-contract';
 import { Fab3dAssetSlot } from '@/components/fab-simulation/Fab3dAssetSlot';
+import { TourReturnBanner } from '@/components/guided-demo';
 
 function FabSimulationContent() {
   const searchParams = useSearchParams();
@@ -21,6 +22,7 @@ function FabSimulationContent() {
 
   // Seed parsing & validation
   const querySeed = searchParams.get('seed');
+  const queryTourStep = searchParams.get('tourStep');
   const initialSeed = useMemo(() => parseSafeSimulationSeed(querySeed), [querySeed]);
 
   const [seed, setSeed] = useState<number>(initialSeed);
@@ -198,7 +200,7 @@ function FabSimulationContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
-          <Link href={`/demo-tour?seed=${seed}`} className="nav-tab-link">
+          <Link href={queryTourStep ? `/demo-tour?seed=${seed}&step=${queryTourStep}` : `/demo-tour?seed=${seed}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
@@ -230,6 +232,9 @@ function FabSimulationContent() {
 
       {/* Main Container */}
       <main style={{ maxWidth: '1440px', margin: '0 auto', padding: '20px' }}>
+        {/* BUILD-10 Tour Return Banner */}
+        <TourReturnBanner tourStep={queryTourStep} seed={seed} />
+
         {/* Banner Alert Notice */}
         <div
           style={{
