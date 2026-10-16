@@ -1637,3 +1637,166 @@ button:focus-visible, input:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ================================================================
+   A03 · Issue #46 · FAB ONE human-first visual language v2
+   Global presentation only; equipment states, API and fixture contracts untouched.
+   ================================================================ */
+:root {
+  --ux-ink: #17263B;
+  --ux-muted: #48586D;
+  --ux-emerald: #0B795F;
+  --ux-emerald-soft: #F0FBF6;
+  --ux-border: #E6ECEB;
+  --ux-surface: #FFFFFF;
+  --ux-radius: 20px;
+}
+html { background: #FFFFFF; }
+body { background: #FFFFFF; color: var(--ux-ink); line-height: 1.65; -webkit-font-smoothing: antialiased; }
+.app-container, .main-content, .main-wrapper { background: #FFFFFF; }
+.top-nav {
+  background: #FFFFFF;
+  border-bottom: 1px solid var(--ux-border);
+  box-shadow: none;
+  gap: 12px;
+}
+.top-nav nav[aria-label="화면 탭"] {
+  display: flex;
+  flex: 1 1 560px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scroll-behavior: auto;
+  padding-bottom: 3px;
+  min-width: 0;
+}
+.top-nav nav[aria-label="화면 탭"] .nav-tab-link {
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-height: 42px;
+  border-radius: 12px;
+  padding: 9px 13px;
+  font-size: 13px;
+  font-weight: 680;
+}
+.nav-tab-link.active { background: #E9F8F0; border-color: #C6EBDD; color: #087254; }
+.nav-tab-link:focus-visible, .ux-btn:focus-visible,
+button:focus-visible, a:focus-visible, summary:focus-visible {
+  outline: 3px solid #0B795F;
+  outline-offset: 3px;
+}
+.ux-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: clamp(18px, 3vw, 34px);
+  align-items: center;
+  max-width: 1440px;
+  margin: 0 auto 28px;
+  padding: clamp(22px, 3.2vw, 46px) clamp(22px, 4vw, 54px);
+  background: #FFFFFF;
+  border: 1px solid var(--ux-border);
+  border-radius: 26px;
+}
+.ux-intro--soft { background: linear-gradient(108deg, #FFFFFF 0%, #FFFFFF 62%, #F1FAF6 100%); }
+.ux-intro__body { min-width: 0; max-width: 860px; }
+.ux-intro__eyebrow {
+  color: #087254; font-weight: 800; font-size: 12px;
+  letter-spacing: 0.045em; margin: 0 0 10px;
+}
+.ux-intro__title {
+  color: var(--ux-ink);
+  font-size: clamp(27px, 3.5vw, 42px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.3;
+  text-wrap: balance;
+  margin: 0 0 12px;
+}
+.ux-intro__description {
+  max-width: 680px; font-size: clamp(15px, 1.5vw, 17px);
+  line-height: 1.8; color: var(--ux-muted); margin: 0 0 20px;
+  overflow-wrap: anywhere;
+}
+.ux-intro__actions { display: flex; align-items: center; gap: 12px 18px; flex-wrap: wrap; }
+.ux-intro__provenance { font-size: 12px; line-height: 1.5; color: #526278; }
+.ux-btn {
+  display: inline-flex; justify-content: center; align-items: center;
+  gap: 8px; min-height: 46px; padding: 11px 20px;
+  border-radius: 13px; text-decoration: none;
+  font-size: 15px; font-weight: 760; line-height: 1.4;
+}
+.ux-btn--primary { background: var(--ux-emerald); color: #FFFFFF; }
+.ux-btn--primary:hover { background: #075B48; color: #FFFFFF; }
+.ux-btn--secondary { color: var(--ux-ink); background: #FFFFFF; border: 1px solid var(--ux-border); }
+.ux-intro__aside { min-width: 190px; max-width: 300px; }
+.ux-intro__details { max-width: 720px; margin-top: 16px; font-size: 13px; color: var(--ux-muted); }
+.ux-intro__details summary { cursor: pointer; font-weight: 700; color: #386257; padding: 6px 0; }
+.ux-intro__detail-body { background: #F6FAF8; border-radius: 12px; padding: 12px 16px; }
+.ux-mode-label { font-weight: 730; font-size: 12px; color: #245D4F; }
+.ux-mode-label__technical { font-size: 12px; font-weight: 500; color: #526278; }
+.ux-journey-steps {
+  display: flex; flex-wrap: wrap; gap: 9px; margin: 14px 0 20px;
+  padding: 0; list-style: none;
+}
+.ux-journey-steps li {
+  padding: 7px 12px; background: #F5F9F7; border: 1px solid #E2EEE9;
+  border-radius: 999px; color: #31584C; font-size: 12px; font-weight: 690;
+}
+.ux-info-line {
+  display: flex; flex-wrap: wrap; gap: 9px;
+  color: #48586D; font-size: 13px; line-height: 1.65;
+  margin: 8px 0 18px;
+}
+.ux-info-line strong { color: #17263B; }
+/* Shared density: readable captions; keep chart axes and dense numerical data untouched. */
+.card-subtitle, .stat-box-label, .stat-box-hint, .cc-kpi-label,
+.trace-meta-label, .timeline-v-sub, .alert-meta, .alert-desc,
+.evidence-label, .evidence-sub, .chart-legend, .timeline-v-desc,
+.trace-filter-chip, .cc-filter-chip, .ei-sensor-tab-btn,
+.wafer-status-tag, .notice-box {
+  font-size: 12px;
+  line-height: 1.65;
+}
+.card-title { font-size: 19px; line-height: 1.4; letter-spacing: -0.025em; }
+.dash-card, .cc-queue-card, .ei-card, .trace-detail-card,
+.trace-cassette-card, .chamber-card, .control-bar-card,
+.investigation-panel {
+  border-radius: var(--ux-radius);
+  border-color: var(--ux-border);
+  box-shadow: 0 2px 14px rgba(18, 51, 44, .035);
+}
+.btn-primary, .btn-secondary, .btn-danger-outline {
+  min-height: 42px; font-size: 14px;
+  border-radius: 12px;
+}
+.data-table th {
+  color: #48586D;
+  font-size: 12px;
+  background: #F8FAFC;
+}
+.data-table td { font-size: 13px; }
+.ux-home-choice { box-shadow: 0 8px 28px rgba(21, 88, 67, .045) !important; border-radius: 22px !important; padding: 28px !important; }
+.ux-home-choice .ux-home-choice__description { font-size: 15px !important; line-height: 1.75 !important; color: #48586D !important; }
+.ux-home-choice .ux-home-choice__title { font-size: clamp(20px, 2.4vw, 25px) !important; font-weight: 800 !important; color: #17263B !important; }
+.ux-home-choice a[id^="btn-start-"] { min-height: 46px !important; border-radius: 12px !important; font-size: 14px !important; padding: 12px 18px !important; }
+.ux-secondary-notice { border-radius: 14px; background: #F6FAF8; color: #405951; border: 1px solid #E4EFEA; padding: 14px 18px; margin: 15px 0; font-size: 13px; }
+.ux-secondary-notice[role="alert"] { background: #FFFAF6; border-color: #EEDBC5; color: #80502A; }
+@media (max-width: 900px) {
+  .ux-intro { grid-template-columns: minmax(0, 1fr); padding: 26px 25px; border-radius: 20px; }
+  .ux-intro__aside { max-width: 100%; }
+  .top-nav { flex-wrap: wrap; }
+  .top-nav nav[aria-label="화면 탭"] { order: 3; flex-basis: 100%; }
+}
+@media (max-width: 480px) {
+  .ux-intro { padding: 24px 18px; margin-bottom: 20px; }
+  .ux-intro__title { font-size: 28px; }
+  .ux-btn { width: 100%; }
+  .ux-intro__actions { align-items: stretch; }
+  .ux-home-choice { padding: 21px !important; }
+  .top-nav nav[aria-label="화면 탭"] .nav-tab-link { padding: 8px 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ux-intro *, .ux-home-choice * { animation: none !important; transition-duration: 0s !important; }
+}
