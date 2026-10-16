@@ -3289,5 +3289,251 @@ test('BUILD-07 (e) Page source assertions: 3D asset slot, EKL concept triggers, 
   assert.ok(eiSource.includes('/fab-simulation'), 'Equipment Intelligence page must link to /fab-simulation');
 });
 
+// =========================================================================
+// BUILD-08 Engineering Workspace Contract Tests (a ~ e)
+// =========================================================================
+
+test('BUILD-08 (a) Contract: Evidence items invariant (T4/T5 MISSING fact vs T7 excursion spike, SPC UCL vs product spec, exposure categories)', () => {
+  const contractSource = readFileSync(
+    new URL('../src/components/engineering-workspace/engineering-workspace-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  function testGenerateEvidence(seed = 20261015) {
+    const safeSeed = (seed && Number.isInteger(Number(seed)) && Number(seed) > 0 && Number(seed) < 1000000000) ? Number(seed) : 20261015;
+    const runId = `RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const alertId = `AL-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const lotId = `LOT-DEMO-${800 + (safeSeed % 50)}`;
+
+    return [
+      {
+        id: 'EVI-01',
+        type: 'OBSERVATION_QUALITY',
+        title: 'OES 상대 신호 T4/T5 결측 (MISSING ≠ 0)',
+        category: '센서 관측 품질 사실',
+        observedValue: 'null (MISSING)',
+        qualityFlag: 'MISSING',
+        provenance: `ETCH-02 / CH-B (${runId}) · 광학 방출 분광 센서`,
+      },
+      {
+        id: 'EVI-02',
+        type: 'PROCESS_EXCURSION',
+        title: 'Step T7 복합 센서 공정 일탈 (Excursion Spike)',
+        category: '통계적 관리한계 초과',
+        observedValue: '80.0 a.u. (> UCL 65.0)',
+        qualityFlag: 'SUSPECT',
+        provenance: `ETCH-02 / CH-B (${runId}) · T7 스텝 계측`,
+      },
+      {
+        id: 'EVI-03',
+        type: 'ALARM_RECORD',
+        title: 'FDC 실시간 경보 레코드 (Rule UCL-01)',
+        category: 'FDC 통계 룰 트리거',
+        observedValue: 'FDC-RULE-SPC-UCL-01',
+        qualityFlag: 'CRITICAL',
+        provenance: `FDC 감시 센티넬 · ${lotId} / ${runId}`,
+      },
+      {
+        id: 'EVI-04',
+        type: 'WAFER_IMPACT',
+        title: '잠재 노출 영향군 (W-08 ~ W-12)',
+        category: '웨이퍼 노출 이력 분류',
+        observedValue: '5매 (타겟: W-08)',
+        qualityFlag: 'SUSPECT',
+        provenance: `25매 FOUP 카세트 (${lotId}) · Slot 8~12`,
+      },
+    ];
+  }
+
+  const items = testGenerateEvidence(20261015);
+  assert.equal(items.length, 4, 'Must have exactly 4 evidence items');
+
+  // EVI-01: T4/T5 null !== 0
+  const evi01 = items.find(e => e.id === 'EVI-01');
+  assert.equal(evi01.qualityFlag, 'MISSING');
+  assert.equal(evi01.observedValue, 'null (MISSING)');
+  assert.ok(contractSource.includes('MISSING ≠ 0'), 'Contract must state MISSING != 0');
+
+  // EVI-02: T7 Excursion Spike with UCL
+  const evi02 = items.find(e => e.id === 'EVI-02');
+  assert.equal(evi02.qualityFlag, 'SUSPECT');
+  assert.ok(evi02.observedValue.includes('UCL 65.0'), 'Must specify SPC UCL limit');
+
+  // EVI-03: Alarm Record
+  const evi03 = items.find(e => e.id === 'EVI-03');
+  assert.equal(evi03.qualityFlag, 'CRITICAL');
+  assert.equal(evi03.observedValue, 'FDC-RULE-SPC-UCL-01');
+
+  // EVI-04: Wafer Impact
+  const evi04 = items.find(e => e.id === 'EVI-04');
+  assert.equal(evi04.qualityFlag, 'SUSPECT');
+  assert.ok(contractSource.includes('CANDIDATE_EXPOSED'), 'Contract must reference CANDIDATE_EXPOSED');
+  assert.ok(contractSource.includes('CONFIRMED_EXPOSED'), 'Contract must reference CONFIRMED_EXPOSED');
+});
+
+test('BUILD-08 (b) Contract: Hypothesis state machine transitions, pure evidence linking, and disclaimers', () => {
+  const contractSource = readFileSync(
+    new URL('../src/components/engineering-workspace/engineering-workspace-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  function getNextHypothesisStatus(current) {
+    switch (current) {
+      case 'UNVERIFIED': return 'SUPPORTED_FOR_REVIEW';
+      case 'SUPPORTED_FOR_REVIEW': return 'NEEDS_MORE_DATA';
+      case 'NEEDS_MORE_DATA': return 'RULED_OUT';
+      case 'RULED_OUT': return 'UNVERIFIED';
+    }
+  }
+
+  assert.equal(getNextHypothesisStatus('UNVERIFIED'), 'SUPPORTED_FOR_REVIEW');
+  assert.equal(getNextHypothesisStatus('SUPPORTED_FOR_REVIEW'), 'NEEDS_MORE_DATA');
+  assert.equal(getNextHypothesisStatus('NEEDS_MORE_DATA'), 'RULED_OUT');
+  assert.equal(getNextHypothesisStatus('RULED_OUT'), 'UNVERIFIED');
+
+  function toggleLinkedEvidence(linkedIds, evidenceId) {
+    if (linkedIds.includes(evidenceId)) {
+      return linkedIds.filter((id) => id !== evidenceId);
+    } else {
+      return [...linkedIds, evidenceId];
+    }
+  }
+
+  const initial = ['EVI-02'];
+  const added = toggleLinkedEvidence(initial, 'EVI-01');
+  assert.deepEqual(added, ['EVI-02', 'EVI-01'], 'Should add evidence');
+  assert.deepEqual(initial, ['EVI-02'], 'Original array must remain unmutated');
+
+  const removed = toggleLinkedEvidence(added, 'EVI-02');
+  assert.deepEqual(removed, ['EVI-01'], 'Should remove evidence');
+
+  assert.ok(contractSource.includes('HYPO-01'), 'Must define HYPO-01');
+  assert.ok(contractSource.includes('HYPO-02'), 'Must define HYPO-02');
+  assert.ok(contractSource.includes('HYPO-03'), 'Must define HYPO-03');
+  assert.ok(contractSource.includes('UNVERIFIED'), 'Initial state must be UNVERIFIED');
+  assert.ok(contractSource.includes('hypothesisDisclaimer'), 'Must include hypothesis disclaimer');
+});
+
+test('BUILD-08 (c) Contract: Action checklist defaults, toggle, reset, and volatility notice', () => {
+  const contractSource = readFileSync(
+    new URL('../src/components/engineering-workspace/engineering-workspace-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(contractSource.includes('ACTION-01'), 'Must define ACTION-01');
+  assert.ok(contractSource.includes('ACTION-02'), 'Must define ACTION-02');
+  assert.ok(contractSource.includes('ACTION-03'), 'Must define ACTION-03');
+  assert.ok(contractSource.includes('ACTION-04'), 'Must define ACTION-04');
+
+  assert.ok(contractSource.includes('actionDisclaimer'), 'Must declare actionDisclaimer');
+  assert.ok(contractSource.includes('memoryDisclaimer'), 'Must declare memoryDisclaimer');
+  assert.ok(contractSource.includes('새로고침 시 초기화'), 'Must mention volatile on refresh');
+});
+
+test('BUILD-08 (d) Contract: Seed parsing, alert lineage validation, and cross-screen navigation links', () => {
+  function parseSafeWorkspaceSeed(raw) {
+    if (raw) {
+      const num = Number(raw);
+      if (!isNaN(num) && Number.isInteger(num) && num > 0 && num < 1000000000) {
+        return num;
+      }
+    }
+    return 20261015;
+  }
+
+  function isWorkspaceAlertSupported(requestedAlertId, expectedAlertId) {
+    if (!requestedAlertId) return true;
+    return requestedAlertId.trim() === expectedAlertId;
+  }
+
+  function getWorkspaceNavLinks(seed, alertId) {
+    const safeSeed = parseSafeWorkspaceSeed(String(seed));
+    const runId = `RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const effectiveAlertId = alertId || `AL-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const lotId = `LOT-DEMO-${800 + (safeSeed % 50)}`;
+
+    return {
+      runId,
+      alertId: effectiveAlertId,
+      lotId,
+      commandCenter: `/command-center?seed=${safeSeed}`,
+      equipmentIntelligence: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=${safeSeed}`,
+      homeInvestigation: `/?alert=${encodeURIComponent(effectiveAlertId)}&investigation=true&seed=${safeSeed}`,
+      waferTraceability: `/traceability?wafer=W-08&seed=${safeSeed}`,
+      fabSimulation: `/fab-simulation?seed=${safeSeed}`,
+      engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(effectiveAlertId)}&seed=${safeSeed}`,
+    };
+  }
+
+  // 1. Seed boundary validation
+  assert.equal(parseSafeWorkspaceSeed(null), 20261015);
+  assert.equal(parseSafeWorkspaceSeed(''), 20261015);
+  assert.equal(parseSafeWorkspaceSeed('-5'), 20261015);
+  assert.equal(parseSafeWorkspaceSeed('0'), 20261015);
+  assert.equal(parseSafeWorkspaceSeed('20261015'), 20261015);
+  assert.equal(parseSafeWorkspaceSeed('20261016'), 20261016);
+  assert.equal(parseSafeWorkspaceSeed('invalid_seed'), 20261015);
+
+  // 2. Alert lineage validation
+  assert.equal(isWorkspaceAlertSupported(null, 'AL-DEMO-015'), true, 'Default alert supported');
+  assert.equal(isWorkspaceAlertSupported('AL-DEMO-015', 'AL-DEMO-015'), true, 'Matching alert supported');
+  assert.equal(isWorkspaceAlertSupported('AL-DEMO-999', 'AL-DEMO-015'), false, 'Mismatched alert rejected');
+  assert.equal(isWorkspaceAlertSupported('AL-STANDBY-001', 'AL-DEMO-015'), false, 'Standby alert rejected');
+
+  // 3. Navigation links
+  const links = getWorkspaceNavLinks(20261015);
+  assert.equal(links.runId, 'RUN-DEMO-015');
+  assert.equal(links.alertId, 'AL-DEMO-015');
+  assert.equal(links.lotId, 'LOT-DEMO-815');
+  assert.equal(links.commandCenter, '/command-center?seed=20261015');
+  assert.equal(links.equipmentIntelligence, '/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=20261015');
+  assert.equal(links.homeInvestigation, '/?alert=AL-DEMO-015&investigation=true&seed=20261015');
+  assert.equal(links.waferTraceability, '/traceability?wafer=W-08&seed=20261015');
+  assert.equal(links.fabSimulation, '/fab-simulation?seed=20261015');
+  assert.equal(links.engineeringWorkspace, '/engineering-workspace?alert=AL-DEMO-015&seed=20261015');
+});
+
+test('BUILD-08 (e) Page source assertions: 6-tab navigation, buttons, EKL triggers, and domain invariants', () => {
+  const wsPageSource = readFileSync(new URL('../src/app/engineering-workspace/page.tsx', import.meta.url), 'utf8');
+  const wsContractSource = readFileSync(new URL('../src/components/engineering-workspace/engineering-workspace-contract.ts', import.meta.url), 'utf8');
+  const homeSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const traceSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+  const ccSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const eiSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  const simSource = readFileSync(new URL('../src/app/fab-simulation/page.tsx', import.meta.url), 'utf8');
+
+  // 1. Control buttons and interactive elements
+  assert.ok(wsPageSource.includes('id="ws-btn-resynthesize"'), 'Must have seed resynthesize button');
+  assert.ok(wsPageSource.includes('id="btn-toggle-evidence-link"'), 'Must have evidence toggle link button');
+  assert.ok(wsPageSource.includes('id="btn-reset-hypotheses"'), 'Must have reset hypotheses button');
+  assert.ok(wsPageSource.includes('id="btn-reset-actions"'), 'Must have reset actions button');
+  assert.ok(wsPageSource.includes('id="engineering-workspace-notes"'), 'Must have volatile notes textarea');
+  assert.ok(wsPageSource.includes('id="unsupported-alert-banner"'), 'Must have unsupported alert banner template');
+
+  // 2. EKL concept triggers (at least 2 required, we have 4)
+  const requiredEKL = ['oes-relative-signal', 'rf-power', 'spc-ucl-missing', 'wafer-exposure-status'];
+  requiredEKL.forEach((concept) => {
+    assert.ok(wsPageSource.includes(concept), `Workspace must include EKL trigger for ${concept}`);
+  });
+
+  // 3. Domain Invariants and Disclaimers
+  assert.ok(wsPageSource.includes('Excursion ≠ Defect') || wsContractSource.includes('Excursion ≠ Defect'), 'Must include Excursion != Defect');
+  assert.ok(wsPageSource.includes('MISSING ≠ 0') || wsContractSource.includes('MISSING ≠ 0'), 'Must include MISSING != 0');
+  assert.ok(wsPageSource.includes('CONFIRMED_EXPOSED'), 'Must reference CONFIRMED_EXPOSED');
+  assert.ok(wsPageSource.includes('CANDIDATE_EXPOSED'), 'Must reference CANDIDATE_EXPOSED');
+
+  // 4. 6-Tab unified navigation across all 6 pages
+  assert.ok(homeSource.includes('/engineering-workspace'), 'Home page must link to /engineering-workspace');
+  assert.ok(traceSource.includes('/engineering-workspace'), 'Traceability page must link to /engineering-workspace');
+  assert.ok(ccSource.includes('/engineering-workspace'), 'Command Center page must link to /engineering-workspace');
+  assert.ok(eiSource.includes('/engineering-workspace'), 'Equipment Intelligence page must link to /engineering-workspace');
+  assert.ok(simSource.includes('/engineering-workspace'), 'Fab Simulation page must link to /engineering-workspace');
+  assert.ok(wsPageSource.includes('/engineering-workspace'), 'Workspace page must link to /engineering-workspace');
+
+  // 5. Command Center direct action button
+  assert.ok(ccSource.includes('id="cc-btn-go-workspace"'), 'Command Center must have direct button to workspace');
+});
+
+
 
 

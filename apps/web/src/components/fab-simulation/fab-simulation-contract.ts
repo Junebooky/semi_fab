@@ -364,5 +364,6 @@ export function getSimulationNavLinks(seed: number) {
     homeInvestigation: `/?alert=${encodeURIComponent(alertId)}&investigation=true&seed=${safeSeed}`,
     waferTraceability: `/traceability?wafer=W-08&seed=${safeSeed}`,
     fabSimulation: `/fab-simulation?seed=${safeSeed}`,
+    engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(alertId)}&seed=${safeSeed}`,
   };
 }
