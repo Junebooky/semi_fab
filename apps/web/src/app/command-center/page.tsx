@@ -833,7 +833,11 @@ function CommandCenterContent() {
                     </Link>
                     <Link
                       id="cc-btn-go-workspace"
-                      href={`/engineering-workspace?alert=${encodeURIComponent(selectedAlert.alert_id)}${mode === 'A' ? `&seed=${seed}` : ''}`}
+                      href={
+                        mode === 'B'
+                          ? `/engineering-workspace?alert=${encodeURIComponent(selectedAlert.alert_id)}&mode=B&run_id=${encodeURIComponent(activeRunId || '')}`
+                          : `/engineering-workspace?alert=${encodeURIComponent(selectedAlert.alert_id)}&seed=${seed}`
+                      }
                       className="btn-primary"
                       style={{
                         textDecoration: 'none',
@@ -847,7 +851,7 @@ function CommandCenterContent() {
                         borderRadius: '6px',
                       }}
                     >
-                      엔지니어링 워크스페이스 (증거·가설) ↗
+                      엔지니어링 워크스페이스에서 사건 분석 ↗
                     </Link>
                     <Link
                       id="cc-btn-go-equipment"

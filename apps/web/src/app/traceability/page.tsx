@@ -974,6 +974,27 @@ function TraceabilityContent() {
                       엔지니어링 조사 상세 보기 →
                     </Link>
                     <Link
+                      id="trace-btn-go-workspace"
+                      href={
+                        mode === 'B'
+                          ? `/engineering-workspace?alert=${encodeURIComponent(trace.related_alert_id)}&mode=B&run_id=${encodeURIComponent(trace.run_id || '')}`
+                          : `/engineering-workspace?alert=${encodeURIComponent(trace.related_alert_id)}&seed=${seed}`
+                      }
+                      className="btn-primary"
+                      style={{
+                        textDecoration: 'none',
+                        padding: '8px 14px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                        background: '#0B9F78',
+                        color: '#FFFFFF',
+                        borderRadius: '6px',
+                      }}
+                    >
+                      엔지니어링 워크스페이스에서 사건 분석 ↗
+                    </Link>
+                    <Link
                       href="/command-center"
                       className="btn-secondary"
                       style={{ textDecoration: 'none', padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}

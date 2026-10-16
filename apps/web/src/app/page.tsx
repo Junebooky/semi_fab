@@ -1674,6 +1674,33 @@ function FabOneDemoContent() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Link to Engineering Workspace */}
+                    <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+                      <Link
+                        id="home-btn-go-workspace"
+                        href={
+                          mode === 'B'
+                            ? `/engineering-workspace?alert=${encodeURIComponent(investigationData.alert_id)}&mode=B&run_id=${encodeURIComponent(investigationData.run_id || '')}`
+                            : `/engineering-workspace?alert=${encodeURIComponent(investigationData.alert_id)}&seed=${seed}`
+                        }
+                        className="btn-primary"
+                        style={{
+                          textDecoration: 'none',
+                          padding: '8px 16px',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          background: '#0B9F78',
+                          color: '#FFFFFF',
+                          borderRadius: '6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        엔지니어링 워크스페이스에서 가설·조치 분석 ↗
+                      </Link>
+                    </div>
                   </div>
                 ) : (
                   <div

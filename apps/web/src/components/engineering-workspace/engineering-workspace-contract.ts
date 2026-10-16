@@ -273,21 +273,128 @@ export function toggleLinkedEvidence(linkedIds: string[], evidenceId: string): s
 /**
  * Cross-page navigation links maintaining seed and Run context.
  */
-export function getWorkspaceNavLinks(seed: number, alertId?: string) {
+export function getWorkspaceNavLinks(seed: number, alertId?: string, mode: 'A' | 'B' = 'A', activeRunId?: string) {
   const safeSeed = parseSafeWorkspaceSeed(String(seed));
-  const runId = `RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+  const runId = mode === 'B' && activeRunId ? activeRunId : `RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
   const effectiveAlertId = alertId || `AL-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
   const lotId = `LOT-DEMO-${800 + (safeSeed % 50)}`;
+
+  const modeParams = mode === 'B'
+    ? `mode=B&run_id=${encodeURIComponent(runId)}`
+    : `seed=${safeSeed}`;
 
   return {
     runId,
     alertId: effectiveAlertId,
     lotId,
-    commandCenter: `/command-center?seed=${safeSeed}`,
-    equipmentIntelligence: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=${safeSeed}`,
-    homeInvestigation: `/?alert=${encodeURIComponent(effectiveAlertId)}&investigation=true&seed=${safeSeed}`,
-    waferTraceability: `/traceability?wafer=W-08&seed=${safeSeed}`,
-    fabSimulation: `/fab-simulation?seed=${safeSeed}`,
-    engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(effectiveAlertId)}&seed=${safeSeed}`,
+    commandCenter: `/command-center?${modeParams}`,
+    equipmentIntelligence: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&${modeParams}`,
+    homeInvestigation: `/?alert=${encodeURIComponent(effectiveAlertId)}&investigation=true&${modeParams}`,
+    waferTraceability: `/traceability?wafer=W-08&${modeParams}`,
+    fabSimulation: `/fab-simulation?${modeParams}`,
+    engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(effectiveAlertId)}&${modeParams}`,
   };
 }
+
+// Re-export shared investigation context utilities and types
+export * from '@/lib/investigation-context';
+
+/**
+ * Maps FastAPI InvestigationDetail into Workspace EvidenceItem[]
+ */
+export function mapInvestigationDetailToEvidence(
+  detail: {
+    investigation_id: string;
+    alert_id: string;
+    equipment_id: string;
+    chamber_id: string;
+    run_id: string;
+    lot_id: string;
+    recipe_id: string;
+    evidence_sensors: Array<{
+      sensor_id: string;
+      sensor_name: string;
+      measured_value: number;
+      unit: string;
+      quality_flag: string;
+      ucl_threshold: number;
+      target_value: number;
+      deviation_percent: number;
+    }>;
+    total_wafers: number;
+    confirmed_exposed_wafers: string[];
+    candidate_exposed_wafers: string[];
+    unexposed_wafers_count: number;
+    disclaimer: string;
+  },
+  seed: number = 20261015
+): EvidenceItem[] {
+  const safeSeed = parseSafeWorkspaceSeed(String(seed));
+  const oesSample = detail.evidence_sensors.find((s) => s.sensor_id === 'RELATIVE_SIGNAL');
+  const prsSample = detail.evidence_sensors.find((s) => s.sensor_id === 'CHAMBER_PRESSURE');
+  const rfSample = detail.evidence_sensors.find((s) => s.sensor_id === 'RF_POWER');
+
+  const oesVal = oesSample ? oesSample.measured_value : 80.0;
+  const prsVal = prsSample ? prsSample.measured_value : 168.5;
+  const rfVal = rfSample ? rfSample.measured_value : 1820.0;
+
+  return [
+    {
+      id: 'EVI-01',
+      type: 'OBSERVATION_QUALITY',
+      title: 'OES 상대 신호 T4/T5 결측 (MISSING ≠ 0)',
+      category: '센서 관측 품질 사실',
+      summary: '식각 진행 중 스텝 T4/T5 구간 광학 상대 신호(OES) 일시 드롭아웃 발생.',
+      observedValue: 'null (MISSING)',
+      unit: 'a.u.',
+      qualityFlag: 'MISSING',
+      provenance: `${detail.equipment_id} / ${detail.chamber_id} (${detail.run_id}) · 광학 방출 분광 센서`,
+      details: '광학 검출기 셔터 또는 수광부 일시 결측 사실이며 0으로 변조하지 않고 엄격한 null로 처리됩니다. 이는 센서 관측 사실일 뿐 공정 일탈의 직접 원인이 아닙니다.',
+      linkUrl: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&mode=B&run_id=${encodeURIComponent(detail.run_id)}`,
+      linkLabel: '설비 센서 차트 확인 ↗',
+    },
+    {
+      id: 'EVI-02',
+      type: 'PROCESS_EXCURSION',
+      title: 'Step T7 복합 센서 공정 일탈 (Excursion Spike)',
+      category: '통계적 관리한계 초과',
+      summary: `식각 종점 T7 구간에서 OES(${oesVal} a.u.), 챔버 압력(${prsVal} mTorr), RF 전력(${rfVal} W) 복합 급증 (UCL 65.0 초과).`,
+      observedValue: `${oesVal} a.u. (> UCL 65.0)`,
+      unit: 'a.u. / mTorr / W',
+      qualityFlag: 'SUSPECT',
+      provenance: `${detail.equipment_id} / ${detail.chamber_id} (${detail.run_id}) · T7 스텝 계측 (Live API)`,
+      details: `OES 광학 상대 신호가 관리한계(UCL 65.0 a.u.)를 초과(${oesVal} a.u.)하고 챔버 압력(기준 120 → ${prsVal} mTorr) 및 RF Power(기준 1500 → ${rfVal} W)가 동반 서지했습니다 (FastAPI SQLite 실시간 공정 계측값).`,
+      linkUrl: `/?alert=${encodeURIComponent(detail.alert_id)}&investigation=true&mode=B&run_id=${encodeURIComponent(detail.run_id)}`,
+      linkLabel: '엔지니어링 조사 상세 보기 ↗',
+    },
+    {
+      id: 'EVI-03',
+      type: 'ALARM_RECORD',
+      title: 'FDC 실시간 경보 레코드 (Rule UCL-01)',
+      category: 'FDC 통계 룰 트리거',
+      summary: `알람 ID ${detail.alert_id} (심각도 CRITICAL / 상태 ACTIVE) 발행.`,
+      observedValue: 'FDC-RULE-SPC-UCL-01',
+      unit: 'Rule ID',
+      qualityFlag: 'CRITICAL',
+      provenance: `FDC 감시 센티넬 · ${detail.lot_id} / ${detail.run_id}`,
+      details: '식각 챔버 압력/광학 신호/RF Power 복합 급증에 의해 통계적 관리한계 상한 초과 규칙이 발령되었습니다.',
+      linkUrl: `/command-center?mode=B&run_id=${encodeURIComponent(detail.run_id)}`,
+      linkLabel: '커맨드 센터 알람 큐 보기 ↗',
+    },
+    {
+      id: 'EVI-04',
+      type: 'WAFER_IMPACT',
+      title: `잠재 노출 영향군 (${detail.candidate_exposed_wafers[0] || 'W-08'} ~ ${detail.candidate_exposed_wafers[detail.candidate_exposed_wafers.length - 1] || 'W-12'})`,
+      category: '웨이퍼 노출 이력 분류',
+      summary: `선행 ${detail.confirmed_exposed_wafers.length}매 정상 노출 완료군(결함 아님), ${detail.candidate_exposed_wafers.length}매 잠재 영향 후보군(보류 검토 대상).`,
+      observedValue: `${detail.candidate_exposed_wafers.length}매 (타겟: ${detail.candidate_exposed_wafers[0] || 'W-08'})`,
+      unit: 'Wafers',
+      qualityFlag: 'SUSPECT',
+      provenance: `${detail.total_wafers}매 FOUP 카세트 (${detail.lot_id}) · Slot ${detail.candidate_exposed_wafers.map((w) => w.replace('W-', '')).join(', ')}`,
+      details: `${detail.candidate_exposed_wafers[0] || 'W-08'}은 챔버 내에서 T7 일탈에 직접 노출된 잠재 영향 후보군(CANDIDATE_EXPOSED)이며 결함 확정이 아닙니다. 선행 ${detail.confirmed_exposed_wafers.length}매는 선행 완료된 정상 노출군(CONFIRMED_EXPOSED)입니다.`,
+      linkUrl: `/traceability?wafer=${detail.candidate_exposed_wafers[0] || 'W-08'}&mode=B&run_id=${encodeURIComponent(detail.run_id)}`,
+      linkLabel: `${detail.candidate_exposed_wafers[0] || 'W-08'} 웨이퍼 추적성 보기 ↗`,
+    },
+  ];
+}
+

@@ -893,6 +893,28 @@ function EquipmentIntelligenceContent() {
                         >
                           엔지니어링 이상 조사 상세 보기 →
                         </Link>
+                        <Link
+                          id="ei-btn-go-workspace"
+                          href={
+                            mode === 'B'
+                              ? `/engineering-workspace?alert=${encodeURIComponent(activeAlert.alert_id)}&mode=B&run_id=${encodeURIComponent(activeRunId || '')}`
+                              : `/engineering-workspace?alert=${encodeURIComponent(activeAlert.alert_id)}&seed=${seed}`
+                          }
+                          className="btn-primary"
+                          style={{
+                            textDecoration: 'none',
+                            padding: '8px 14px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                            textAlign: 'center',
+                            background: '#0B9F78',
+                            color: '#FFFFFF',
+                            borderRadius: '6px',
+                          }}
+                        >
+                          엔지니어링 워크스페이스에서 사건 분석 ↗
+                        </Link>
                       </div>
                     </div>
                   ) : (
