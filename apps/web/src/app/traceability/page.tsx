@@ -578,6 +578,13 @@ function TraceabilityContent() {
             </svg>
             웨이퍼 이력 추적성 (Traceability)
           </Link>
+          <Link href="/command-center" className="nav-tab-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            FDC 커맨드 센터 (Command Center)
+          </Link>
         </nav>
 
         {/* Status Pills */}
@@ -909,13 +916,22 @@ function TraceabilityContent() {
                     )}
                   </div>
 
-                  <Link
-                    href={`/?alert=${trace.related_alert_id}&investigation=true`}
-                    className="btn-danger-outline"
-                    style={{ textDecoration: 'none', padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
-                  >
-                    엔지니어링 조사 상세 보기 →
-                  </Link>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <Link
+                      href={`/?alert=${trace.related_alert_id}&investigation=true`}
+                      className="btn-danger-outline"
+                      style={{ textDecoration: 'none', padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                    >
+                      엔지니어링 조사 상세 보기 →
+                    </Link>
+                    <Link
+                      href="/command-center"
+                      className="btn-secondary"
+                      style={{ textDecoration: 'none', padding: '8px 14px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                    >
+                      커맨드 센터로 복귀 ↗
+                    </Link>
+                  </div>
                 </div>
               ) : (
                 <div style={{ padding: '12px 16px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #EDF1F5', marginTop: '16px', fontSize: '12px', color: '#64748B' }}>
