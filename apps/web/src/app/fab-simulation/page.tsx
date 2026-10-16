@@ -811,7 +811,7 @@ function FabSimulationContent() {
                 </div>
               ) : (
                 <div style={{ fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
-                  현재 공정 파라미터는 실시간 SPC 관리한계(UCL) 내에서 정상 가동 중입니다. Step T7 진입 시 통계적 이상 신호가 유발됩니다.
+                  현재는 가상 시나리오의 기준 내 값이에요. T7로 진행하면 이상 신호가 나타나며, 실제 공정 상태나 불량 판정은 아니에요.
                 </div>
               )}
             </div>
