@@ -143,7 +143,7 @@ function FabSimulationContent() {
   }, [foupWafers, selectedWaferId]);
 
   return (
-    <div className="command-center-container" style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <div className="command-center-container" style={{ minHeight: '100vh', background: '#FFFFFF' }}>
       {/* Top Header */}
       <header className="top-nav-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', background: '#FFFFFF', borderBottom: '1px solid #E2E8F0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
