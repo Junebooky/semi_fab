@@ -785,6 +785,13 @@ function FabOneDemoContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
+          <Link href={`/demo-tour${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+            </svg>
+            가이드 투어 (Demo Tour)
+          </Link>
         </nav>
 
         <div className="top-status-pills">
@@ -830,6 +837,85 @@ function FabOneDemoContent() {
 
       {/* Main Container */}
       <main className="main-wrapper">
+        {/* BUILD-09 Guided Demo Tour CTA Hero Banner */}
+        <div
+          id="hero-guided-tour-banner"
+          style={{
+            background: 'linear-gradient(135deg, #ECFDF5 0%, #F0FDF4 100%)',
+            border: '1px solid #A7F3D0',
+            borderRadius: '12px',
+            padding: '16px 20px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            boxShadow: '0 2px 6px rgba(11, 159, 120, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                background: '#0B9F78',
+                color: '#FFFFFF',
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: '20px',
+                flexShrink: 0,
+              }}
+            >
+              🧭
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '15px', fontWeight: 800, color: '#065F46' }}>
+                  FAB ONE 3~5분 완결 가이드 투어 (Guided Demo Tour)
+                </span>
+                <span
+                  style={{
+                    background: '#DCFCE7',
+                    color: '#166534',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                  }}
+                >
+                  8단계 인터랙티브 코스
+                </span>
+              </div>
+              <div style={{ fontSize: '12px', color: '#047857', marginTop: '2px' }}>
+                가상 식각 시뮬레이션 → Step T7 일탈 → FDC 실시간 경보 → 센서 원본 검증 → 웨이퍼 추적성(W-08) → 엔지니어링 가설·조치 백보드
+              </div>
+            </div>
+          </div>
+
+          <Link
+            id="btn-start-guided-tour"
+            href={`/demo-tour?step=INTRO${mode === 'A' ? `&seed=${seed}` : ''}`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: '#0B9F78',
+              color: '#FFFFFF',
+              borderRadius: '8px',
+              padding: '10px 18px',
+              fontSize: '13px',
+              fontWeight: 800,
+              textDecoration: 'none',
+              boxShadow: '0 2px 4px rgba(11, 159, 120, 0.25)',
+              transition: 'background 0.15s ease-in-out',
+            }}
+          >
+            가이드 투어 시작 (Start Tour) ➔
+          </Link>
+        </div>
+
         {/* Interactive Playback Control Bar */}
         <section className="control-bar-card" aria-label="데모 조작 제어판">
           <div className="playback-controls">
