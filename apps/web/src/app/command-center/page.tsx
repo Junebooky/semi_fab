@@ -599,10 +599,10 @@ function CommandCenterContent() {
               <div className="cc-empty-box" role="status">
                 <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔍</div>
                 <div style={{ fontWeight: 800, fontSize: '14px', color: '#17263B', marginBottom: '4px' }}>
-                  일치하는 FDC 알람이 없습니다 (0건)
+                  조건에 맞는 알람이 없어요
                 </div>
                 <p style={{ fontSize: '11px', color: '#64748B', margin: '0 0 14px' }}>
-                  선택한 조건(중요도: {severityFilter}, 상태: {statusFilter})에 일치하는 알람이 없습니다.
+                  조건을 바꿔 다시 확인해 보세요. (중요도: {severityFilter}, 상태: {statusFilter})
                 </p>
                 <button
                   type="button"
@@ -963,7 +963,7 @@ function CommandCenterContent() {
             <div className="trace-loading-card">
               <div style={{ fontSize: '20px' }}>📋</div>
               <div style={{ fontWeight: 700, fontSize: '14px', color: '#64748B', marginTop: '8px' }}>
-                선택된 알람이 없습니다. 좌측 큐에서 알람을 선택해 주세요.
+                아직 선택한 알람이 없어요. 목록에서 확인할 신호를 골라 주세요.
               </div>
             </div>
           )}
