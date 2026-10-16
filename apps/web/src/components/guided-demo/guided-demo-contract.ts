@@ -81,7 +81,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     id: 'SIMULATE',
     stepNumber: 2,
-    title: '가상 FAB 3D 물리 공정 진행 (T0 ~ T6)',
+    title: '가상 FAB 공정 타임라인 시연 (2.5D 가상 레이아웃)',
     subtitle: 'FOUP 입고 → 로드포트 도킹 → 진공 이송 → ETCH-02 식각 챔버 진행',
     description:
       '25매 웨이퍼를 담은 FOUP 카세트가 로드포트에 도킹되어 챔버 진공 배기 후 플라즈마 식각 스텝(T0~T6)을 순차적으로 진행합니다. T4/T5 구간에서 광학 상대 신호(OES) 결측(MISSING)이 발생합니다.',
@@ -91,7 +91,7 @@ export const TOUR_STEPS: TourStep[] = [
     ],
     targetRoute: '/fab-simulation',
     actionLabel: 'FAB 시뮬레이션 화면 열기 ↗',
-    badgeText: '물리 시뮬레이션 (Simulation)',
+    badgeText: '공정 시뮬레이션 (Simulation)',
     domainNotes: 'T4/T5 구간 결측은 센서 관측 사실일 뿐 공정 일탈의 직접 원인이 아닙니다.',
   },
   {
@@ -273,17 +273,21 @@ export function getTourNavLinks(step: TourStepId, seed: number) {
     targetUrl = `/demo-tour?step=INTRO&seed=${safeSeed}`;
   }
 
+  if (step !== 'FINISH') {
+    targetUrl += `&tourStep=${step}`;
+  }
+
   return {
     runId,
     alertId,
     lotId,
     targetUrl,
-    home: `/?alert=${encodeURIComponent(alertId)}&investigation=true&seed=${safeSeed}`,
-    fabSimulation: `/fab-simulation?seed=${safeSeed}`,
-    commandCenter: `/command-center?seed=${safeSeed}&alert=${encodeURIComponent(alertId)}`,
-    equipmentIntelligence: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=${safeSeed}`,
-    traceability: `/traceability?wafer=W-08&seed=${safeSeed}`,
-    engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(alertId)}&seed=${safeSeed}`,
+    home: `/?alert=${encodeURIComponent(alertId)}&investigation=true&seed=${safeSeed}&tourStep=${step}`,
+    fabSimulation: `/fab-simulation?seed=${safeSeed}&tourStep=${step}`,
+    commandCenter: `/command-center?seed=${safeSeed}&alert=${encodeURIComponent(alertId)}&tourStep=${step}`,
+    equipmentIntelligence: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=${safeSeed}&tourStep=${step}`,
+    traceability: `/traceability?wafer=W-08&seed=${safeSeed}&tourStep=${step}`,
+    engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(alertId)}&seed=${safeSeed}&tourStep=${step}`,
     demoTour: (targetStep: TourStepId = step) => `/demo-tour?step=${targetStep}&seed=${safeSeed}`,
   };
 }

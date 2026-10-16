@@ -19,6 +19,7 @@ import {
   toggleLinkedEvidence,
   getWorkspaceNavLinks,
 } from '@/components/engineering-workspace/engineering-workspace-contract';
+import { TourReturnBanner } from '@/components/guided-demo';
 
 function EngineeringWorkspaceContent() {
   const searchParams = useSearchParams();
@@ -27,6 +28,7 @@ function EngineeringWorkspaceContent() {
   // Parse seed & alert parameters
   const querySeed = searchParams.get('seed');
   const queryAlert = searchParams.get('alert');
+  const queryTourStep = searchParams.get('tourStep');
 
   const seed = useMemo(() => parseSafeWorkspaceSeed(querySeed), [querySeed]);
   const navLinks = useMemo(() => getWorkspaceNavLinks(seed, queryAlert || undefined), [seed, queryAlert]);
@@ -213,7 +215,7 @@ function EngineeringWorkspaceContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
-          <Link href={`/demo-tour?seed=${seed}`} className="nav-tab-link">
+          <Link href={queryTourStep ? `/demo-tour?seed=${seed}&step=${queryTourStep}` : `/demo-tour?seed=${seed}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
@@ -255,16 +257,16 @@ function EngineeringWorkspaceContent() {
           <span
             className="pill"
             style={{
-              background: '#F1F5F9',
-              color: '#475569',
-              border: '1px solid #CBD5E1',
+              background: isSupportedAlert ? '#F1F5F9' : '#FEF2F2',
+              color: isSupportedAlert ? '#475569' : '#991B1B',
+              border: `1px solid ${isSupportedAlert ? '#CBD5E1' : '#FECACA'}`,
               padding: '3px 8px',
               borderRadius: '12px',
               fontSize: '11px',
               fontWeight: 700,
             }}
           >
-            Alert: {navLinks.alertId}
+            Alert: {isSupportedAlert ? navLinks.alertId : `${queryAlert} (지원 안 됨 / 비활성)`}
           </span>
           <button
             type="button"
@@ -288,6 +290,9 @@ function EngineeringWorkspaceContent() {
 
       {/* Main Container */}
       <main style={{ maxWidth: '1440px', margin: '0 auto', padding: '20px' }}>
+        {/* BUILD-10 Tour Return Banner */}
+        <TourReturnBanner tourStep={queryTourStep} seed={seed} />
+
         {/* Unsupported Alert Notice if applicable */}
         {!isSupportedAlert && (
           <div
@@ -392,15 +397,9 @@ function EngineeringWorkspaceContent() {
           </div>
         </div>
 
-        {/* 3-Column Interactive Layout */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'minmax(320px, 1fr) minmax(360px, 1.2fr) minmax(320px, 1fr)',
-            gap: '16px',
-            marginBottom: '24px',
-          }}
-        >
+        {/* 3-Column Interactive Layout / Unsupported Alert Lock Panel */}
+        {isSupportedAlert ? (
+          <div className="ws-boards-grid">
           {/* Section 1: Evidence Board */}
           <section
             aria-labelledby="section-evidence-board"
@@ -1002,6 +1001,51 @@ function EngineeringWorkspaceContent() {
             </div>
           </section>
         </div>
+        ) : (
+          <div
+            id="ws-unsupported-lock-panel"
+            style={{
+              background: '#FEF2F2',
+              border: '2px dashed #F87171',
+              borderRadius: '12px',
+              padding: '40px 24px',
+              marginBottom: '24px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '16px',
+            }}
+          >
+            <div style={{ fontSize: '36px' }}>🔒</div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#991B1B' }}>
+              엔지니어링 보드 비활성화 및 데이터 격리 (Data Isolation Lock)
+            </div>
+            <div style={{ maxWidth: '680px', fontSize: '13px', color: '#7F1D1D', lineHeight: 1.6 }}>
+              요청된 알람(<strong>{queryAlert}</strong>)은 지원되지 않거나 대기 상태(Standby)인 알람입니다.<br />
+              FAB ONE의 합성 Run 계통성을 보호하기 위해 타 런의 증거/가설/조치 보드를 허위로 표기하지 않고 격리 잠금 처리했습니다.<br />
+              현재 활성 공정 일탈 런(<strong>{navLinks.runId}</strong>)의 분석 데이터를 로드하려면 활성 알람(<strong>{expectedAlertId}</strong>)으로 전환하십시오.
+            </div>
+            <button
+              type="button"
+              id="ws-btn-switch-active-alert-lock"
+              onClick={handleSwitchToActiveAlert}
+              style={{
+                background: '#DC2626',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '10px 20px',
+                fontSize: '13px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(220, 38, 38, 0.2)',
+              }}
+            >
+              활성 알람({expectedAlertId})으로 전환 ↗
+            </button>
+          </div>
+        )}
 
         {/* Section 4: Cross-Screen Quick Navigation Links */}
         <section

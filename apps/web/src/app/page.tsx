@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } fr
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { EngineeringTermTrigger } from '@/components/ekl';
+import { TourReturnBanner } from '@/components/guided-demo';
 
 // Types
 interface SensorSample {
@@ -273,6 +274,7 @@ function FabOneDemoContent() {
   const waferParam = searchParams.get('wafer');
   const sensorParam = searchParams.get('sensor');
   const seedParam = searchParams.get('seed');
+  const tourStepParam = searchParams.get('tourStep');
 
   const [mode, setMode] = useState<'A' | 'B'>('A');
   const [backendAvailable, setBackendAvailable] = useState<boolean>(false);
@@ -785,7 +787,7 @@ function FabOneDemoContent() {
             </svg>
             엔지니어링 워크스페이스 (Workspace)
           </Link>
-          <Link href={`/demo-tour${mode === 'A' ? `?seed=${seed}` : ''}`} className="nav-tab-link">
+            <Link href={`/demo-tour${mode === 'A' ? `?seed=${seed}${tourStepParam ? `&step=${tourStepParam}` : ''}` : (tourStepParam ? `?step=${tourStepParam}` : '')}`} className="nav-tab-link">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
               <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
@@ -837,6 +839,9 @@ function FabOneDemoContent() {
 
       {/* Main Container */}
       <main className="main-wrapper">
+        {/* BUILD-10 Tour Return Banner */}
+        <TourReturnBanner tourStep={tourStepParam} seed={seed} />
+
         {/* BUILD-09 Guided Demo Tour CTA Hero Banner */}
         <div
           id="hero-guided-tour-banner"

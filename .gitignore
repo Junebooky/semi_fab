@@ -49,3 +49,6 @@ data/*.db-shm
 .DS_Store
 *.swp
 *.swo
+
+# Local artifacts & scratch
+scratch/

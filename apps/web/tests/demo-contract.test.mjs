@@ -3720,6 +3720,204 @@ test('BUILD-09 (e) Page source assertions: /demo-tour route, home tour CTA, 7-ta
   });
 });
 
+/* ========================================================
+   BUILD-10 FAB ONE Integration Stabilization & QA Readiness
+   ======================================================== */
+
+test('BUILD-10 (a) Guided Tour Return Context Preservation Contract', () => {
+  const contractSource = readFileSync(
+    new URL('../src/components/guided-demo/guided-demo-contract.ts', import.meta.url),
+    'utf8'
+  );
+
+  // Assert contract implementation propagates &tourStep=
+  assert.ok(
+    contractSource.includes('&tourStep=${step}'),
+    'Contract must append &tourStep=${step} to cross-screen links'
+  );
+
+  function getTourNavLinks(step, seed = 20261015) {
+    const safeSeed = (seed && Number.isInteger(Number(seed)) && Number(seed) > 0 && Number(seed) < 1000000000) ? Number(seed) : 20261015;
+    const runId = `RUN-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const alertId = `AL-DEMO-${String(safeSeed % 1000).padStart(3, '0')}`;
+    const lotId = `LOT-DEMO-${800 + (safeSeed % 50)}`;
+
+    let targetUrl = `/demo-tour?step=INTRO&seed=${safeSeed}`;
+    if (step === 'SIMULATE' || step === 'EXCURSION') {
+      targetUrl = `/fab-simulation?seed=${safeSeed}&tourStep=${step}`;
+    } else if (step === 'ALARM') {
+      targetUrl = `/command-center?seed=${safeSeed}&alert=${encodeURIComponent(alertId)}&tourStep=${step}`;
+    } else if (step === 'SENSOR') {
+      targetUrl = `/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=${safeSeed}&tourStep=${step}`;
+    } else if (step === 'TRACE') {
+      targetUrl = `/traceability?wafer=W-08&seed=${safeSeed}&tourStep=${step}`;
+    } else if (step === 'WORKSPACE') {
+      targetUrl = `/engineering-workspace?alert=${encodeURIComponent(alertId)}&seed=${safeSeed}&tourStep=${step}`;
+    }
+
+    return {
+      runId,
+      alertId,
+      lotId,
+      targetUrl,
+      home: `/?alert=${encodeURIComponent(alertId)}&investigation=true&seed=${safeSeed}&tourStep=${step}`,
+      fabSimulation: `/fab-simulation?seed=${safeSeed}&tourStep=${step}`,
+      commandCenter: `/command-center?seed=${safeSeed}&alert=${encodeURIComponent(alertId)}&tourStep=${step}`,
+      equipmentIntelligence: `/equipment-intelligence?sensor=RELATIVE_SIGNAL&seed=${safeSeed}&tourStep=${step}`,
+      traceability: `/traceability?wafer=W-08&seed=${safeSeed}&tourStep=${step}`,
+      engineeringWorkspace: `/engineering-workspace?alert=${encodeURIComponent(alertId)}&seed=${safeSeed}&tourStep=${step}`,
+      demoTour: (targetStep = step) => `/demo-tour?step=${targetStep}&seed=${safeSeed}`,
+    };
+  }
+
+  // 1. Verify ALARM step propagates tourStep=ALARM
+  const alarmLinks = getTourNavLinks('ALARM', 20261015);
+  assert.ok(alarmLinks.targetUrl.includes('tourStep=ALARM'), 'targetUrl must include tourStep=ALARM');
+  assert.ok(alarmLinks.commandCenter.includes('tourStep=ALARM'), 'commandCenter must include tourStep=ALARM');
+  assert.ok(alarmLinks.commandCenter.includes('alert=AL-DEMO-015'), 'commandCenter must include active alert');
+  assert.ok(alarmLinks.commandCenter.includes('seed=20261015'), 'commandCenter must include active seed');
+
+  // 2. Verify SENSOR step propagates tourStep=SENSOR
+  const sensorLinks = getTourNavLinks('SENSOR', 20261015);
+  assert.ok(sensorLinks.targetUrl.includes('tourStep=SENSOR'), 'targetUrl must include tourStep=SENSOR');
+  assert.ok(sensorLinks.equipmentIntelligence.includes('tourStep=SENSOR'), 'equipmentIntelligence must include tourStep=SENSOR');
+
+  // 3. Verify TRACE step propagates tourStep=TRACE
+  const traceLinks = getTourNavLinks('TRACE', 20261015);
+  assert.ok(traceLinks.targetUrl.includes('tourStep=TRACE'), 'targetUrl must include tourStep=TRACE');
+  assert.ok(traceLinks.traceability.includes('tourStep=TRACE'), 'traceability must include tourStep=TRACE');
+
+  // 4. Verify WORKSPACE step propagates tourStep=WORKSPACE
+  const wsLinks = getTourNavLinks('WORKSPACE', 20261015);
+  assert.ok(wsLinks.targetUrl.includes('tourStep=WORKSPACE'), 'targetUrl must include tourStep=WORKSPACE');
+  assert.ok(wsLinks.engineeringWorkspace.includes('tourStep=WORKSPACE'), 'engineeringWorkspace must include tourStep=WORKSPACE');
+});
+
+test('BUILD-10 (b) TourReturnBanner & Navigation Contract', () => {
+  const bannerSource = readFileSync(
+    new URL('../src/components/guided-demo/TourReturnBanner.tsx', import.meta.url),
+    'utf8'
+  );
+  const indexSource = readFileSync(
+    new URL('../src/components/guided-demo/index.ts', import.meta.url),
+    'utf8'
+  );
+
+  assert.ok(indexSource.includes("export * from './TourReturnBanner';"), 'index.ts must export TourReturnBanner');
+  assert.ok(bannerSource.includes('id="tour-return-banner"'), 'TourReturnBanner must have id="tour-return-banner"');
+  assert.ok(bannerSource.includes('id="btn-return-to-tour"'), 'TourReturnBanner must have id="btn-return-to-tour"');
+  assert.ok(bannerSource.includes('id="btn-continue-next-tour-step"'), 'TourReturnBanner must have id="btn-continue-next-tour-step"');
+  assert.ok(bannerSource.includes("href={`/demo-tour?step=${stepId}&seed=${seed}`}"), 'Return button must link to exact tour step and seed');
+});
+
+test('BUILD-10 (c) Engineering Workspace Unsupported Alert Isolation Lock Panel Contract', () => {
+  const wsPageSource = readFileSync(
+    new URL('../src/app/engineering-workspace/page.tsx', import.meta.url),
+    'utf8'
+  );
+
+  // 1. Lock Panel elements
+  assert.ok(
+    wsPageSource.includes('id="ws-unsupported-lock-panel"'),
+    'Workspace page must define #ws-unsupported-lock-panel'
+  );
+  assert.ok(
+    wsPageSource.includes('id="ws-btn-switch-active-alert-lock"'),
+    'Lock panel must provide switch to active alert button'
+  );
+  assert.ok(
+    wsPageSource.includes('엔지니어링 보드 비활성화 및 데이터 격리 (Data Isolation Lock)'),
+    'Lock panel must display explicit data isolation lock title'
+  );
+
+  // 2. Status Pill isolation
+  assert.ok(
+    wsPageSource.includes('Alert: {isSupportedAlert ? navLinks.alertId : `${queryAlert} (지원 안 됨 / 비활성)`}'),
+    'Status pill must clearly indicate unsupported / inactive status when requested alert is not supported'
+  );
+
+  // 3. Conditional rendering: when !isSupportedAlert, 3-column boards are hidden and lock panel is shown
+  assert.ok(
+    wsPageSource.includes('{isSupportedAlert ? ('),
+    'Workspace must conditionally isolate 3-column interactive boards based on isSupportedAlert'
+  );
+});
+
+test('BUILD-10 (d) Multi-Page Tour Return Banner & tourStep Preservation Integration', () => {
+  const homeSource = readFileSync(new URL('../src/app/page.tsx', import.meta.url), 'utf8');
+  const simSource = readFileSync(new URL('../src/app/fab-simulation/page.tsx', import.meta.url), 'utf8');
+  const ccSource = readFileSync(new URL('../src/app/command-center/page.tsx', import.meta.url), 'utf8');
+  const eiSource = readFileSync(new URL('../src/app/equipment-intelligence/page.tsx', import.meta.url), 'utf8');
+  const traceSource = readFileSync(new URL('../src/app/traceability/page.tsx', import.meta.url), 'utf8');
+  const wsSource = readFileSync(new URL('../src/app/engineering-workspace/page.tsx', import.meta.url), 'utf8');
+
+  const pages = [
+    { name: 'Home', src: homeSource },
+    { name: 'FabSimulation', src: simSource },
+    { name: 'CommandCenter', src: ccSource },
+    { name: 'EquipmentIntelligence', src: eiSource },
+    { name: 'Traceability', src: traceSource },
+    { name: 'Workspace', src: wsSource },
+  ];
+
+  pages.forEach(({ name, src }) => {
+    assert.ok(
+      src.includes('TourReturnBanner'),
+      `${name} must import and mount TourReturnBanner`
+    );
+    assert.ok(
+      src.includes('tourStep'),
+      `${name} must parse or reference tourStep query parameter`
+    );
+    assert.ok(
+      src.includes('가이드 투어 (Demo Tour)'),
+      `${name} must have 가이드 투어 navigation tab`
+    );
+  });
+});
+
+test('BUILD-10 (e) QA Runbook Existence & Content Verification', () => {
+  const runbookSource = readFileSync(new URL('../../../docs/QA_RUNBOOK.md', import.meta.url), 'utf8');
+
+  assert.ok(runbookSource.includes('# FAB ONE QA Runbook & 통합 안정화 가이드 (BUILD-10)'), 'Must have correct title');
+  assert.ok(runbookSource.includes('npm run dev'), 'Must document npm run dev');
+  assert.ok(runbookSource.includes('npm test'), 'Must document npm test');
+  assert.ok(runbookSource.includes('python3 -m unittest services/api/tests/test_api.py'), 'Must document python unittest');
+  assert.ok(runbookSource.includes('seed=20261015'), 'Must specify seed=20261015');
+  assert.ok(runbookSource.includes('3~5분'), 'Must describe 3~5 min tour sequence');
+  assert.ok(runbookSource.includes('NOT_RUN'), 'Must clearly specify independent QA status as NOT_RUN');
+  assert.ok(runbookSource.includes('Issue #23'), 'Must cross-reference technical debt Issue #23');
+  assert.ok(runbookSource.includes('ws-unsupported-lock-panel'), 'Must document unsupported lock panel');
+  assert.ok(runbookSource.includes('tour-return-banner'), 'Must document tour return banner');
+});
+
+test('BUILD-10 (f) Domain Terminology & Responsive CSS Alignment', () => {
+  const contractSource = readFileSync(
+    new URL('../src/components/guided-demo/guided-demo-contract.ts', import.meta.url),
+    'utf8'
+  );
+  const tourPageSource = readFileSync(new URL('../src/app/demo-tour/page.tsx', import.meta.url), 'utf8');
+  const cssSource = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8');
+
+  // 1. Step 2 title refined to 2.5D virtual layout
+  assert.ok(
+    contractSource.includes('가상 FAB 공정 타임라인 시연 (2.5D 가상 레이아웃)'),
+    'Step 2 must be labeled as 2.5D virtual layout'
+  );
+
+  // 2. Completion summary card heading refined
+  assert.ok(
+    tourPageSource.includes('🎓 데모 내 엔지니어링 상황 판단 (5대 핵심 판단 요약)'),
+    'Completion summary heading must be updated to 데모 내 엔지니어링 상황 판단'
+  );
+
+  // 3. Responsive CSS
+  assert.ok(cssSource.includes('.top-nav'), 'globals.css must style .top-nav');
+  assert.ok(cssSource.includes('flex-wrap: wrap;'), 'globals.css must allow .top-nav to wrap');
+  assert.ok(cssSource.includes('.ws-boards-grid'), 'globals.css must define .ws-boards-grid');
+  assert.ok(cssSource.includes('@media (max-width: 1100px)'), 'globals.css must define responsive media query for boards');
+});
+
 
 
 
