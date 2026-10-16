@@ -52,7 +52,7 @@ jobs:
         working-directory: apps/web
         run: npm ci
 
-      - name: Run web contract & unit tests (88 tests)
+      - name: Run web contract & unit tests (93 tests)
         working-directory: apps/web
         run: npm test
 

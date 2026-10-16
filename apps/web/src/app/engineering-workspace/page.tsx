@@ -31,6 +31,7 @@ import {
   validateAndImportCasebookRecords,
   buildCrossNavUrl,
   FAB_ONE_CASEBOOK_STORAGE_KEY,
+  isExactLineageMatch,
 } from '@/components/engineering-workspace/engineering-workspace-contract';
 import { TourReturnBanner, getModeAT7ExcursionValues } from '@/components/guided-demo';
 
@@ -787,12 +788,21 @@ function EngineeringWorkspaceContent() {
     }
   }, [isExportable, runId, sessionId, alertId, seed, mode, equipmentId, chamberId, lotId, hypotheses, actions, notes]);
 
-  // Load a saved Casebook record into Workspace with Cross-Run Human Judgment Contamination Prevention (P0)
+  // Load a saved Casebook record into Workspace with Cross-Run / Cross-Alert Isolation (P0)
   const handleLoadCasebookRecord = useCallback(
     (record: CasebookRecord) => {
-      const isMatchingRun = record.runId === runId && record.mode === mode;
-      if (isMatchingRun) {
-        // Safe to load into active editor
+      const isExactMatch = isExactLineageMatch(record, {
+        mode,
+        runId,
+        alertId,
+        sessionId,
+        lotId,
+        equipmentId,
+        chamberId,
+      });
+
+      if (isExactMatch) {
+        // Safe to load into active editor (same exact investigation lineage)
         setNotes(record.userNotes || '');
         if (Array.isArray(record.hypotheses)) {
           setHypotheses((prev) =>
@@ -822,16 +832,21 @@ function EngineeringWorkspaceContent() {
           );
         }
         setActiveTab('INVESTIGATION');
-        setCasebookNotice(`동일 활성 Run (${record.runId})의 케이스북 기록을 에디터에 동기화했습니다.`);
+        setCasebookNotice(`동일 활성 조사 (${record.runId} / ${record.alertId})의 케이스북 기록을 에디터에 동기화했습니다.`);
       } else {
-        // Cross-Run Read-Only Isolation: Open historical case detail modal
+        // Cross-Run / Cross-Alert Read-Only Isolation: Open historical case detail modal
         setHistoricalCaseRecord(record);
+        const reason = record.runId !== runId
+          ? `공정 Run 불일치 (${record.runId} ≠ ${runId})`
+          : record.alertId !== alertId
+          ? `FDC 알람 불일치 (${record.alertId} ≠ ${alertId})`
+          : `조사 세션 계통성 불일치`;
         setCasebookNotice(
-          `[타 Run 저장 기록 열람]: 공정 Run (${record.runId}) 기록을 읽기 전용으로 열었습니다. 활성 Run (${runId}) 편집기는 보존됩니다.`
+          `[조사 맥락 격리 보호 - ${reason}]: 저장 기록을 읽기 전용으로 열었습니다. 활성 Run (${runId}) 편집기는 100% 보존됩니다.`
         );
       }
     },
-    [runId, mode]
+    [runId, mode, alertId, sessionId, lotId, equipmentId, chamberId]
   );
 
   // View Server Process Run from SQLite (Historical Read-Only Snapshot vs Active Live Run)
@@ -939,7 +954,7 @@ function EngineeringWorkspaceContent() {
               FAB ONE
             </span>
             <span className="brand-subtitle" style={{ fontSize: '13px', color: '#64748B', marginLeft: '6px' }}>
-              · Engineering Workspace & Casebook (BUILD-14 Release Candidate)
+              · Engineering Workspace & Casebook (BUILD-15 Release Freeze)
             </span>
           </div>
         </div>
@@ -2096,7 +2111,15 @@ function EngineeringWorkspaceContent() {
                   </div>
                 ) : (
                   savedCaseRecords.map((rec) => {
-                    const isCurrentLive = rec.runId === runId;
+                    const isCurrentLive = isExactLineageMatch(rec, {
+                      mode,
+                      runId,
+                      alertId,
+                      sessionId,
+                      lotId,
+                      equipmentId,
+                      chamberId,
+                    });
                     return (
                       <div
                         key={rec.id}
@@ -2576,9 +2599,9 @@ function EngineeringWorkspaceContent() {
                   lineHeight: 1.5,
                 }}
               >
-                🔒 <strong>데이터 격리 안전 보호:</strong> 본 기록은 과거 Run (
-                <strong>{historicalCaseRecord.runId}</strong>) 저장본입니다. 현재 활성 Run (
-                <strong>{runId}</strong>)의 워크스페이스 편집기를 덮어쓰지 않고 독립적으로 안전하게 열람 중입니다.
+                🔒 <strong>데이터 격리 안전 보호:</strong> 본 기록은 과거 조사 컨텍스트 (
+                Run: <strong>{historicalCaseRecord.runId}</strong>, Alert: <strong>{historicalCaseRecord.alertId}</strong>{historicalCaseRecord.sessionId ? `, Session: ${historicalCaseRecord.sessionId}` : ''}) 저장본입니다. 현재 활성 조사 (
+                Run: <strong>{runId}</strong>, Alert: <strong>{alertId}</strong>)의 워크스페이스 편집기를 덮어쓰지 않고 독립적으로 안전하게 열람 중입니다.
               </div>
 
               {/* Modal Body */}

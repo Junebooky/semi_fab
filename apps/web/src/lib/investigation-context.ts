@@ -84,7 +84,7 @@ export interface CaseReportPayload {
 
 export interface CasebookRecord {
   id: string; // CASE-${runId}-${timestamp}
-  schemaVersion?: number; // 1
+  schemaVersion: number; // strictly 1
   runId: string;
   sessionId?: string;
   alertId: string;
@@ -107,31 +107,127 @@ export const FAB_ONE_CASEBOOK_STORAGE_KEY = 'fab_one_casebook_records_v1';
 
 /**
  * Escapes characters that could break Markdown tables or blockquotes.
+ * Replaces pipe '|' with '\|' and newlines with '<br/>' to prevent table structure injection.
  */
 export function escapeMarkdownTableAndNotes(text: string | null | undefined): string {
   if (!text) return '';
   return text
     .replace(/\|/g, '\\|')
-    .replace(/\r\n/g, '\n');
+    .replace(/\r\n/g, '<br/>')
+    .replace(/\n/g, '<br/>')
+    .replace(/\r/g, '<br/>');
 }
 
 /**
- * Validates that an object conforms to the CasebookRecord schema (BUILD-14).
+ * Validates that an object strictly conforms to the CasebookRecord schema v1 (BUILD-15).
+ * Enforces schemaVersion === 1, nested hypotheses/actions integrity, string bounds, and enum checks.
  */
 export function isValidCasebookRecord(item: any): item is CasebookRecord {
   if (!item || typeof item !== 'object') return false;
-  if (typeof item.schemaVersion !== 'undefined' && item.schemaVersion !== 1) return false;
+
+  // 1. Strictly enforce schemaVersion === 1 (missing or other versions rejected)
+  if (item.schemaVersion !== 1) return false;
+
+  // 2. Core identifiers and string boundaries
   if (typeof item.id !== 'string' || item.id.trim().length === 0 || item.id.length > 128) return false;
   if (typeof item.runId !== 'string' || item.runId.trim().length === 0 || item.runId.length > 64) return false;
   if (typeof item.alertId !== 'string' || item.alertId.trim().length === 0 || item.alertId.length > 64) return false;
   if (typeof item.lotId !== 'string' || item.lotId.trim().length === 0 || item.lotId.length > 64) return false;
+  if (typeof item.equipmentId !== 'string' || item.equipmentId.trim().length === 0 || item.equipmentId.length > 64) return false;
+  if (typeof item.chamberId !== 'string' || item.chamberId.trim().length === 0 || item.chamberId.length > 64) return false;
   if (item.mode !== 'A' && item.mode !== 'B') return false;
-  if (typeof item.equipmentId !== 'string' || typeof item.chamberId !== 'string') return false;
   if (typeof item.savedAtUtc !== 'string' || isNaN(Date.parse(item.savedAtUtc))) return false;
-  if (item.status && !['DRAFT', 'REVIEWED', 'DISPOSITIONED'].includes(item.status)) return false;
-  if (!Array.isArray(item.hypotheses)) return false;
-  if (!Array.isArray(item.actions)) return false;
+
+  // 3. Optional string and numeric fields with range bounds
+  if (item.sessionId !== undefined && item.sessionId !== null) {
+    if (typeof item.sessionId !== 'string' || item.sessionId.length > 128) return false;
+  }
+  if (item.dataOrigin !== undefined && item.dataOrigin !== null) {
+    if (typeof item.dataOrigin !== 'string' || item.dataOrigin.length > 64) return false;
+  }
+  if (item.seed !== undefined && item.seed !== null) {
+    if (!Number.isInteger(Number(item.seed)) || Number(item.seed) < 0 || Number(item.seed) > 2147483647) return false;
+  }
+  if (item.status !== undefined && item.status !== null) {
+    if (!['DRAFT', 'REVIEWED', 'DISPOSITIONED'].includes(item.status)) return false;
+  }
+
+  // 4. Nested Hypotheses validation (array bounds, item schema, status enum)
+  if (!Array.isArray(item.hypotheses) || item.hypotheses.length > 50) return false;
+  for (const h of item.hypotheses) {
+    if (!h || typeof h !== 'object') return false;
+    if (typeof h.id !== 'string' || h.id.trim().length === 0 || h.id.length > 64) return false;
+    if (typeof h.title !== 'string' || h.title.trim().length === 0 || h.title.length > 256) return false;
+    if (typeof h.domain !== 'string' || h.domain.length > 64) return false;
+    if (
+      typeof h.status !== 'string' ||
+      !['UNVERIFIED', 'UNVALIDATED', 'SUPPORTED_FOR_REVIEW', 'NEEDS_MORE_DATA', 'RULED_OUT', 'TESTING', 'REJECTED'].includes(h.status)
+    ) return false;
+    if (typeof h.statusLabel !== 'string' || h.statusLabel.length > 64) return false;
+    if (typeof h.engineeringRationale !== 'string' || h.engineeringRationale.length > 2000) return false;
+    if (!Array.isArray(h.linkedEvidenceIds) || h.linkedEvidenceIds.length > 20) return false;
+    for (const eid of h.linkedEvidenceIds) {
+      if (typeof eid !== 'string' || eid.length > 64) return false;
+    }
+  }
+
+  // 5. Nested Actions validation (array bounds, item schema, priority enum, boolean)
+  if (!Array.isArray(item.actions) || item.actions.length > 50) return false;
+  for (const a of item.actions) {
+    if (!a || typeof a !== 'object') return false;
+    if (typeof a.id !== 'string' || a.id.trim().length === 0 || a.id.length > 64) return false;
+    if (typeof a.title !== 'string' || a.title.trim().length === 0 || a.title.length > 256) return false;
+    if (typeof a.assigneeRole !== 'string' || a.assigneeRole.length > 64) return false;
+    if (typeof a.priority !== 'string' || !['HIGH', 'MEDIUM', 'LOW'].includes(a.priority)) return false;
+    if (typeof a.completed !== 'boolean') return false;
+    if (typeof a.targetSystem !== 'string' || a.targetSystem.length > 64) return false;
+    if (typeof a.detail !== 'string' || a.detail.length > 2000) return false;
+  }
+
+  // 6. User notes bounds
   if (typeof item.userNotes !== 'string' || item.userNotes.length > 5000) return false;
+
+  // 7. Optional physicalSensorSnapshot bounds
+  if (item.physicalSensorSnapshot !== undefined && item.physicalSensorSnapshot !== null) {
+    if (!Array.isArray(item.physicalSensorSnapshot) || item.physicalSensorSnapshot.length > 20) return false;
+    for (const s of item.physicalSensorSnapshot) {
+      if (!s || typeof s !== 'object') return false;
+      if (typeof s.sensorId !== 'string' || s.sensorId.length > 64) return false;
+      if (typeof s.sensorName !== 'string' || s.sensorName.length > 128) return false;
+      if (typeof s.unit !== 'string' || s.unit.length > 32) return false;
+      if (typeof s.qualityFlag !== 'string' || s.qualityFlag.length > 32) return false;
+      if (typeof s.isExcursion !== 'boolean') return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Evaluates whether a CasebookRecord perfectly matches the active investigation lineage.
+ * If any key lineage attributes diverge (run, alert, mode, session, lot, equipment, chamber),
+ * the record must be isolated in read-only mode to prevent active editor judgment contamination.
+ */
+export function isExactLineageMatch(
+  record: CasebookRecord | null | undefined,
+  currentContext: {
+    mode: SimulationMode;
+    runId?: string | null;
+    alertId?: string | null;
+    sessionId?: string | null;
+    lotId?: string | null;
+    equipmentId?: string | null;
+    chamberId?: string | null;
+  }
+): boolean {
+  if (!record || typeof record !== 'object') return false;
+  if (record.mode !== currentContext.mode) return false;
+  if (!record.runId || !currentContext.runId || record.runId.trim() !== currentContext.runId.trim()) return false;
+  if (!record.alertId || !currentContext.alertId || record.alertId.trim() !== currentContext.alertId.trim()) return false;
+  if (record.sessionId && currentContext.sessionId && record.sessionId.trim() !== currentContext.sessionId.trim()) return false;
+  if (record.lotId && currentContext.lotId && record.lotId.trim() !== currentContext.lotId.trim()) return false;
+  if (record.equipmentId && currentContext.equipmentId && record.equipmentId.trim() !== currentContext.equipmentId.trim()) return false;
+  if (record.chamberId && currentContext.chamberId && record.chamberId.trim() !== currentContext.chamberId.trim()) return false;
   return true;
 }
 
@@ -337,7 +433,7 @@ ${actions
 > ${escapeMarkdownTableAndNotes(userNotes).trim().length > 0 ? escapeMarkdownTableAndNotes(userNotes).replace(/\n/g, '\n> ') : '작성된 엔지니어링 메모가 없습니다.'}
 
 ---
-*Generated by FAB ONE Semiconductor Engineering Platform (BUILD-14 Release Candidate)*
+*Generated by FAB ONE Semiconductor Engineering Platform (BUILD-15 Release Freeze)*
 *안내: 본 보고서의 가설, 조치 및 메모는 담당 엔지니어의 로컬 검토 기록이며 공정 품질 판정 또는 자동 원인 규명(RCA) 결과가 아닙니다.*
 `;
 }
@@ -374,7 +470,7 @@ export function saveCasebookRecordToStorage(record: CasebookRecord): StorageSave
     return { success: false, error: 'SSR_ENVIRONMENT', message: 'SSR 환경에서는 저장할 수 없습니다.' };
   }
   if (!isValidCasebookRecord(record)) {
-    return { success: false, error: 'INVALID_RECORD', message: '유효하지 않은 케이스북 레코드 규격입니다.' };
+    return { success: false, error: 'INVALID_RECORD', message: '유효하지 않은 케이스북 레코드 규격입니다 (schemaVersion === 1 필수).' };
   }
   try {
     const existing = loadSavedCasebookRecords();
@@ -423,11 +519,12 @@ export interface CasebookImportResult {
   importedCount: number;
   totalParsed: number;
   records: CasebookRecord[];
-  error?: 'SYNTAX_ERROR' | 'NOT_AN_ARRAY' | 'NO_VALID_RECORDS' | 'STORAGE_ERROR';
+  error?: 'SYNTAX_ERROR' | 'NOT_AN_ARRAY' | 'NO_VALID_RECORDS' | 'STORAGE_ERROR' | 'PAYLOAD_TOO_LARGE' | 'TOO_MANY_RECORDS';
 }
 
 /**
  * Validates and imports Casebook backup JSON records safely.
+ * Includes payload size limits (<500KB), record count limits (<=100), and strict schema v1 validation.
  */
 export function validateAndImportCasebookRecords(rawJson: string): CasebookImportResult {
   if (!rawJson || typeof rawJson !== 'string' || rawJson.trim().length === 0) {
@@ -438,6 +535,18 @@ export function validateAndImportCasebookRecords(rawJson: string): CasebookImpor
       totalParsed: 0,
       records: loadSavedCasebookRecords(),
       error: 'SYNTAX_ERROR',
+    };
+  }
+
+  // Security & memory guard: 500KB payload limit
+  if (rawJson.length > 500000) {
+    return {
+      success: false,
+      message: '파일 용량 초과: 케이스북 백업 파일은 최대 500KB까지 지원됩니다.',
+      importedCount: 0,
+      totalParsed: 0,
+      records: loadSavedCasebookRecords(),
+      error: 'PAYLOAD_TOO_LARGE',
     };
   }
 
@@ -466,20 +575,37 @@ export function validateAndImportCasebookRecords(rawJson: string): CasebookImpor
     };
   }
 
+  // Array length limit: max 100 records
+  if (parsed.length > 100) {
+    return {
+      success: false,
+      message: '레코드 수 초과: 한 번에 최대 100건까지의 레코드만 가져올 수 있습니다.',
+      importedCount: 0,
+      totalParsed: parsed.length,
+      records: loadSavedCasebookRecords(),
+      error: 'TOO_MANY_RECORDS',
+    };
+  }
+
   const validRecords: CasebookRecord[] = [];
+  const seenIds = new Set<string>();
+
   for (const item of parsed) {
     if (isValidCasebookRecord(item)) {
-      validRecords.push({
-        ...item,
-        schemaVersion: 1,
-      });
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        validRecords.push({
+          ...item,
+          schemaVersion: 1,
+        });
+      }
     }
   }
 
   if (validRecords.length === 0) {
     return {
       success: false,
-      message: '유효한 Casebook 레코드가 포함되어 있지 않거나 스키마가 호환되지 않습니다.',
+      message: '유효한 Casebook v1 레코드가 없거나 스키마가 호환되지 않습니다 (schemaVersion === 1 필수).',
       importedCount: 0,
       totalParsed: parsed.length,
       records: loadSavedCasebookRecords(),
@@ -503,9 +629,13 @@ export function validateAndImportCasebookRecords(rawJson: string): CasebookImpor
     if (typeof window !== 'undefined') {
       localStorage.setItem(FAB_ONE_CASEBOOK_STORAGE_KEY, JSON.stringify(existing));
     }
+    const skipped = parsed.length - validRecords.length;
+    const msg = skipped > 0
+      ? `${count}건의 유효 Casebook v1 사례를 복원했습니다 (비호환/손상된 ${skipped}건 제외).`
+      : `${count}건의 Casebook v1 사례를 성공적으로 복원했습니다.`;
     return {
       success: true,
-      message: `${count}건의 Casebook 사례를 성공적으로 복원했습니다.`,
+      message: msg,
       importedCount: count,
       totalParsed: parsed.length,
       records: existing,

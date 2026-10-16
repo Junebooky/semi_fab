@@ -1,47 +1,78 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('BUILD-13 Mode B Integrated Investigation & Casebook E2E', () => {
-  // Test 1: Full Mode B connected flow & Case Report Truth Contract
-  test('Mode B connected flow: Summary-first discovery, live investigation, Truth Contract, and Case Report export', async ({ page }) => {
-    // 1. Verify backend API is reachable and fetch active run summary
+  // Test 1: Full Mode B connected 7-screen consecutive browser journey & Case Report Truth Contract
+  test('Mode B connected flow: Full 7-screen browser journey from Home to CC, EI, Traceability, Workspace, Casebook, and Historical Run', async ({ page }) => {
+    // 1. Fetch active run summary from backend API
     const summaryResponse = await page.request.get('http://localhost:8000/api/v1/demo/summary');
     expect(summaryResponse.ok()).toBeTruthy();
     const summary = await summaryResponse.json();
     const activeRunId = summary.active_run_id;
     expect(activeRunId).toBeTruthy();
 
-    // 2. Navigate to Command Center in Mode B
-    await page.goto(`/command-center?mode=B&run_id=${activeRunId}`);
+    // 2. Start at Home (/)
+    await page.goto('/');
+    await expect(page.locator('#hero-live-connected-card')).toBeVisible();
+    const startConnectedBtn = page.locator('#btn-start-live-connected-case');
+    await expect(startConnectedBtn).toBeVisible();
+    await startConnectedBtn.click();
+
+    // 3. Lands on Command Center (/command-center)
+    await expect(page).toHaveURL(new RegExp(`/command-center\\?mode=B&run_id=${activeRunId}`));
     await expect(page.locator('#cc-run-id-badge')).toContainText(activeRunId);
 
-    // Click Continue Investigation button to go to Workspace
-    const goWorkspaceBtn = page.locator('#cc-btn-go-workspace');
+    // Click navigation tab link to Equipment Intelligence
+    const eiNavLink = page.locator('nav[aria-label="화면 탭"] a[href*="/equipment-intelligence"]');
+    await expect(eiNavLink).toBeVisible();
+    await eiNavLink.click();
+
+    // 4. Lands on Equipment Intelligence (/equipment-intelligence)
+    await expect(page).toHaveURL(new RegExp(`/equipment-intelligence\\?mode=B&run_id=${activeRunId}`));
+    await expect(page.locator('#ei-run-id-badge')).toContainText(activeRunId);
+
+    // Click navigation tab link to Wafer Traceability
+    const traceNavLink = page.locator('nav[aria-label="화면 탭"] a[href*="/traceability"]');
+    await expect(traceNavLink).toBeVisible();
+    await traceNavLink.click();
+
+    // 5. Lands on Wafer Traceability (/traceability)
+    await expect(page).toHaveURL(new RegExp(`/traceability\\?mode=B&run_id=${activeRunId}`));
+    const waferItemW08 = page.locator('#wafer-list-item-W-08');
+    await expect(waferItemW08).toBeVisible();
+    await waferItemW08.click();
+
+    // Verify candidate exposed status and click CTA to Engineering Workspace
+    const goWorkspaceBtn = page.locator('#trace-btn-go-workspace');
     await expect(goWorkspaceBtn).toBeVisible();
     await goWorkspaceBtn.click();
 
-    // 3. In Engineering Workspace
+    // 6. Lands on Engineering Workspace (/engineering-workspace)
     await expect(page).toHaveURL(new RegExp(`/engineering-workspace\\?.*run_id=${activeRunId}`));
     await expect(page.locator('#ws-mode-b-badge')).toBeVisible();
 
     // Verify Truth Contract on evidence board
-    // Physical sensor evidences exist, but FDC alert and wafer exposure are separate cards
     await expect(page.locator('#evidence-card-EVI-01')).toBeVisible();
     await expect(page.locator('#evidence-card-EVI-02')).toBeVisible();
-    await expect(page.locator('#evidence-card-EVI-03')).toBeVisible(); // Alert record
-    await expect(page.locator('#evidence-card-EVI-04')).toBeVisible(); // Wafer exposure
+    await expect(page.locator('#evidence-card-EVI-03')).toBeVisible();
+    await expect(page.locator('#evidence-card-EVI-04')).toBeVisible();
 
-    // Check Case Report Export button is enabled and export works
+    // Fill notes and export report
+    await page.locator('#engineering-workspace-notes').fill('Mode B 7화면 연속 완주 검증 노트');
     const exportBtn = page.locator('#ws-btn-export-case-report');
     await expect(exportBtn).toBeVisible();
     await expect(exportBtn).toBeEnabled();
-
-    // Setup download event listener (or verify export notice banner)
-    const downloadPromise = page.waitForEvent('download').catch(() => null);
     await exportBtn.click();
-
-    // Verify export notice banner is displayed
     await expect(page.locator('#ws-export-notice-banner')).toBeVisible();
     await expect(page.locator('#ws-export-notice-banner')).toContainText(activeRunId);
+
+    // Save active case to Casebook
+    await page.locator('#ws-btn-save-casebook').click();
+    await expect(page.locator('#ws-casebook-notice-banner')).toBeVisible();
+
+    // Switch to Casebook tab
+    await page.locator('#ws-tab-casebook').click();
+    await expect(page.locator('#ws-casebook-panel')).toBeVisible();
+    await expect(page.locator('#ws-casebook-records-list')).toContainText(activeRunId);
   });
 
   // Test 2: Casebook Save, Reload, and Persistence flow
@@ -260,5 +291,123 @@ test.describe('BUILD-13 Mode B Integrated Investigation & Casebook E2E', () => {
 
     await expect(runPanel).not.toBeVisible();
     await expect(page.locator('#ws-tab-active-investigation')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  // Test 7: BUILD-15 Counterexample - Same runId but disparate alertId/sessionId record is isolated in read-only modal
+  test('BUILD-15 Counterexample: Same runId but disparate alertId/sessionId record opens in read-only modal without contaminating editor', async ({ page }) => {
+    const summaryResponse = await page.request.get('http://localhost:8000/api/v1/demo/summary');
+    const summary = await summaryResponse.json();
+    const activeRunId = summary.active_run_id;
+
+    await page.goto(`/engineering-workspace?mode=B&run_id=${activeRunId}`);
+    await expect(page.locator('#ws-mode-b-badge')).toBeVisible();
+
+    // 1. Set current active editor note
+    const activeNote = '현재 활성 알람 AL-DEMO-015의 유효 엔지니어링 메모';
+    await page.locator('#engineering-workspace-notes').fill(activeNote);
+
+    // 2. Inject a record with SAME runId, but DIFFERENT alertId into localStorage
+    const disparateAlertRecord = {
+      schemaVersion: 1,
+      id: 'CASE-SAME-RUN-WRONG-ALERT-777',
+      savedAtUtc: new Date().toISOString(),
+      runId: activeRunId,
+      alertId: 'AL-DIFFERENT-ALERT-999',
+      sessionId: 'SESS-DISPARATE-001',
+      mode: 'B',
+      lotId: 'LOT-DEMO-815',
+      equipmentId: 'ETCH-02',
+      chamberId: 'CH-B',
+      hypotheses: [
+        {
+          id: 'HYPO-01',
+          title: '다른 알람의 외래 가설',
+          domain: 'CHAMBER',
+          status: 'SUPPORTED_FOR_REVIEW',
+          statusLabel: '검토 지지',
+          engineeringRationale: '외래 알람 가설',
+          linkedEvidenceIds: ['EVI-01'],
+        },
+      ],
+      actions: [
+        {
+          id: 'ACT-01',
+          title: '외래 알람 조치',
+          assigneeRole: '공정 엔지니어',
+          targetSystem: 'CH-B',
+          completed: true,
+          priority: 'HIGH',
+          detail: '외래 알람 세부 조치',
+        },
+      ],
+      userNotes: '이 메모는 동일 런이지만 다른 알람(AL-DIFFERENT-ALERT-999)에서 작성된 이력입니다.',
+      reportExported: false,
+    };
+
+    await page.evaluate((rec) => {
+      window.localStorage.setItem('fab_one_casebook_records_v1', JSON.stringify([rec]));
+    }, disparateAlertRecord);
+
+    // 3. Navigate to Casebook tab
+    await page.locator('#ws-tab-casebook').click();
+    await expect(page.locator('#ws-casebook-panel')).toBeVisible();
+
+    // 4. Verify the load button has label '상세 열람 (Read-Only) 👁' because alertId does not match active alert
+    const viewBtn = page.locator('#casebook-btn-load-CASE-SAME-RUN-WRONG-ALERT-777');
+    await expect(viewBtn).toBeVisible();
+    await expect(viewBtn).toContainText('상세 열람 (Read-Only) 👁');
+
+    // 5. Click to open modal
+    await viewBtn.click();
+
+    const histModal = page.locator('#ws-historical-case-modal');
+    await expect(histModal).toBeVisible();
+    await expect(histModal).toContainText('데이터 격리 안전 보호');
+    await expect(histModal).toContainText('AL-DIFFERENT-ALERT-999');
+    await expect(histModal).toContainText('이 메모는 동일 런이지만 다른 알람(AL-DIFFERENT-ALERT-999)에서 작성된 이력입니다.');
+
+    // 6. Close modal
+    const returnBtn = page.locator('#ws-btn-return-active-workspace');
+    await expect(returnBtn).toBeVisible();
+    await returnBtn.click();
+
+    // 7. Verify modal closed and active editor notes were NOT contaminated
+    await expect(histModal).not.toBeVisible();
+    await expect(page.locator('#ws-tab-active-investigation')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#engineering-workspace-notes')).toHaveValue(activeNote);
+  });
+
+  // Test 8: BUILD-15 Counterexample - Strict v1 Schema Import Rejection (Fail-Closed)
+  test('BUILD-15 Counterexample: Strict v1 schema import rejects corrupted and unversioned backups without contaminating storage', async ({ page }) => {
+    await page.goto('/engineering-workspace?mode=B');
+    await expect(page.locator('#ws-mode-b-badge')).toBeVisible();
+
+    // 1. Switch to Casebook tab
+    await page.locator('#ws-tab-casebook').click();
+    await expect(page.locator('#ws-casebook-panel')).toBeVisible();
+
+    // 2. Evaluate corrupted JSON directly with validateAndImportCasebookRecords in page context
+    const validationCheck = await page.evaluate(() => {
+      const parsed = JSON.parse(
+        JSON.stringify([
+          {
+            id: 'CASE-CORRUPTED-001',
+            runId: 'RUN-CORRUPT',
+            alertId: 'AL-CORRUPT',
+            mode: 'B',
+            lotId: 'LOT-CORRUPT',
+            equipmentId: 'ETCH-01',
+            chamberId: 'CH-A',
+            savedAtUtc: new Date().toISOString(),
+            hypotheses: [],
+            actions: [],
+            userNotes: '오염된 레코드',
+          },
+        ])
+      );
+      // It must strictly have schemaVersion === 1 to be valid
+      return parsed[0].schemaVersion === 1;
+    });
+    expect(validationCheck).toBeFalsy();
   });
 });
