@@ -3890,8 +3890,8 @@ test('BUILD-10 (d) Multi-Page Tour Return Banner & tourStep Preservation Integra
       `${name} must parse or reference tourStep query parameter`
     );
     assert.ok(
-      src.includes('가이드 투어 (Demo Tour)'),
-      `${name} must have 가이드 투어 navigation tab`
+      src.includes('처음 둘러보기'),
+      `${name} must retain the friendly tour navigation tab`
     );
   });
 });
