@@ -1817,3 +1817,75 @@ button:focus-visible, a:focus-visible, summary:focus-visible {
   .ux-spotlight { padding: 20px 18px; }
   .ux-spotlight .ux-btn { width: 100%; }
 }
+
+/* Progressive Disclosure for Advanced Process Controls (Issue #48) */
+.ux-advanced-controls {
+  margin: 0 0 24px 0;
+  border: 1px solid var(--ux-border);
+  border-radius: var(--ux-radius);
+  background: #FFFFFF;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(18, 51, 44, 0.03);
+  transition: all 0.2s ease;
+}
+
+.ux-advanced-controls[open] {
+  border-color: #C6EBDD;
+  box-shadow: 0 4px 18px rgba(11, 121, 95, 0.06);
+}
+
+.ux-advanced-controls__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 22px;
+  background: #FAFCFB;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  color: #245D4F;
+  user-select: none;
+  list-style: none;
+  min-height: 48px;
+}
+
+.ux-advanced-controls__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ux-advanced-controls__summary-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ux-advanced-controls__summary-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #E8F5EE;
+  color: #087254;
+}
+
+.ux-advanced-controls__body {
+  padding: 20px 22px;
+  border-top: 1px solid var(--ux-border);
+  background: #FFFFFF;
+}
+
+.ux-advanced-controls .control-bar-card {
+  margin-bottom: 0;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+/* Enhanced Status Pills */
+.top-status-pills .pill {
+  min-height: 32px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
