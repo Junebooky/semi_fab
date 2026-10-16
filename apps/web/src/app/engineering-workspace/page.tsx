@@ -783,7 +783,7 @@ function EngineeringWorkspaceContent() {
     const saveRes = saveCasebookRecordToStorage(record);
     if (saveRes.success) {
       setSavedCaseRecords(loadSavedCasebookRecords());
-      setCasebookNotice(`현재 사건(${runId} / ${alertId})이 Casebook에 성공적으로 저장되었습니다.`);
+      setCasebookNotice(`이번 조사(${runId} / ${alertId})가 Casebook에 성공적으로 저장되었습니다.`);
     } else {
       setCasebookNotice(`저장 실패 (${saveRes.error}): ${saveRes.message}`);
     }
@@ -867,7 +867,7 @@ function EngineeringWorkspaceContent() {
         if (res.ok) {
           const snap = await res.json();
           setHistoricalRunSnapshot(snap);
-          setCasebookNotice(`과거 공정 Run (${r.run_id}) 아카이브 스냅샷을 열었습니다.`);
+          setCasebookNotice(`이전 시뮬레이션 Run (${r.run_id})을 읽기 전용으로 열었어요.`);
         } else {
           setCasebookNotice(`과거 공정 Run (${r.run_id}) 조회 실패 (HTTP ${res.status})`);
         }
